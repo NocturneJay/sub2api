@@ -629,12 +629,14 @@ func TestExecuteSubscriptionFulfillmentAppliesAffiliateRebate(t *testing.T) {
 	require.NoError(t, err)
 
 	inviterID := int64(9001)
+	deviceHash := "subscription-affiliate-device"
 	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
 		inviteeSummary: &AffiliateSummary{
-			UserID:    user.ID,
-			AffCode:   "INVITEE",
-			InviterID: &inviterID,
-			CreatedAt: time.Now().Add(-24 * time.Hour),
+			UserID:           user.ID,
+			AffCode:          "INVITEE",
+			InviterID:        &inviterID,
+			SignupDeviceHash: &deviceHash,
+			CreatedAt:        time.Now().Add(-24 * time.Hour),
 		},
 		inviterSummary: &AffiliateSummary{
 			UserID:    inviterID,

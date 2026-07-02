@@ -357,6 +357,10 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	if inviteeSummary.InviterID == nil || *inviteeSummary.InviterID <= 0 {
 		return 0, nil
 	}
+	if inviteeSummary.SignupDeviceHash == nil || strings.TrimSpace(*inviteeSummary.SignupDeviceHash) == "" {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] Skipped rebate for invitee %d: missing signup device", inviteeUserID)
+		return 0, nil
+	}
 	if s.hasSignupDeviceRebateConflict(ctx, *inviteeSummary.InviterID, inviteeUserID, inviteeSummary.SignupDeviceHash) {
 		logger.LegacyPrintf("service.affiliate", "[Affiliate] Skipped rebate for invitee %d: same signup device already used", inviteeUserID)
 		return 0, nil
