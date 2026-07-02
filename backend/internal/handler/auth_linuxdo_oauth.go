@@ -486,10 +486,11 @@ func (h *AuthHandler) createLinuxDoOAuthChoicePendingSession(
 }
 
 type completeLinuxDoOAuthRequest struct {
-	InvitationCode   string `json:"invitation_code" binding:"required"`
-	AffCode          string `json:"aff_code,omitempty"`
-	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
-	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
+	InvitationCode    string `json:"invitation_code" binding:"required"`
+	AffCode           string `json:"aff_code,omitempty"`
+	AffiliateDeviceID string `json:"affiliate_device_id,omitempty"`
+	AdoptDisplayName  *bool  `json:"adopt_display_name,omitempty"`
+	AdoptAvatar       *bool  `json:"adopt_avatar,omitempty"`
 }
 
 // CompleteLinuxDoOAuthRegistration completes a pending OAuth registration by validating
@@ -571,13 +572,14 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCodeAndAffiliateDevice(
 		c.Request.Context(),
 		email,
 		username,
 		req.InvitationCode,
 		req.AffCode,
 		pendingOAuthPromoCode(session),
+		req.AffiliateDeviceID,
 		"linuxdo",
 	)
 	if err != nil {

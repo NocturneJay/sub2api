@@ -76,6 +76,7 @@ describe('oauth adoption auth api', () => {
 
   it('posts affiliate code when completing linuxdo oauth registration', async () => {
     const { completeLinuxDoOAuthRegistration } = await import('@/api/auth')
+    localStorage.setItem('affiliate_device_id', 'test-device-id')
 
     await completeLinuxDoOAuthRegistration(
       'invite-code',
@@ -89,6 +90,7 @@ describe('oauth adoption auth api', () => {
     expect(post).toHaveBeenCalledWith('/auth/oauth/linuxdo/complete-registration', {
       invitation_code: 'invite-code',
       aff_code: 'AFF123',
+      affiliate_device_id: 'test-device-id',
       adopt_display_name: true,
       adopt_avatar: false
     })
@@ -156,6 +158,7 @@ describe('oauth adoption auth api', () => {
 
   it('posts affiliate code when creating pending wechat oauth account', async () => {
     const { createPendingWeChatOAuthAccount } = await import('@/api/auth')
+    localStorage.setItem('affiliate_device_id', 'test-device-id')
 
     await createPendingWeChatOAuthAccount(
       'invite-code',
@@ -169,6 +172,7 @@ describe('oauth adoption auth api', () => {
     expect(post).toHaveBeenCalledWith('/auth/oauth/wechat/complete-registration', {
       invitation_code: 'invite-code',
       aff_code: 'WXAFF',
+      affiliate_device_id: 'test-device-id',
       adopt_display_name: false,
       adopt_avatar: true
     })

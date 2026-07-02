@@ -71,6 +71,10 @@ func (r *paymentFulfillmentAffiliateRepoStub) GetAffiliateByCode(context.Context
 	panic("unexpected GetAffiliateByCode call")
 }
 
+func (r *paymentFulfillmentAffiliateRepoStub) SetSignupDeviceHash(context.Context, int64, string) error {
+	return nil
+}
+
 func (r *paymentFulfillmentAffiliateRepoStub) BindInviter(context.Context, int64, int64) (bool, error) {
 	panic("unexpected BindInviter call")
 }
@@ -93,6 +97,10 @@ func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inv
 
 func (r *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
 	return 0, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) HasSignupDeviceRebateConflict(context.Context, int64, int64, string) (bool, error) {
+	return false, nil
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {

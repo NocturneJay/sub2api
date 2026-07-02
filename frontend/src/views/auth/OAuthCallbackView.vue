@@ -343,7 +343,7 @@ async function handleSubmitRegistration() {
 
   isSubmitting.value = true
   try {
-    const payload: { password: string; invitation_code?: string; aff_code?: string } = {
+    const payload: { password: string; invitation_code?: string; aff_code?: string; affiliate_device_id?: string } = {
       password: password.value,
       ...oauthAffiliatePayload(loadOAuthAffiliateCode())
     }

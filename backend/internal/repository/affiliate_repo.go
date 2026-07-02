@@ -71,6 +71,26 @@ func (r *affiliateRepository) EnsureUserAffiliate(ctx context.Context, userID in
 	return ensureUserAffiliateWithClient(ctx, client, userID)
 }
 
+func (r *affiliateRepository) SetSignupDeviceHash(ctx context.Context, userID int64, deviceHash string) error {
+	deviceHash = strings.TrimSpace(deviceHash)
+	if userID <= 0 || deviceHash == "" {
+		return nil
+	}
+	client := clientFromContext(ctx, r.client)
+	if _, err := ensureUserAffiliateWithClient(ctx, client, userID); err != nil {
+		return err
+	}
+	_, err := client.ExecContext(ctx, `
+UPDATE user_affiliates
+SET signup_device_hash = COALESCE(signup_device_hash, $1),
+    updated_at = CASE WHEN signup_device_hash IS NULL THEN NOW() ELSE updated_at END
+WHERE user_id = $2`, deviceHash, userID)
+	if err != nil {
+		return fmt.Errorf("set affiliate signup device hash: %w", err)
+	}
+	return nil
+}
+
 func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code string) (*service.AffiliateSummary, error) {
 	client := clientFromContext(ctx, r.client)
 	return queryAffiliateByCode(ctx, client, code)
@@ -178,6 +198,36 @@ func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, i
 		}
 	}
 	return total, rows.Close()
+}
+
+func (r *affiliateRepository) HasSignupDeviceRebateConflict(ctx context.Context, inviterID, inviteeUserID int64, deviceHash string) (bool, error) {
+	deviceHash = strings.TrimSpace(deviceHash)
+	if inviterID <= 0 || inviteeUserID <= 0 || deviceHash == "" {
+		return false, nil
+	}
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM user_affiliates ua
+    WHERE ua.signup_device_hash = $1
+      AND ua.user_id <> $2
+      AND (ua.user_id = $3 OR ua.inviter_id = $3)
+)`, deviceHash, inviteeUserID, inviterID)
+	if err != nil {
+		return false, fmt.Errorf("query affiliate signup device conflict: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var conflict bool
+	if rows.Next() {
+		if err := rows.Scan(&conflict); err != nil {
+			return false, err
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	return conflict, nil
 }
 
 func (r *affiliateRepository) ThawFrozenQuota(ctx context.Context, userID int64) (float64, error) {
@@ -785,6 +835,7 @@ SELECT user_id,
        aff_code_custom,
        aff_rebate_rate_percent,
        inviter_id,
+       signup_device_hash,
        aff_count,
        aff_quota::double precision,
        aff_frozen_quota::double precision,
@@ -806,6 +857,7 @@ WHERE user_id = $1`, userID)
 
 	var out service.AffiliateSummary
 	var inviterID sql.NullInt64
+	var signupDeviceHash sql.NullString
 	var rebateRate sql.NullFloat64
 	if err := rows.Scan(
 		&out.UserID,
@@ -813,6 +865,7 @@ WHERE user_id = $1`, userID)
 		&out.AffCodeCustom,
 		&rebateRate,
 		&inviterID,
+		&signupDeviceHash,
 		&out.AffCount,
 		&out.AffQuota,
 		&out.AffFrozenQuota,
@@ -824,6 +877,10 @@ WHERE user_id = $1`, userID)
 	}
 	if inviterID.Valid {
 		out.InviterID = &inviterID.Int64
+	}
+	if signupDeviceHash.Valid && strings.TrimSpace(signupDeviceHash.String) != "" {
+		v := signupDeviceHash.String
+		out.SignupDeviceHash = &v
 	}
 	if rebateRate.Valid {
 		v := rebateRate.Float64
@@ -839,6 +896,7 @@ SELECT user_id,
        aff_code_custom,
        aff_rebate_rate_percent,
        inviter_id,
+       signup_device_hash,
        aff_count,
        aff_quota::double precision,
        aff_frozen_quota::double precision,
@@ -862,6 +920,7 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 
 	var out service.AffiliateSummary
 	var inviterID sql.NullInt64
+	var signupDeviceHash sql.NullString
 	var rebateRate sql.NullFloat64
 	if err := rows.Scan(
 		&out.UserID,
@@ -869,6 +928,7 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 		&out.AffCodeCustom,
 		&rebateRate,
 		&inviterID,
+		&signupDeviceHash,
 		&out.AffCount,
 		&out.AffQuota,
 		&out.AffFrozenQuota,
@@ -880,6 +940,10 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 	}
 	if inviterID.Valid {
 		out.InviterID = &inviterID.Int64
+	}
+	if signupDeviceHash.Valid && strings.TrimSpace(signupDeviceHash.String) != "" {
+		v := signupDeviceHash.String
+		out.SignupDeviceHash = &v
 	}
 	if rebateRate.Valid {
 		v := rebateRate.Float64

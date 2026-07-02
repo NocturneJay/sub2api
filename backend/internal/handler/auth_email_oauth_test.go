@@ -378,6 +378,10 @@ func (r *oauthEmailAffiliateRepoStub) EnsureUserAffiliate(_ context.Context, use
 	return &service.AffiliateSummary{UserID: userID, AffCode: "SELF"}, nil
 }
 
+func (r *oauthEmailAffiliateRepoStub) SetSignupDeviceHash(context.Context, int64, string) error {
+	return nil
+}
+
 func (r *oauthEmailAffiliateRepoStub) GetAffiliateByCode(_ context.Context, code string) (*service.AffiliateSummary, error) {
 	userID, ok := r.codeOwners[strings.ToUpper(strings.TrimSpace(code))]
 	if !ok {
@@ -397,6 +401,10 @@ func (r *oauthEmailAffiliateRepoStub) AccrueQuota(context.Context, int64, int64,
 
 func (r *oauthEmailAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
 	panic("unexpected GetAccruedRebateFromInvitee call")
+}
+
+func (r *oauthEmailAffiliateRepoStub) HasSignupDeviceRebateConflict(context.Context, int64, int64, string) (bool, error) {
+	return false, nil
 }
 
 func (r *oauthEmailAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {

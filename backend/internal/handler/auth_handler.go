@@ -48,13 +48,14 @@ func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userSe
 
 // RegisterRequest represents the registration request payload
 type RegisterRequest struct {
-	Email          string `json:"email" binding:"required,email"`
-	Password       string `json:"password" binding:"required,min=6"`
-	VerifyCode     string `json:"verify_code"`
-	TurnstileToken string `json:"turnstile_token"`
-	PromoCode      string `json:"promo_code"`      // 注册优惠码
-	InvitationCode string `json:"invitation_code"` // 邀请码
-	AffCode        string `json:"aff_code"`        // 邀请返利码
+	Email             string `json:"email" binding:"required,email"`
+	Password          string `json:"password" binding:"required,min=6"`
+	VerifyCode        string `json:"verify_code"`
+	TurnstileToken    string `json:"turnstile_token"`
+	InvitationCode    string `json:"invitation_code"`     // 邀请码
+	AffiliateDeviceID string `json:"affiliate_device_id"` // 邀请返利设备标识
+	PromoCode         string `json:"promo_code"`          // 注册优惠码
+	AffCode           string `json:"aff_code"`            // 邀请返利码
 }
 
 // SendVerifyCodeRequest 发送验证码请求
@@ -171,7 +172,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	_, user, err := h.authService.RegisterWithVerification(
+	_, user, err := h.authService.RegisterWithVerificationWithAffiliateDevice(
 		c.Request.Context(),
 		req.Email,
 		req.Password,
@@ -179,6 +180,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		req.PromoCode,
 		req.InvitationCode,
 		req.AffCode,
+		req.AffiliateDeviceID,
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)

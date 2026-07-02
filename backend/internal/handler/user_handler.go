@@ -203,6 +203,8 @@ func (h *UserHandler) GetAffiliate(c *gin.Context) {
 		return
 	}
 
+	h.affiliateService.RecordSignupDevice(c.Request.Context(), subject.UserID, c.GetHeader("X-Affiliate-Device-ID"))
+
 	detail, err := h.affiliateService.GetAffiliateDetail(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)

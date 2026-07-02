@@ -688,10 +688,11 @@ func buildDingTalkAuthorizeURL(cfg config.DingTalkConnectConfig, state string) (
 // ─── Complete Registration ─────────────────────────────────────────────────
 
 type completeDingTalkOAuthRequest struct {
-	InvitationCode   string `json:"invitation_code" binding:"required"`
-	AffCode          string `json:"aff_code,omitempty"`
-	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
-	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
+	InvitationCode    string `json:"invitation_code" binding:"required"`
+	AffCode           string `json:"aff_code,omitempty"`
+	AffiliateDeviceID string `json:"affiliate_device_id,omitempty"`
+	AdoptDisplayName  *bool  `json:"adopt_display_name,omitempty"`
+	AdoptAvatar       *bool  `json:"adopt_avatar,omitempty"`
 }
 
 // CompleteDingTalkOAuthRegistration completes a pending OAuth registration by validating
@@ -781,13 +782,14 @@ func (h *AuthHandler) CompleteDingTalkOAuthRegistration(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCodeAndAffiliateDevice(
 		c.Request.Context(),
 		email,
 		username,
 		req.InvitationCode,
 		req.AffCode,
 		pendingOAuthPromoCode(session),
+		req.AffiliateDeviceID,
 		"dingtalk",
 	)
 	if err != nil {

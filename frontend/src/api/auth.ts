@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client'
+import { affiliateDevicePayload } from '@/utils/affiliateDevice'
 import type {
   LoginRequest,
   RegisterRequest,
@@ -133,7 +134,11 @@ export async function login2FA(request: TotpLogin2FARequest): Promise<AuthRespon
  * @returns Authentication response with token and user data
  */
 export async function register(userData: RegisterRequest): Promise<AuthResponse> {
-  const { data } = await apiClient.post<AuthResponse>('/auth/register', userData)
+  const shouldAttachAffiliateDevice = Boolean(userData.aff_code?.trim())
+  const { data } = await apiClient.post<AuthResponse>('/auth/register', {
+    ...userData,
+    ...(shouldAttachAffiliateDevice ? affiliateDevicePayload() : {})
+  })
 
   // Store token and user data
   setAuthToken(data.access_token)
@@ -603,6 +608,7 @@ async function createPendingOAuthAccount(
     {
       invitation_code: invitationCode,
       ...(normalizedAffiliateCode ? { aff_code: normalizedAffiliateCode } : {}),
+      ...(normalizedAffiliateCode ? affiliateDevicePayload() : {}),
       ...serializeOAuthAdoptionDecision(decision)
     }
   )

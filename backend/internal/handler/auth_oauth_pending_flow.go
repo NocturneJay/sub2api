@@ -66,13 +66,14 @@ type bindPendingOAuthLoginRequest struct {
 }
 
 type createPendingOAuthAccountRequest struct {
-	Email            string `json:"email" binding:"required,email"`
-	VerifyCode       string `json:"verify_code,omitempty"`
-	Password         string `json:"password" binding:"required,min=6"`
-	InvitationCode   string `json:"invitation_code,omitempty"`
-	AffCode          string `json:"aff_code,omitempty"`
-	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
-	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
+	Email             string `json:"email" binding:"required,email"`
+	VerifyCode        string `json:"verify_code,omitempty"`
+	Password          string `json:"password" binding:"required,min=6"`
+	InvitationCode    string `json:"invitation_code,omitempty"`
+	AffCode           string `json:"aff_code,omitempty"`
+	AffiliateDeviceID string `json:"affiliate_device_id,omitempty"`
+	AdoptDisplayName  *bool  `json:"adopt_display_name,omitempty"`
+	AdoptAvatar       *bool  `json:"adopt_avatar,omitempty"`
 }
 
 type sendPendingOAuthVerifyCodeRequest struct {
@@ -1830,12 +1831,13 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
-	if err := h.authService.FinalizeOAuthEmailAccount(
+	if err := h.authService.FinalizeOAuthEmailAccountWithAffiliateDevice(
 		txCtx,
 		user,
 		strings.TrimSpace(req.InvitationCode),
 		strings.TrimSpace(session.ProviderType),
 		strings.TrimSpace(req.AffCode),
+		strings.TrimSpace(req.AffiliateDeviceID),
 	); err != nil {
 		_ = tx.Rollback()
 		if rollbackCreatedUser(err) {

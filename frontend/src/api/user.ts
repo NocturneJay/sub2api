@@ -9,6 +9,7 @@ import {
   prepareOAuthBindAccessTokenCookie,
   type WeChatOAuthPublicSettings,
 } from './auth'
+import { affiliateDeviceHeaders } from '@/utils/affiliateDevice'
 import type {
   User,
   ChangePasswordRequest,
@@ -177,7 +178,9 @@ export async function startOAuthBinding(
 }
 
 export async function getAffiliateDetail(): Promise<UserAffiliateDetail> {
-  const { data } = await apiClient.get<UserAffiliateDetail>('/user/aff')
+  const { data } = await apiClient.get<UserAffiliateDetail>('/user/aff', {
+    headers: affiliateDeviceHeaders()
+  })
   return data
 }
 

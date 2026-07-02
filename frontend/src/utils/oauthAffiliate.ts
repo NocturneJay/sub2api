@@ -1,3 +1,5 @@
+import { affiliateDevicePayload } from './affiliateDevice'
+
 const OAUTH_AFFILIATE_CODE_KEY = 'oauth_aff_code'
 const AFFILIATE_REFERRAL_CODE_KEY = 'affiliate_referral_code'
 const AFFILIATE_REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -127,7 +129,9 @@ export function clearAllAffiliateReferralCodes(): void {
   clearAffiliateReferralCode()
 }
 
-export function oauthAffiliatePayload(value?: unknown): { aff_code?: string } {
+export function oauthAffiliatePayload(value?: unknown): { aff_code?: string; affiliate_device_id?: string } {
   const code = normalizeOAuthAffiliateCode(value)
-  return code ? { aff_code: code } : {}
+  return {
+    ...(code ? { aff_code: code, ...affiliateDevicePayload() } : {})
+  }
 }

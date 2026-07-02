@@ -265,6 +265,17 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	signupSource string,
 	affiliateCode string,
 ) error {
+	return s.FinalizeOAuthEmailAccountWithAffiliateDevice(ctx, user, invitationCode, signupSource, affiliateCode, "")
+}
+
+func (s *AuthService) FinalizeOAuthEmailAccountWithAffiliateDevice(
+	ctx context.Context,
+	user *User,
+	invitationCode string,
+	signupSource string,
+	affiliateCode string,
+	affiliateDeviceID string,
+) error {
 	if s == nil || user == nil || user.ID <= 0 {
 		return ErrServiceUnavailable
 	}
@@ -285,7 +296,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode, affiliateDeviceID)
 	return nil
 }
 

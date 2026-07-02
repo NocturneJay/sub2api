@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"strings"
@@ -63,6 +65,7 @@ type AffiliateSummary struct {
 	AffCodeCustom        bool      `json:"aff_code_custom"`
 	AffRebateRatePercent *float64  `json:"aff_rebate_rate_percent,omitempty"`
 	InviterID            *int64    `json:"inviter_id,omitempty"`
+	SignupDeviceHash     *string   `json:"-"`
 	AffCount             int       `json:"aff_count"`
 	AffQuota             float64   `json:"aff_quota"`
 	AffFrozenQuota       float64   `json:"aff_frozen_quota"`
@@ -96,10 +99,12 @@ type AffiliateDetail struct {
 
 type AffiliateRepository interface {
 	EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error)
+	SetSignupDeviceHash(ctx context.Context, userID int64, deviceHash string) error
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
 	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error)
 	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
+	HasSignupDeviceRebateConflict(ctx context.Context, inviterID, inviteeUserID int64, deviceHash string) (bool, error)
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
 	TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error)
 	ListInvitees(ctx context.Context, inviterID int64, limit int) ([]AffiliateInvitee, error)
@@ -238,6 +243,19 @@ func (s *AffiliateService) EnsureUserAffiliate(ctx context.Context, userID int64
 	return s.repo.EnsureUserAffiliate(ctx, userID)
 }
 
+func (s *AffiliateService) RecordSignupDevice(ctx context.Context, userID int64, rawDeviceID string) {
+	if s == nil || s.repo == nil || userID <= 0 {
+		return
+	}
+	deviceHash := hashAffiliateDeviceID(rawDeviceID)
+	if deviceHash == "" {
+		return
+	}
+	if err := s.repo.SetSignupDeviceHash(ctx, userID, deviceHash); err != nil {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] Failed to record signup device for user %d: %v", userID, err)
+	}
+}
+
 func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64) (*AffiliateDetail, error) {
 	// Lazy thaw: move any matured frozen quota to available before reading.
 	if s != nil && s.repo != nil {
@@ -267,7 +285,12 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 }
 
 func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, rawCode string) error {
+	return s.BindInviterByCodeWithDevice(ctx, userID, rawCode, "")
+}
+
+func (s *AffiliateService) BindInviterByCodeWithDevice(ctx context.Context, userID int64, rawCode, rawDeviceID string) error {
 	code := strings.ToUpper(strings.TrimSpace(rawCode))
+	s.RecordSignupDevice(ctx, userID, rawDeviceID)
 	if code == "" {
 		return nil
 	}
@@ -334,6 +357,10 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	if inviteeSummary.InviterID == nil || *inviteeSummary.InviterID <= 0 {
 		return 0, nil
 	}
+	if s.hasSignupDeviceRebateConflict(ctx, *inviteeSummary.InviterID, inviteeUserID, inviteeSummary.SignupDeviceHash) {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] Skipped rebate for invitee %d: same signup device already used", inviteeUserID)
+		return 0, nil
+	}
 
 	// 加载邀请人 profile，优先使用专属比例（覆盖全局）
 	inviterSummary, err := s.repo.EnsureUserAffiliate(ctx, *inviteeSummary.InviterID)
@@ -384,6 +411,27 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 		return 0, nil
 	}
 	return rebate, nil
+}
+
+func (s *AffiliateService) hasSignupDeviceRebateConflict(ctx context.Context, inviterID, inviteeUserID int64, deviceHash *string) bool {
+	if s == nil || s.repo == nil || deviceHash == nil || strings.TrimSpace(*deviceHash) == "" {
+		return false
+	}
+	conflict, err := s.repo.HasSignupDeviceRebateConflict(ctx, inviterID, inviteeUserID, strings.TrimSpace(*deviceHash))
+	if err != nil {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] Failed to check signup device conflict: inviter=%d invitee=%d err=%v", inviterID, inviteeUserID, err)
+		return false
+	}
+	return conflict
+}
+
+func hashAffiliateDeviceID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 8 || len(raw) > 128 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("affiliate-device:" + raw))
+	return hex.EncodeToString(sum[:])
 }
 
 // resolveRebateRatePercent returns the inviter's exclusive rate when set,

@@ -266,7 +266,7 @@
 
                 <div class="pl-6">
                   <div
-                    class="markdown-body prose prose-sm max-w-none dark:prose-invert"
+                    class="markdown-body prose prose-base max-w-none dark:prose-invert"
                     v-html="renderMarkdown(selectedAnnouncement.content)"
                   ></div>
                 </div>
@@ -475,7 +475,7 @@ watch(
 <style>
 /* Enhanced Markdown Styles */
 .markdown-body {
-  @apply text-[15px] leading-[1.75];
+  @apply text-base leading-[1.8];
   @apply text-gray-700 dark:text-gray-300;
 }
 
@@ -496,7 +496,7 @@ watch(
 }
 
 .markdown-body p {
-  @apply mb-4 leading-relaxed;
+  @apply mb-5 leading-[1.8];
 }
 
 .markdown-body a {
@@ -517,7 +517,7 @@ watch(
 }
 
 .markdown-body li {
-  @apply leading-relaxed;
+  @apply leading-[1.8];
   @apply pl-2;
 }
 

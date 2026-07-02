@@ -170,6 +170,7 @@ describe('OAuthCallbackView', () => {
       },
     })
     window.sessionStorage.setItem('oauth_aff_code', 'AFF456')
+    window.localStorage.setItem('affiliate_device_id', 'test-device-id')
 
     const wrapper = mount(OAuthCallbackView)
     await vi.dynamicImportSettled()
@@ -184,6 +185,7 @@ describe('OAuthCallbackView', () => {
       password: 'secret-123',
       invitation_code: 'INVITE456',
       aff_code: 'AFF456',
+      affiliate_device_id: 'test-device-id',
     })
     expect(setTokenMock).toHaveBeenCalledWith('token-1')
   })

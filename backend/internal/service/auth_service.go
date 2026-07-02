@@ -133,8 +133,12 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (str
 	return s.RegisterWithVerification(ctx, email, password, "", "", "", "")
 }
 
-// RegisterWithVerification 用户注册（支持邮件验证、优惠码、邀请码和邀请返利码），返回token和用户。
 func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, affiliateCode string) (string, *User, error) {
+	return s.RegisterWithVerificationWithAffiliateDevice(ctx, email, password, verifyCode, promoCode, invitationCode, affiliateCode, "")
+}
+
+func (s *AuthService) RegisterWithVerificationWithAffiliateDevice(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, affiliateCode, affiliateDeviceID string) (string, *User, error) {
+	// RegisterWithVerification 用户注册（支持邮件验证、优惠码、邀请码和邀请返利码），返回token和用户。
 	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
@@ -236,8 +240,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
 		}
+		s.affiliateService.RecordSignupDevice(ctx, user.ID, affiliateDeviceID)
 		if code := strings.TrimSpace(affiliateCode); code != "" {
-			if err := s.affiliateService.BindInviterByCode(ctx, user.ID, code); err != nil {
+			if err := s.affiliateService.BindInviterByCodeWithDevice(ctx, user.ID, code, affiliateDeviceID); err != nil {
 				// 邀请返利码绑定失败不影响注册，只记录日志
 				logger.LegacyPrintf("service.auth", "[Auth] Failed to bind affiliate inviter for user %d: %v", user.ID, err)
 			}
@@ -581,23 +586,27 @@ func (s *AuthService) canBypassRegistrationDisabledForOAuth(ctx context.Context,
 	return cfg.CorpRestrictionPolicy == "internal_only"
 }
 
-// LoginOrRegisterOAuthWithTokenPair 用于第三方 OAuth/SSO 登录，返回完整的 TokenPair。
-// 与 LoginOrRegisterOAuth 功能相同，但返回 TokenPair 而非单个 token。
-// invitationCode 仅在邀请码注册模式下新用户注册时使用；已有账号登录时忽略。
-// affiliateCode 用于邀请返利绑定，仅在新用户注册时使用。
-// signupSource 标识来源渠道（"dingtalk"/"linuxdo"/"wechat"/"oidc" 等），仅用于豁免检查。
 func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, email, username, invitationCode, affiliateCode, signupSource string) (*TokenPair, *User, error) {
-	return s.loginOrRegisterOAuthWithTokenPair(ctx, email, username, invitationCode, affiliateCode, "", signupSource)
+	// LoginOrRegisterOAuthWithTokenPair 用于第三方 OAuth/SSO 登录，返回完整的 TokenPair。
+	// 与 LoginOrRegisterOAuth 功能相同，但返回 TokenPair 而非单个 token。
+	// invitationCode 仅在邀请码注册模式下新用户注册时使用；已有账号登录时忽略。
+	// affiliateCode 用于邀请返利绑定，仅在新用户注册时使用。
+	// signupSource 标识来源渠道（"dingtalk"/"linuxdo"/"wechat"/"oidc" 等），仅用于豁免检查。
+	return s.loginOrRegisterOAuthWithTokenPair(ctx, email, username, invitationCode, affiliateCode, "", "", signupSource)
 }
 
 // LoginOrRegisterOAuthWithTokenPairAndPromoCode behaves like
 // LoginOrRegisterOAuthWithTokenPair and applies promoCode only when a new user
 // is created.
 func (s *AuthService) LoginOrRegisterOAuthWithTokenPairAndPromoCode(ctx context.Context, email, username, invitationCode, affiliateCode, promoCode, signupSource string) (*TokenPair, *User, error) {
-	return s.loginOrRegisterOAuthWithTokenPair(ctx, email, username, invitationCode, affiliateCode, promoCode, signupSource)
+	return s.loginOrRegisterOAuthWithTokenPair(ctx, email, username, invitationCode, affiliateCode, promoCode, "", signupSource)
 }
 
-func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, email, username, invitationCode, affiliateCode, promoCode, signupSource string) (*TokenPair, *User, error) {
+func (s *AuthService) LoginOrRegisterOAuthWithTokenPairAndPromoCodeAndAffiliateDevice(ctx context.Context, email, username, invitationCode, affiliateCode, promoCode, affiliateDeviceID, signupSource string) (*TokenPair, *User, error) {
+	return s.loginOrRegisterOAuthWithTokenPair(ctx, email, username, invitationCode, affiliateCode, promoCode, affiliateDeviceID, signupSource)
+}
+
+func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, email, username, invitationCode, affiliateCode, promoCode, affiliateDeviceID, signupSource string) (*TokenPair, *User, error) {
 	// 检查 refreshTokenCache 是否可用
 	if s.refreshTokenCache == nil {
 		return nil, nil, errors.New("refresh token cache not configured")
@@ -708,7 +717,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode, affiliateDeviceID)
 				}
 			} else {
 				if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -729,7 +738,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode, affiliateDeviceID)
 					if invitationRedeemCode != nil {
 						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
 							return nil, nil, ErrInvitationCodeInvalid
@@ -878,15 +887,16 @@ func authSourceSignupSettings(defaults *AuthSourceDefaultSettings, signupSource 
 
 // bindOAuthAffiliate initializes the affiliate profile and binds the inviter
 // for an OAuth-registered user. Failures are logged but never block registration.
-func (s *AuthService) bindOAuthAffiliate(ctx context.Context, userID int64, affiliateCode string) {
+func (s *AuthService) bindOAuthAffiliate(ctx context.Context, userID int64, affiliateCode, affiliateDeviceID string) {
 	if s.affiliateService == nil || userID <= 0 {
 		return
 	}
 	if _, err := s.affiliateService.EnsureUserAffiliate(ctx, userID); err != nil {
 		logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", userID, err)
 	}
+	s.affiliateService.RecordSignupDevice(ctx, userID, affiliateDeviceID)
 	if code := strings.TrimSpace(affiliateCode); code != "" {
-		if err := s.affiliateService.BindInviterByCode(ctx, userID, code); err != nil {
+		if err := s.affiliateService.BindInviterByCodeWithDevice(ctx, userID, code, affiliateDeviceID); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to bind affiliate inviter for user %d: %v", userID, err)
 		}
 	}

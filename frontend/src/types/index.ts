@@ -124,6 +124,7 @@ export interface RegisterRequest {
   promo_code?: string
   invitation_code?: string
   aff_code?: string
+  affiliate_device_id?: string
 }
 
 export interface AffiliateInvitee {

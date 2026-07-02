@@ -334,9 +334,10 @@ func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 }
 
 type completeEmailOAuthRequest struct {
-	Password       string `json:"password" binding:"required,min=6"`
-	InvitationCode string `json:"invitation_code,omitempty"`
-	AffCode        string `json:"aff_code,omitempty"`
+	Password          string `json:"password" binding:"required,min=6"`
+	InvitationCode    string `json:"invitation_code,omitempty"`
+	AffCode           string `json:"aff_code,omitempty"`
+	AffiliateDeviceID string `json:"affiliate_device_id,omitempty"`
 }
 
 func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider string) {
@@ -411,12 +412,13 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
-	if err := h.authService.FinalizeOAuthEmailAccount(
+	if err := h.authService.FinalizeOAuthEmailAccountWithAffiliateDevice(
 		txCtx,
 		user,
 		strings.TrimSpace(req.InvitationCode),
 		strings.TrimSpace(session.ProviderType),
 		affiliateCode,
+		strings.TrimSpace(req.AffiliateDeviceID),
 	); err != nil {
 		_ = tx.Rollback()
 		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
