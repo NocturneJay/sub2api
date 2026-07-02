@@ -170,6 +170,80 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 		"AccrueQuota must propagate the outer tx — found persisted rows after rollback")
 }
 
+func TestAffiliateRepository_SignupDeviceRebateConflictUsesDeviceHistory(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-device-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	currentInvitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-device-current-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	previousInvitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-device-previous-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	outsider := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-device-outsider-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	for _, uid := range []int64{inviter.ID, currentInvitee.ID, previousInvitee.ID, outsider.ID} {
+		_, err := repo.EnsureUserAffiliate(txCtx, uid)
+		require.NoError(t, err)
+	}
+	bound, err := repo.BindInviter(txCtx, currentInvitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+	bound, err = repo.BindInviter(txCtx, previousInvitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	require.NoError(t, repo.SetSignupDeviceHash(txCtx, inviter.ID, "same-device-hash"))
+	conflict, err := repo.HasSignupDeviceRebateConflict(txCtx, inviter.ID, currentInvitee.ID, "same-device-hash")
+	require.NoError(t, err)
+	require.True(t, conflict, "invitee using inviter's device should not rebate")
+
+	require.NoError(t, repo.SetSignupDeviceHash(txCtx, previousInvitee.ID, "previous-invitee-device"))
+	conflict, err = repo.HasSignupDeviceRebateConflict(txCtx, inviter.ID, currentInvitee.ID, "previous-invitee-device")
+	require.NoError(t, err)
+	require.True(t, conflict, "same inviter's previous invitee device should not rebate")
+
+	require.NoError(t, repo.SetSignupDeviceHash(txCtx, outsider.ID, "outsider-device"))
+	conflict, err = repo.HasSignupDeviceRebateConflict(txCtx, inviter.ID, currentInvitee.ID, "outsider-device")
+	require.NoError(t, err)
+	require.False(t, conflict, "unrelated users must not affect this inviter's rebates")
+
+	require.NoError(t, repo.SetSignupDeviceHash(txCtx, currentInvitee.ID, "current-device-old"))
+	require.NoError(t, repo.SetSignupDeviceHash(txCtx, currentInvitee.ID, "current-device-new"))
+	conflict, err = repo.HasSignupDeviceRebateConflict(txCtx, inviter.ID, currentInvitee.ID, "current-device-old")
+	require.NoError(t, err)
+	require.False(t, conflict, "current invitee's own device history must be excluded")
+
+	deviceCount := querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*) FROM user_affiliate_devices WHERE user_id = $1", currentInvitee.ID)
+	require.Equal(t, 2, deviceCount)
+}
+
 func TestAffiliateRepository_TransferQuotaToBalance_EmptyQuota(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

@@ -76,19 +76,26 @@ func (r *affiliateRepository) SetSignupDeviceHash(ctx context.Context, userID in
 	if userID <= 0 || deviceHash == "" {
 		return nil
 	}
-	client := clientFromContext(ctx, r.client)
-	if _, err := ensureUserAffiliateWithClient(ctx, client, userID); err != nil {
-		return err
-	}
-	_, err := client.ExecContext(ctx, `
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, userID); err != nil {
+			return err
+		}
+		if _, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_devices (user_id, device_hash, first_seen_at, last_seen_at)
+VALUES ($1, $2, NOW(), NOW())
+ON CONFLICT (user_id, device_hash)
+DO UPDATE SET last_seen_at = NOW()`, userID, deviceHash); err != nil {
+			return fmt.Errorf("record affiliate signup device hash: %w", err)
+		}
+		if _, err := txClient.ExecContext(txCtx, `
 UPDATE user_affiliates
-SET signup_device_hash = COALESCE(signup_device_hash, $1),
-    updated_at = CASE WHEN signup_device_hash IS NULL THEN NOW() ELSE updated_at END
-WHERE user_id = $2`, deviceHash, userID)
-	if err != nil {
-		return fmt.Errorf("set affiliate signup device hash: %w", err)
-	}
-	return nil
+SET signup_device_hash = $1,
+    updated_at = CASE WHEN signup_device_hash IS DISTINCT FROM $1 THEN NOW() ELSE updated_at END
+WHERE user_id = $2`, deviceHash, userID); err != nil {
+			return fmt.Errorf("set affiliate signup device hash: %w", err)
+		}
+		return nil
+	})
 }
 
 func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code string) (*service.AffiliateSummary, error) {
@@ -209,10 +216,18 @@ func (r *affiliateRepository) HasSignupDeviceRebateConflict(ctx context.Context,
 	rows, err := client.QueryContext(ctx, `
 SELECT EXISTS (
     SELECT 1
-    FROM user_affiliates ua
-    WHERE ua.signup_device_hash = $1
-      AND ua.user_id <> $2
-      AND (ua.user_id = $3 OR ua.inviter_id = $3)
+    FROM (
+        SELECT user_id
+        FROM user_affiliate_devices
+        WHERE device_hash = $1
+        UNION
+        SELECT user_id
+        FROM user_affiliates
+        WHERE signup_device_hash = $1
+    ) matched
+    JOIN user_affiliates ua ON ua.user_id = matched.user_id
+    WHERE matched.user_id <> $2
+      AND (matched.user_id = $3 OR ua.inviter_id = $3)
 )`, deviceHash, inviteeUserID, inviterID)
 	if err != nil {
 		return false, fmt.Errorf("query affiliate signup device conflict: %w", err)

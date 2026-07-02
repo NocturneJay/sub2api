@@ -343,7 +343,7 @@ describe('EmailVerifyView', () => {
         password: 'secret-123',
         verify_code: '123456',
         aff_code: 'AFF123',
-        affiliate_device_id: 'test-device-id',
+        affiliate_device_id: expect.stringMatching(/^fp2-/),
       })
     )
     expect(persistOAuthTokenContextMock).toHaveBeenCalledWith({

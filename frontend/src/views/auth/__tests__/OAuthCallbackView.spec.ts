@@ -185,7 +185,7 @@ describe('OAuthCallbackView', () => {
       password: 'secret-123',
       invitation_code: 'INVITE456',
       aff_code: 'AFF456',
-      affiliate_device_id: 'test-device-id',
+      affiliate_device_id: expect.stringMatching(/^fp2-/),
     })
     expect(setTokenMock).toHaveBeenCalledWith('token-1')
   })

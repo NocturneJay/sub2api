@@ -90,7 +90,7 @@ describe('oauth adoption auth api', () => {
     expect(post).toHaveBeenCalledWith('/auth/oauth/linuxdo/complete-registration', {
       invitation_code: 'invite-code',
       aff_code: 'AFF123',
-      affiliate_device_id: 'test-device-id',
+      affiliate_device_id: expect.stringMatching(/^fp2-/),
       adopt_display_name: true,
       adopt_avatar: false
     })
@@ -172,7 +172,7 @@ describe('oauth adoption auth api', () => {
     expect(post).toHaveBeenCalledWith('/auth/oauth/wechat/complete-registration', {
       invitation_code: 'invite-code',
       aff_code: 'WXAFF',
-      affiliate_device_id: 'test-device-id',
+      affiliate_device_id: expect.stringMatching(/^fp2-/),
       adopt_display_name: false,
       adopt_avatar: true
     })
