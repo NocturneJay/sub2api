@@ -82,15 +82,15 @@ func (r *affiliateRepository) SetSignupDeviceHash(ctx context.Context, userID in
 		}
 		if _, err := txClient.ExecContext(txCtx, `
 INSERT INTO user_affiliate_devices (user_id, device_hash, first_seen_at, last_seen_at)
-VALUES ($1, $2, NOW(), NOW())
+VALUES ($1, $2::varchar(64), NOW(), NOW())
 ON CONFLICT (user_id, device_hash)
 DO UPDATE SET last_seen_at = NOW()`, userID, deviceHash); err != nil {
 			return fmt.Errorf("record affiliate signup device hash: %w", err)
 		}
 		if _, err := txClient.ExecContext(txCtx, `
 UPDATE user_affiliates
-SET signup_device_hash = $1,
-    updated_at = CASE WHEN signup_device_hash IS DISTINCT FROM $1 THEN NOW() ELSE updated_at END
+SET signup_device_hash = $1::varchar(64),
+    updated_at = CASE WHEN signup_device_hash IS DISTINCT FROM $1::varchar(64) THEN NOW() ELSE updated_at END
 WHERE user_id = $2`, deviceHash, userID); err != nil {
 			return fmt.Errorf("set affiliate signup device hash: %w", err)
 		}
