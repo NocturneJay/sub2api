@@ -6,7 +6,7 @@
         class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[8vh] backdrop-blur-md"
       >
         <div
-          class="w-full max-w-[min(1720px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+          class="w-full max-w-[min(1280px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
           @click.stop
         >
           <!-- Header with warm gradient -->
@@ -34,7 +34,7 @@
               </div>
 
               <!-- Title -->
-              <h2 class="mb-2 text-4xl font-bold leading-tight text-gray-900 dark:text-white">
+              <h2 class="mb-2 text-3xl font-bold leading-tight text-gray-900 dark:text-white">
                 {{ announcementStore.currentPopup.title }}
               </h2>
 
