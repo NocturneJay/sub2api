@@ -380,6 +380,7 @@ import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import userChannelsAPI, {
   type UserAvailableGroup,
+  type UserPricingInterval,
   type UserSupportedModelPricing,
 } from '@/api/channels'
 import userGroupsAPI from '@/api/groups'
@@ -533,16 +534,32 @@ function fmtTok(v: number | null, rate: number): string {
 }
 
 function fmtPer(p: UserSupportedModelPricing, rate: number): string {
-  if (p.billing_mode === BILLING_MODE_IMAGE) {
-    const v = p.image_output_price ?? p.per_request_price
-    return `${formatScaled(v == null ? null : v * rate, 1)}${t('modelPlaza.unitPerImage')}`
+  if (p.billing_mode === BILLING_MODE_IMAGE || p.billing_mode === BILLING_MODE_PER_REQUEST) {
+    const unit =
+      p.billing_mode === BILLING_MODE_IMAGE ? t('modelPlaza.unitPerImage') : t('modelPlaza.unitPerRequest')
+    const tier = firstPerRequestInterval(p)
+    if (tier) {
+      return `${intervalLabel(tier)} ${formatPerUnit(tier.per_request_price, rate)}${unit}`
+    }
+    return `${formatPerUnit(p.per_request_price, rate)}${unit}`
   }
-  const v = p.per_request_price
-  return `${formatScaled(v == null ? null : v * rate, 1)}${t('modelPlaza.unitPerRequest')}`
+  return `${formatPerUnit(p.per_request_price, rate)}${t('modelPlaza.unitPerRequest')}`
 }
 
 function perUnitLabel(p: UserSupportedModelPricing): string {
   return p.billing_mode === BILLING_MODE_IMAGE ? t('modelPlaza.perImage') : t('modelPlaza.perRequest')
+}
+
+function formatPerUnit(v: number | null | undefined, rate: number): string {
+  return formatScaled(v == null ? null : v * rate, 1)
+}
+
+function firstPerRequestInterval(p: UserSupportedModelPricing): UserPricingInterval | null {
+  return p.intervals?.find((iv) => iv.per_request_price != null) ?? null
+}
+
+function intervalLabel(iv: UserPricingInterval): string {
+  return iv.tier_label || `(${iv.min_tokens}, ${iv.max_tokens == null ? '∞' : iv.max_tokens}]`
 }
 
 // ── 展示辅助 ──────────────────────────────────────────────
@@ -587,8 +604,10 @@ function isFreeModel(m: PlazaModel): boolean {
   if (p.billing_mode === BILLING_MODE_TOKEN) {
     return (p.input_price ?? 0) === 0 && (p.output_price ?? 0) === 0
   }
-  if (p.billing_mode === BILLING_MODE_IMAGE) return (p.image_output_price ?? p.per_request_price ?? 0) === 0
-  return (p.per_request_price ?? 0) === 0
+  const prices = [p.per_request_price, ...(p.intervals || []).map((iv) => iv.per_request_price)].filter(
+    (v): v is number => v != null,
+  )
+  return prices.length > 0 && prices.every((v) => v === 0)
 }
 
 function hasIntervals(m: PlazaModel): boolean {
@@ -601,7 +620,7 @@ function intervalsTitle(m: PlazaModel): string {
   if (!p?.intervals) return ''
   return p.intervals
     .map((iv) => {
-      const range = iv.tier_label || `(${iv.min_tokens}, ${iv.max_tokens == null ? '∞' : iv.max_tokens}]`
+      const range = intervalLabel(iv)
       if (p.billing_mode === BILLING_MODE_TOKEN) {
         return `${range}: ${formatScaled(iv.input_price, 1_000_000)} / ${formatScaled(iv.output_price, 1_000_000)}`
       }

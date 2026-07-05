@@ -113,10 +113,11 @@
             <PricingRow
               v-if="
                 model.pricing.billing_mode === BILLING_MODE_IMAGE &&
-                model.pricing.image_output_price != null
+                model.pricing.per_request_price != null &&
+                !hasPerRequestIntervals(model.pricing)
               "
               :label="t(prefixKey('imageOutputPrice'))"
-              :value="model.pricing.image_output_price"
+              :value="model.pricing.per_request_price"
               :unit="t(prefixKey('unitPerRequest'))"
               :scale="1"
             />
@@ -230,6 +231,10 @@ const billingModeLabel = computed(() => {
 function formatRange(min: number, max: number | null): string {
   const maxLabel = max == null ? '∞' : String(max)
   return `(${min}, ${maxLabel}]`
+}
+
+function hasPerRequestIntervals(pricing: UserSupportedModel['pricing']): boolean {
+  return Boolean(pricing?.intervals?.some((iv) => iv.per_request_price != null))
 }
 
 function formatInterval(iv: UserPricingInterval, mode: BillingMode): string {
