@@ -27,7 +27,7 @@
           @click="closeModal"
         >
           <div
-            class="w-full max-w-[min(980px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[min(880px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Gradient -->
@@ -187,7 +187,7 @@
           @click="closeDetail"
         >
           <div
-            class="w-full max-w-[min(1440px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[min(1200px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Decorative Elements -->
@@ -224,7 +224,7 @@
                   </div>
 
                   <!-- Title -->
-                  <h2 class="mb-3 text-3xl font-bold leading-tight text-gray-900 dark:text-white">
+                  <h2 class="mb-3 text-[26px] font-bold leading-tight text-gray-900 dark:text-white">
                     {{ selectedAnnouncement.title }}
                   </h2>
 
@@ -475,7 +475,7 @@ watch(
 <style>
 /* Enhanced Markdown Styles */
 .markdown-body {
-  @apply text-[25px] leading-[1.75];
+  @apply text-[21px] leading-[1.75];
   @apply text-gray-700 dark:text-gray-300;
 }
 
@@ -535,7 +535,7 @@ watch(
 }
 
 .markdown-body code {
-  @apply rounded-lg bg-gray-100 px-2 py-1 text-[22px] font-mono text-pink-600 dark:bg-dark-700 dark:text-pink-400;
+  @apply rounded-lg bg-gray-100 px-2 py-1 text-[18px] font-mono text-pink-600 dark:bg-dark-700 dark:text-pink-400;
 }
 
 .markdown-body pre {
@@ -543,7 +543,7 @@ watch(
 }
 
 .markdown-body pre code {
-  @apply whitespace-pre-wrap break-words bg-transparent p-0 text-[22px] text-gray-800 dark:text-gray-200;
+  @apply whitespace-pre-wrap break-words bg-transparent p-0 text-[18px] text-gray-800 dark:text-gray-200;
 }
 
 .markdown-body hr {
