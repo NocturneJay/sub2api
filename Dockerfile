@@ -52,6 +52,11 @@ ARG GOSUMDB
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
 
+# Keep in-place production builds from exhausting the 2 GiB host.
+ENV GOMAXPROCS=1
+ENV GOMEMLIMIT=1024MiB
+ENV GOGC=50
+
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
