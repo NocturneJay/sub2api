@@ -128,8 +128,14 @@
               :key="g.id"
               @click="selectedGroupId = g.id"
               :class="chipClass(selectedGroupId === g.id)"
-              :title="peakTitle(g)"
+              :title="chipTitle(g)"
             >
+              <Icon
+                v-if="g.is_exclusive"
+                name="shield"
+                size="xs"
+                class="h-3 w-3 text-purple-500 dark:text-purple-400"
+              />
               <PlatformIcon :platform="g.platform as GroupPlatform" size="xs" />
               {{ g.name }}
               <span class="rounded bg-black/10 px-1 py-0.5 text-[10px] font-semibold dark:bg-white/10">
@@ -637,10 +643,14 @@ function groupHasPeak(g: UserAvailableGroup): boolean {
   return groupHasPeakRate(g)
 }
 
-function peakTitle(g: UserAvailableGroup): string {
-  if (!groupHasPeak(g)) return ''
-  const window = formatPeakRateWindow(g, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
-  return t('common.peakRateTooltip', { window })
+function chipTitle(g: UserAvailableGroup): string {
+  const parts: string[] = []
+  if (g.is_exclusive) parts.push(t('modelPlaza.exclusiveTooltip'))
+  if (groupHasPeak(g)) {
+    const window = formatPeakRateWindow(g, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
+    parts.push(t('common.peakRateTooltip', { window }))
+  }
+  return parts.join('\n')
 }
 
 // ── 样式辅助 ──────────────────────────────────────────────

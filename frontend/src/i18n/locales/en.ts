@@ -1154,6 +1154,7 @@ export default {
     provider: 'Provider',
     group: 'Group',
     groupRateHint: '(switch groups to see corresponding prices)',
+    exclusiveTooltip: 'Exclusive group: granted to you by the admin',
     all: 'All',
     onlyAvailable: 'Available only',
     priceModeLabel: 'Price mode',

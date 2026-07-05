@@ -1158,6 +1158,7 @@ export default {
     provider: '供应商',
     group: '分组',
     groupRateHint: '(切换分组查看对应价格)',
+    exclusiveTooltip: '专属分组:管理员授权给你的分组',
     all: '全部',
     onlyAvailable: '只显示可用',
     priceModeLabel: '价格模式',
