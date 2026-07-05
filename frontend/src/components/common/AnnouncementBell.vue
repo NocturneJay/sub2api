@@ -27,7 +27,7 @@
           @click="closeModal"
         >
           <div
-            class="w-full max-w-[720px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[min(1240px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Gradient -->
@@ -187,7 +187,7 @@
           @click="closeDetail"
         >
           <div
-            class="w-full max-w-[960px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[min(1920px,96vw)] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Decorative Elements -->
@@ -224,7 +224,7 @@
                   </div>
 
                   <!-- Title -->
-                  <h2 class="mb-3 text-2xl font-bold leading-tight text-gray-900 dark:text-white">
+                  <h2 class="mb-3 text-4xl font-bold leading-tight text-gray-900 dark:text-white">
                     {{ selectedAnnouncement.title }}
                   </h2>
 
@@ -258,7 +258,7 @@
             </div>
 
             <!-- Body with Enhanced Markdown -->
-            <div class="max-h-[68vh] overflow-y-auto bg-white px-8 py-8 dark:bg-dark-800">
+            <div class="max-h-[70vh] overflow-y-auto bg-white px-8 py-8 dark:bg-dark-800">
               <!-- Content with decorative border -->
               <div class="relative">
                 <!-- Decorative left border -->
@@ -475,7 +475,7 @@ watch(
 <style>
 /* Enhanced Markdown Styles */
 .markdown-body {
-  @apply text-[17px] leading-[1.85];
+  @apply text-[34px] leading-[1.7];
   @apply text-gray-700 dark:text-gray-300;
 }
 
@@ -535,7 +535,7 @@ watch(
 }
 
 .markdown-body code {
-  @apply rounded-lg bg-gray-100 px-2 py-1 text-[15px] font-mono text-pink-600 dark:bg-dark-700 dark:text-pink-400;
+  @apply rounded-lg bg-gray-100 px-2 py-1 text-[30px] font-mono text-pink-600 dark:bg-dark-700 dark:text-pink-400;
 }
 
 .markdown-body pre {
@@ -543,7 +543,7 @@ watch(
 }
 
 .markdown-body pre code {
-  @apply whitespace-pre-wrap break-words bg-transparent p-0 text-[15px] text-gray-800 dark:text-gray-200;
+  @apply whitespace-pre-wrap break-words bg-transparent p-0 text-[30px] text-gray-800 dark:text-gray-200;
 }
 
 .markdown-body hr {
