@@ -884,6 +884,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		keepaliveCh = keepaliveTicker.C
 	}
 	lastDataAt := time.Now()
+	streamStartedAt := time.Now()
 	var parser openAICompatSSEFrameParser
 
 	for {
@@ -936,7 +937,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			if clientDisconnected {
 				continue
 			}
-			if refusalDetector.Enabled() && !clientOutputStarted {
+			// 静默拒绝检测的“憋输出”只压制心跳有限时长：拒绝空流几秒内就会结束，
+			// 而大请求慢首字可超 120s，压制过久会被 Cloudflare 等中间层以 524 掐断。
+			if refusalDetector.Enabled() && !clientOutputStarted && time.Since(streamStartedAt) < openAISilentRefusalKeepaliveHoldMax {
 				continue
 			}
 			if time.Since(lastDataAt) < keepaliveInterval {

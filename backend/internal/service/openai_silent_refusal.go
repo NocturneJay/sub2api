@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,11 @@ const (
 	openAISilentRefusalErrorCode           = "openai_silent_refusal"
 	openAISilentRefusalUpstreamMessage     = "OpenAI upstream returned an empty completion stream with finish_reason=stop and no usage"
 	openAISilentRefusalClientMessage       = "Upstream returned an empty completion without usage; no fallback account was available"
+	// openAISilentRefusalKeepaliveHoldMax 限制静默拒绝检测压制首字前 keepalive 的最长时间。
+	// 静默拒绝的空流几秒内就会结束，压制不需要超过这个时长；而 Cloudflare 等中间层
+	// 约 120s 收不到任何字节就会掐断连接（524），大请求（≥64KB）慢首字时必须在
+	// 此之前放行心跳，否则长思考请求必然被中间层杀死。
+	openAISilentRefusalKeepaliveHoldMax = 60 * time.Second
 )
 
 type openAIChatSilentRefusalDetector struct {
