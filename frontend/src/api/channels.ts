@@ -75,6 +75,23 @@ export async function getAvailable(options?: { signal?: AbortSignal }): Promise<
   return data
 }
 
-export const userChannelsAPI = { getAvailable }
+/** 模型广场展示元数据:单个模型的端点标签(管理员配置,仅影响展示)。 */
+export interface ModelPlazaModelMeta {
+  endpoints: string[]
+}
+
+export interface ModelPlazaMeta {
+  models: Record<string, ModelPlazaModelMeta>
+}
+
+/** 获取模型广场展示元数据(与可用渠道共用 available_channels 开关)。 */
+export async function getModelMeta(options?: { signal?: AbortSignal }): Promise<ModelPlazaMeta> {
+  const { data } = await apiClient.get<ModelPlazaMeta>('/channels/model-meta', {
+    signal: options?.signal
+  })
+  return data
+}
+
+export const userChannelsAPI = { getAvailable, getModelMeta }
 
 export default userChannelsAPI

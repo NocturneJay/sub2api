@@ -1160,7 +1160,6 @@ export default {
     groupRateHint: '(切换分组查看对应价格)',
     exclusiveTooltip: '专属分组:管理员授权给你的分组',
     all: '全部',
-    onlyAvailable: '只显示可用',
     priceModeLabel: '价格模式',
     priceOriginal: '原价',
     priceActual: '倍率后',
@@ -1168,8 +1167,8 @@ export default {
     viewCards: '卡片视图',
     viewList: '列表视图',
     totalModels: '共 {count} 个模型',
-    unavailableInGroup: '当前分组不可用',
     free: '限时免费',
+    endpoints: '可用端点',
     billingModeToken: '按量付费',
     billingModePerRequest: '按次付费',
     billingModeImage: '按图付费',
@@ -4833,6 +4832,25 @@ export default {
     },
 
     // Announcements
+    modelPlaza: {
+      title: '模型广场',
+      description: '编辑模型广场的展示信息(仅影响用户看到的内容,不影响计费与转发)',
+      hint: '在这里给每个模型配置"可用端点"标签,用户在模型广场的模型卡片上会看到这些标签。此配置只影响展示,不会改变模型的实际可用性、计费或请求转发。留空则不显示。',
+      searchPlaceholder: '搜索模型名称或端点...',
+      presetHint: '常用端点(复制填入下方输入框,多个用逗号分隔):',
+      totalModels: '共 {count} 个模型',
+      unsaved: '有未保存的修改',
+      save: '保存全部',
+      saved: '已保存',
+      empty: '暂无模型',
+      endpointsPlaceholder: '如: /v1/chat/completions, /v1/responses(留空不显示)',
+      columns: {
+        model: '模型名称',
+        platform: '平台',
+        endpoints: '可用端点(逗号分隔)'
+      }
+    },
+
     announcements: {
       title: '公告管理',
       description: '创建公告并按条件投放',

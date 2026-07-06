@@ -367,6 +367,11 @@ const (
 	// sidebar entry is hidden. Defaults to false (opt-in feature).
 	SettingKeyAvailableChannelsEnabled = "available_channels_enabled"
 
+	// SettingKeyModelPlazaMeta stores JSON display metadata for the user-facing model
+	// plaza (per-model endpoint tags edited by admin). Display-only: it never affects
+	// billing, routing or model availability.
+	SettingKeyModelPlazaMeta = "model_plaza_meta"
+
 	// =========================
 	// Overload Cooldown (529)
 	// =========================

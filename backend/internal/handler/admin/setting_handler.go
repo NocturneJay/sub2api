@@ -3829,3 +3829,41 @@ func equalPlatformQuotaSettings(before, after map[string]*service.DefaultPlatfor
 	}
 	return true
 }
+
+// GetModelPlazaMeta 获取模型广场展示元数据(按模型的可用端点标签)。
+// GET /api/v1/admin/settings/model-plaza-meta
+func (h *SettingHandler) GetModelPlazaMeta(c *gin.Context) {
+	meta, err := h.settingService.GetModelPlazaMeta(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, meta)
+}
+
+// UpdateModelPlazaMetaRequest 更新模型广场展示元数据请求。
+type UpdateModelPlazaMetaRequest struct {
+	Models map[string]service.ModelPlazaModelMeta `json:"models"`
+}
+
+// UpdateModelPlazaMeta 更新模型广场展示元数据。仅影响用户端展示,不影响计费与转发。
+// PUT /api/v1/admin/settings/model-plaza-meta
+func (h *SettingHandler) UpdateModelPlazaMeta(c *gin.Context) {
+	var req UpdateModelPlazaMetaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.settingService.SetModelPlazaMeta(c.Request.Context(), &service.ModelPlazaMeta{Models: req.Models}); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	meta, err := h.settingService.GetModelPlazaMeta(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, meta)
+}

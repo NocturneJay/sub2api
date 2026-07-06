@@ -471,6 +471,9 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.POST("/admin-api-key/regenerate", h.Admin.Setting.RegenerateAdminAPIKey)
 		adminSettings.DELETE("/admin-api-key", h.Admin.Setting.DeleteAdminAPIKey)
 		// 529过载冷却配置
+		// 模型广场展示元数据(按模型端点标签,仅影响用户端展示)
+		adminSettings.GET("/model-plaza-meta", h.Admin.Setting.GetModelPlazaMeta)
+		adminSettings.PUT("/model-plaza-meta", h.Admin.Setting.UpdateModelPlazaMeta)
 		adminSettings.GET("/overload-cooldown", h.Admin.Setting.GetOverloadCooldownSettings)
 		adminSettings.PUT("/overload-cooldown", h.Admin.Setting.UpdateOverloadCooldownSettings)
 		// 429默认回避配置
@@ -637,6 +640,7 @@ func registerChannelRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		channels.GET("", h.Admin.Channel.List)
 		channels.GET("/model-pricing", h.Admin.Channel.GetModelDefaultPricing)
+		channels.GET("/plaza-models", h.Admin.Channel.ListPlazaModels)
 		channels.GET("/pricing/sync-models", h.Admin.Channel.SyncPricingModels)
 		channels.GET("/:id", h.Admin.Channel.GetByID)
 		channels.POST("", h.Admin.Channel.Create)

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -532,4 +533,44 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 
 	models := h.pricingService.ListModelNamesByProvider(provider)
 	response.Success(c, gin.H{"models": models})
+}
+
+// plazaModelRef 模型广场管理端编辑页预填用的去重模型条目。
+type plazaModelRef struct {
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
+}
+
+// ListPlazaModels 返回所有启用渠道聚合出的去重模型列表(含平台),
+// 供模型广场管理端编辑页预填模型名。
+// GET /api/v1/admin/channels/plaza-models
+func (h *ChannelHandler) ListPlazaModels(c *gin.Context) {
+	channels, err := h.channelService.ListAvailable(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	seen := make(map[string]struct{}, 64)
+	out := make([]plazaModelRef, 0, 64)
+	for i := range channels {
+		if channels[i].Status != service.StatusActive {
+			continue
+		}
+		for _, m := range channels[i].SupportedModels {
+			key := m.Platform + "|" + m.Name
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, plazaModelRef{Name: m.Name, Platform: m.Platform})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Platform < out[j].Platform
+	})
+	response.Success(c, out)
 }

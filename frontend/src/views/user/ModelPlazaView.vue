@@ -63,20 +63,6 @@
               </button>
             </div>
 
-            <!-- 只显示可用 -->
-            <button
-              @click="onlyAvailable = !onlyAvailable"
-              class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-              :class="
-                onlyAvailable
-                  ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
-                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-400 dark:hover:bg-dark-700'
-              "
-            >
-              <Icon name="eye" size="sm" class="h-3.5 w-3.5" />
-              {{ t('modelPlaza.onlyAvailable') }}
-            </button>
-
             <button
               @click="load"
               :disabled="loading"
@@ -212,18 +198,22 @@
             </span>
           </div>
 
+          <!-- 可用端点 -->
+          <div v-if="endpointsOf(m).length > 0" class="mb-3 flex flex-wrap items-center gap-1.5">
+            <span
+              v-for="ep in endpointsOf(m)"
+              :key="ep"
+              class="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+              :title="t('modelPlaza.endpoints')"
+            >
+              {{ ep }}
+            </span>
+          </div>
+
           <!-- 价格区 -->
           <div class="mt-auto">
-            <!-- 指定分组:不可用 -->
-            <div
-              v-if="selectedGroupId !== 0 && priceLines(m).length === 0"
-              class="rounded-lg bg-red-50 py-2.5 text-center text-xs font-medium text-red-500 dark:bg-red-900/15 dark:text-red-400"
-            >
-              {{ t('modelPlaza.unavailableInGroup') }}
-            </div>
-
             <!-- 指定分组:价格明细 -->
-            <template v-else-if="selectedGroupId !== 0">
+            <template v-if="selectedGroupId !== 0">
               <div v-for="line in priceLines(m)" :key="line.group.id" class="space-y-1 text-sm">
                 <template v-if="!line.pricing">
                   <div class="text-xs text-gray-400">{{ t('modelPlaza.noPricing') }}</div>
@@ -323,6 +313,15 @@
                     {{ t('modelPlaza.free') }}
                   </span>
                 </div>
+                <div v-if="endpointsOf(m).length > 0" class="mt-1 flex flex-wrap gap-1">
+                  <span
+                    v-for="ep in endpointsOf(m)"
+                    :key="ep"
+                    class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500 dark:bg-dark-700 dark:text-gray-400"
+                  >
+                    {{ ep }}
+                  </span>
+                </div>
               </td>
               <td class="px-4 py-3">
                 <span
@@ -338,32 +337,23 @@
               <td class="px-4 py-3">
                 <span :class="billingBadgeClass(m)">{{ billingLabel(m) }}</span>
               </td>
-              <template v-if="selectedGroupId !== 0 && priceLines(m).length === 0">
-                <td colspan="3" class="px-4 py-3">
-                  <span class="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-500 dark:bg-red-900/15 dark:text-red-400">
-                    {{ t('modelPlaza.unavailableInGroup') }}
-                  </span>
-                </td>
-              </template>
-              <template v-else>
-                <td class="px-4 py-3 align-top">
-                  <div v-for="line in priceLines(m)" :key="`in-${line.group.id}`" class="whitespace-nowrap py-0.5 text-xs">
-                    <span v-if="selectedGroupId === 0" class="text-gray-400 dark:text-gray-500">{{ line.group.name }}: </span>
-                    <span class="font-medium text-gray-900 dark:text-white">{{ tableCellIn(line) }}</span>
-                  </div>
-                </td>
-                <td class="px-4 py-3 align-top">
-                  <div v-for="line in priceLines(m)" :key="`out-${line.group.id}`" class="whitespace-nowrap py-0.5 text-xs">
-                    <span v-if="selectedGroupId === 0" class="text-gray-400 dark:text-gray-500">{{ line.group.name }}: </span>
-                    <span class="font-medium text-gray-900 dark:text-white">{{ tableCellOut(line) }}</span>
-                  </div>
-                </td>
-                <td class="px-4 py-3 align-top text-[11px] text-gray-400 dark:text-gray-500">
-                  <div v-for="line in priceLines(m)" :key="`ex-${line.group.id}`" class="whitespace-nowrap py-0.5">
-                    {{ tableCellExtra(line) }}
-                  </div>
-                </td>
-              </template>
+              <td class="px-4 py-3 align-top">
+                <div v-for="line in priceLines(m)" :key="`in-${line.group.id}`" class="whitespace-nowrap py-0.5 text-xs">
+                  <span v-if="selectedGroupId === 0" class="text-gray-400 dark:text-gray-500">{{ line.group.name }}: </span>
+                  <span class="font-medium text-gray-900 dark:text-white">{{ tableCellIn(line) }}</span>
+                </div>
+              </td>
+              <td class="px-4 py-3 align-top">
+                <div v-for="line in priceLines(m)" :key="`out-${line.group.id}`" class="whitespace-nowrap py-0.5 text-xs">
+                  <span v-if="selectedGroupId === 0" class="text-gray-400 dark:text-gray-500">{{ line.group.name }}: </span>
+                  <span class="font-medium text-gray-900 dark:text-white">{{ tableCellOut(line) }}</span>
+                </div>
+              </td>
+              <td class="px-4 py-3 align-top text-[11px] text-gray-400 dark:text-gray-500">
+                <div v-for="line in priceLines(m)" :key="`ex-${line.group.id}`" class="whitespace-nowrap py-0.5">
+                  {{ tableCellExtra(line) }}
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -379,6 +369,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import userChannelsAPI, {
+  type ModelPlazaMeta,
   type UserAvailableGroup,
   type UserPricingInterval,
   type UserSupportedModelPricing,
@@ -413,15 +404,19 @@ const loading = ref(false)
 const groups = ref<UserAvailableGroup[]>([])
 const models = ref<PlazaModel[]>([])
 const userGroupRates = ref<Record<number, number>>({})
+const plazaMeta = ref<ModelPlazaMeta>({ models: {} })
 
 async function load() {
   loading.value = true
   try {
-    const [list, rates] = await Promise.all([
+    // 端点元数据失败不阻塞主列表:降级为不显示端点标签。
+    const [list, rates, meta] = await Promise.all([
       userChannelsAPI.getAvailable(),
       userGroupsAPI.getUserGroupRates().catch(() => ({}) as Record<number, number>),
+      userChannelsAPI.getModelMeta().catch(() => ({ models: {} }) as ModelPlazaMeta),
     ])
     userGroupRates.value = rates
+    plazaMeta.value = meta?.models ? meta : { models: {} }
 
     const groupMap = new Map<number, UserAvailableGroup>()
     const modelMap = new Map<string, PlazaModel>()
@@ -462,7 +457,6 @@ onMounted(load)
 const searchQuery = ref('')
 const selectedPlatform = ref<string>('all')
 const selectedGroupId = ref<number>(0)
-const onlyAvailable = ref(false)
 const actualPrice = ref(localStorage.getItem('modelPlaza.actualPrice') !== '0')
 const viewMode = ref<'card' | 'list'>(localStorage.getItem('modelPlaza.viewMode') === 'list' ? 'list' : 'card')
 
@@ -494,9 +488,8 @@ const filteredModels = computed(() => {
   return models.value.filter((m) => {
     if (selectedPlatform.value !== 'all' && m.platform !== selectedPlatform.value) return false
     if (q && !m.name.toLowerCase().includes(q)) return false
-    if (selectedGroupId.value !== 0 && onlyAvailable.value && !m.groupPricing.has(selectedGroupId.value)) {
-      return false
-    }
+    // 选中具体分组时只展示该分组实际支持的模型
+    if (selectedGroupId.value !== 0 && !m.groupPricing.has(selectedGroupId.value)) return false
     return true
   })
 })
@@ -563,6 +556,10 @@ function intervalLabel(iv: UserPricingInterval): string {
 }
 
 // ── 展示辅助 ──────────────────────────────────────────────
+
+function endpointsOf(m: PlazaModel): string[] {
+  return plazaMeta.value.models[m.name]?.endpoints ?? []
+}
 
 function firstPricing(m: PlazaModel): UserSupportedModelPricing | null {
   for (const p of m.groupPricing.values()) {

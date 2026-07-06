@@ -170,6 +170,26 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	response.Success(c, out)
 }
 
+// ModelMeta 返回模型广场展示元数据(管理员配置的按模型端点标签)。
+// 与可用渠道共用 available_channels 开关;仅登录用户可见。
+// GET /api/v1/channels/model-meta
+func (h *AvailableChannelHandler) ModelMeta(c *gin.Context) {
+	if _, ok := middleware.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if !h.featureEnabled(c) || h.settingService == nil {
+		response.Success(c, service.ModelPlazaMeta{Models: map[string]service.ModelPlazaModelMeta{}})
+		return
+	}
+	meta, err := h.settingService.GetModelPlazaMeta(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, meta)
+}
+
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
 // 每个 section 对应一个平台，只包含该平台的 groups 和 supported_models。
 // 输出按 platform 字母序稳定排序，便于前端等效比较与回归测试。

@@ -1156,7 +1156,6 @@ export default {
     groupRateHint: '(switch groups to see corresponding prices)',
     exclusiveTooltip: 'Exclusive group: granted to you by the admin',
     all: 'All',
-    onlyAvailable: 'Available only',
     priceModeLabel: 'Price mode',
     priceOriginal: 'Original',
     priceActual: 'After rate',
@@ -1164,8 +1163,8 @@ export default {
     viewCards: 'Card view',
     viewList: 'List view',
     totalModels: '{count} models',
-    unavailableInGroup: 'Not available in this group',
     free: 'Free',
+    endpoints: 'Endpoints',
     billingModeToken: 'Pay per token',
     billingModePerRequest: 'Pay per request',
     billingModeImage: 'Pay per image',
@@ -4681,6 +4680,25 @@ export default {
     },
 
     // Announcements
+    modelPlaza: {
+      title: 'Model Plaza',
+      description: 'Edit display info for the model plaza (display only, no billing/routing impact)',
+      hint: 'Configure "endpoint" tags for each model here. Users will see these tags on model cards in the plaza. Display only: it never changes actual availability, billing or request routing. Leave empty to hide.',
+      searchPlaceholder: 'Search model name or endpoint...',
+      presetHint: 'Common endpoints (copy into the inputs below, comma separated):',
+      totalModels: '{count} models',
+      unsaved: 'Unsaved changes',
+      save: 'Save all',
+      saved: 'Saved',
+      empty: 'No models',
+      endpointsPlaceholder: 'e.g. /v1/chat/completions, /v1/responses (empty = hidden)',
+      columns: {
+        model: 'Model',
+        platform: 'Platform',
+        endpoints: 'Endpoints (comma separated)'
+      }
+    },
+
     announcements: {
       title: 'Announcements',
       description: 'Create announcements and target by conditions',
