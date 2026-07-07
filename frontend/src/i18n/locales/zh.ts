@@ -1159,6 +1159,8 @@ export default {
     group: '分组',
     groupRateHint: '(切换分组查看对应价格)',
     exclusiveTooltip: '专属分组:管理员授权给你的分组',
+    imageRateBadge: '图 x{rate}',
+    imageRateTooltip: '图片按次计费使用独立倍率 x{rate},不随通用倍率与专属倍率变化',
     all: '全部',
     priceModeLabel: '价格模式',
     priceOriginal: '原价',

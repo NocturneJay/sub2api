@@ -1155,6 +1155,8 @@ export default {
     group: 'Group',
     groupRateHint: '(switch groups to see corresponding prices)',
     exclusiveTooltip: 'Exclusive group: granted to you by the admin',
+    imageRateBadge: 'img x{rate}',
+    imageRateTooltip: 'Image billing uses an independent rate x{rate}, unaffected by the general or personal rate',
     all: 'All',
     priceModeLabel: 'Price mode',
     priceOriginal: 'Original',

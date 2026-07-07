@@ -20,6 +20,9 @@ export interface UserAvailableGroup {
   peak_rate_multiplier: number
   /** true = 专属分组（小范围授权）；false = 公开分组。 */
   is_exclusive: boolean
+  /** true 时图片按次计费使用独立倍率 image_rate_multiplier(忽略通用/用户专属/高峰倍率)。 */
+  image_rate_independent: boolean
+  image_rate_multiplier: number
 }
 
 export interface UserPricingInterval {

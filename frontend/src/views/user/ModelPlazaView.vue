@@ -131,6 +131,12 @@
                 </template>
                 <template v-else>{{ g.rate_multiplier }}x</template>
               </span>
+              <span
+                v-if="g.image_rate_independent"
+                class="rounded bg-purple-100 px-1 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+              >
+                {{ t('modelPlaza.imageRateBadge', { rate: g.image_rate_multiplier }) }}
+              </span>
               <Icon v-if="groupHasPeak(g)" name="clock" size="xs" class="h-3 w-3 text-amber-500" />
               <span class="text-[11px] opacity-60">{{ groupCounts[g.id] || 0 }}</span>
             </button>
@@ -507,19 +513,33 @@ function effectiveRate(g: UserAvailableGroup): number {
   return userGroupRates.value[g.id] ?? g.rate_multiplier
 }
 
-function displayRate(g: UserAvailableGroup): number {
-  return actualPrice.value ? effectiveRate(g) : 1
+/**
+ * 展示倍率,与计费侧 resolveImageRateMultiplier 保持一致:
+ * 按图计费且分组开启图片独立倍率时,用 image_rate_multiplier
+ * (忽略通用倍率与用户专属倍率);其余情况用通用有效倍率。
+ * 原价模式恒为 1。
+ */
+function displayRate(g: UserAvailableGroup, pricing: UserSupportedModelPricing | null): number {
+  if (!actualPrice.value) return 1
+  if (pricing?.billing_mode === BILLING_MODE_IMAGE && g.image_rate_independent) {
+    return g.image_rate_multiplier < 0 ? 0 : g.image_rate_multiplier
+  }
+  return effectiveRate(g)
 }
 
 function priceLines(m: PlazaModel): PriceLine[] {
   if (selectedGroupId.value !== 0) {
     const g = groups.value.find((x) => x.id === selectedGroupId.value)
     if (!g || !m.groupPricing.has(g.id)) return []
-    return [{ group: g, pricing: m.groupPricing.get(g.id) ?? null, rate: displayRate(g) }]
+    const pricing = m.groupPricing.get(g.id) ?? null
+    return [{ group: g, pricing, rate: displayRate(g, pricing) }]
   }
   return groups.value
     .filter((g) => m.groupPricing.has(g.id))
-    .map((g) => ({ group: g, pricing: m.groupPricing.get(g.id) ?? null, rate: displayRate(g) }))
+    .map((g) => {
+      const pricing = m.groupPricing.get(g.id) ?? null
+      return { group: g, pricing, rate: displayRate(g, pricing) }
+    })
 }
 
 function fmtTok(v: number | null, rate: number): string {
@@ -662,6 +682,9 @@ function groupHasPeak(g: UserAvailableGroup): boolean {
 function chipTitle(g: UserAvailableGroup): string {
   const parts: string[] = []
   if (g.is_exclusive) parts.push(t('modelPlaza.exclusiveTooltip'))
+  if (g.image_rate_independent) {
+    parts.push(t('modelPlaza.imageRateTooltip', { rate: g.image_rate_multiplier }))
+  }
   if (groupHasPeak(g)) {
     const window = formatPeakRateWindow(g, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
     parts.push(t('common.peakRateTooltip', { window }))
