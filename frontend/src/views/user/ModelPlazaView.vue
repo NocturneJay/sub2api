@@ -246,7 +246,19 @@
                   </div>
                 </template>
                 <template v-else>
-                  <div class="flex justify-between">
+                  <template v-if="perRequestTiers(line.pricing).length > 0">
+                    <div
+                      v-for="(iv, idx) in perRequestTiers(line.pricing)"
+                      :key="idx"
+                      class="flex justify-between"
+                    >
+                      <span class="text-gray-500 dark:text-gray-400">{{ perUnitLabel(line.pricing) }} {{ intervalLabel(iv) }}</span>
+                      <span class="font-medium text-gray-900 dark:text-white">
+                        {{ formatPerUnit(iv.per_request_price, line.rate) }}{{ unitLabel(line.pricing) }}
+                      </span>
+                    </div>
+                  </template>
+                  <div v-else class="flex justify-between">
                     <span class="text-gray-500 dark:text-gray-400">{{ perUnitLabel(line.pricing) }}</span>
                     <span class="font-medium text-gray-900 dark:text-white">{{ fmtPer(line.pricing, line.rate) }}</span>
                   </div>
@@ -546,15 +558,21 @@ function fmtTok(v: number | null, rate: number): string {
   return formatScaled(v == null ? null : v * rate, 1_000_000)
 }
 
+function unitLabel(p: UserSupportedModelPricing): string {
+  return p.billing_mode === BILLING_MODE_IMAGE ? t('modelPlaza.unitPerImage') : t('modelPlaza.unitPerRequest')
+}
+
+/** 按次/按图价格的紧凑单行文本:有阶梯时列出全部档位(如 "1K $0.05 · 2K $0.10 · 4K $0.20 /张")。 */
 function fmtPer(p: UserSupportedModelPricing, rate: number): string {
   if (p.billing_mode === BILLING_MODE_IMAGE || p.billing_mode === BILLING_MODE_PER_REQUEST) {
-    const unit =
-      p.billing_mode === BILLING_MODE_IMAGE ? t('modelPlaza.unitPerImage') : t('modelPlaza.unitPerRequest')
-    const tier = firstPerRequestInterval(p)
-    if (tier) {
-      return `${intervalLabel(tier)} ${formatPerUnit(tier.per_request_price, rate)}${unit}`
+    const tiers = perRequestTiers(p)
+    if (tiers.length > 0) {
+      return (
+        tiers.map((iv) => `${intervalLabel(iv)} ${formatPerUnit(iv.per_request_price, rate)}`).join(' · ') +
+        unitLabel(p)
+      )
     }
-    return `${formatPerUnit(p.per_request_price, rate)}${unit}`
+    return `${formatPerUnit(p.per_request_price, rate)}${unitLabel(p)}`
   }
   return `${formatPerUnit(p.per_request_price, rate)}${t('modelPlaza.unitPerRequest')}`
 }
@@ -567,8 +585,9 @@ function formatPerUnit(v: number | null | undefined, rate: number): string {
   return formatScaled(v == null ? null : v * rate, 1)
 }
 
-function firstPerRequestInterval(p: UserSupportedModelPricing): UserPricingInterval | null {
-  return p.intervals?.find((iv) => iv.per_request_price != null) ?? null
+/** 带按次价格的阶梯档位(图片模型按分辨率分档,如 1K/2K/4K)。 */
+function perRequestTiers(p: UserSupportedModelPricing): UserPricingInterval[] {
+  return (p.intervals || []).filter((iv) => iv.per_request_price != null)
 }
 
 function intervalLabel(iv: UserPricingInterval): string {
