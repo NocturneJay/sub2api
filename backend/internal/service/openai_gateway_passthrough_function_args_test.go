@@ -51,7 +51,7 @@ func TestHandleStreamingResponsePassthroughDeduplicatesFunctionCallArguments(t *
 	}
 
 	svc := &OpenAIGatewayService{}
-	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "gpt-5.4", "gpt-5.4", false)
+	result, err := svc.handleStreamingResponsePassthroughWithImageIntent(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "gpt-5.4", "gpt-5.4", false)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 

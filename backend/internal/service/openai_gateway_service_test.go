@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
@@ -1410,6 +1411,7 @@ func TestOpenAIStreamingResponseFailedAfterOutputSanitizesVerboseResponseForClie
 	body := rec.Body.String()
 	require.Contains(t, body, "event: response.failed")
 	require.Contains(t, body, "context_length_exceeded")
+	require.Contains(t, body, `"type":"invalid_request_error"`)
 	require.Contains(t, body, "Your input exceeds the context window")
 	require.NotContains(t, body, "You are GPT-5.1 running in the Codex CLI")
 	require.NotContains(t, body, `"instructions"`)
@@ -1451,7 +1453,62 @@ func TestOpenAIStreamingContextWindowResponseFailedBeforeOutputPassesThrough(t *
 	require.False(t, errors.As(err, &failoverErr))
 	require.True(t, c.Writer.Written())
 	require.Contains(t, rec.Body.String(), "response.failed")
+	require.Contains(t, rec.Body.String(), `"type":"upstream_error"`)
 	require.Contains(t, rec.Body.String(), "Your input exceeds the context window")
+}
+
+func TestOpenAIStreamingContextWindowResponseFailedBeforeOutputAppliesPassthroughRule(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	rule := newNonFailoverPassthroughRule(http.StatusBadRequest, "context_length_exceeded", http.StatusBadRequest, "")
+	rule.Platforms = []string{PlatformOpenAI}
+	rule.PassthroughBody = true
+	rule.CustomMessage = nil
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	upstreamMessage := "Your input exceeds the context window of this model. Please adjust your input and try again."
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+			"",
+			"event: response.failed",
+			`data: {"type":"response.failed","response":{"id":"resp_1","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"` + upstreamMessage + `"}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-context-window-passthrough-rule"}},
+	}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "model", "model")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.True(t, IsResponseCommitted(c))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	body := rec.Body.String()
+	require.Equal(t, "upstream_error", gjson.Get(body, "error.type").String())
+	require.Equal(t, upstreamMessage, gjson.Get(body, "error.message").String())
+	require.NotContains(t, body, "response.failed")
+	require.NotContains(t, body, "Upstream request failed")
+	// 命中透传规则也应记录 ops 上游错误事件（对齐 CC/Messages 与 antigravity 先例）。
+	opsVal, opsRecorded := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, opsRecorded, "passthrough hit should record an ops upstream error event")
+	opsEvents, _ := opsVal.([]*OpsUpstreamErrorEvent)
+	require.NotEmpty(t, opsEvents)
 }
 
 func TestOpenAIStreamingPreambleOnlyMissingTerminalReturnsFailover(t *testing.T) {
@@ -1750,7 +1807,7 @@ func TestOpenAIStreamingPassthroughMissingTerminalEventReturnsIncompleteError(t 
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\"},\"output_index\":0}\n\n"))
 	}()
 
-	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", false)
+	_, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", false)
 	_ = pr.Close()
 	if err == nil || !strings.Contains(err.Error(), "missing terminal event") {
 		t.Fatalf("expected missing terminal event error, got %v", err)
@@ -1783,7 +1840,7 @@ func TestOpenAIStreamingPassthroughResponseFailedBeforeOutputReturnsFailover(t *
 		Header: http.Header{"X-Request-Id": []string{"rid-passthrough-failed"}},
 	}
 
-	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "", false)
+	_, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "", false)
 	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
@@ -1791,6 +1848,94 @@ func TestOpenAIStreamingPassthroughResponseFailedBeforeOutputReturnsFailover(t *
 	require.Contains(t, string(failoverErr.ResponseBody), "upstream processing failed")
 	require.False(t, c.Writer.Written())
 	require.Empty(t, rec.Body.String())
+}
+
+func TestOpenAIStreamingPassthroughContextWindowResponseFailedBeforeOutputAppliesPassthroughRule(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	rule := newNonFailoverPassthroughRule(http.StatusBadRequest, "input exceeds the context window", http.StatusBadRequest, "")
+	rule.Platforms = []string{PlatformOpenAI}
+	rule.PassthroughBody = true
+	rule.CustomMessage = nil
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	upstreamMessage := "Your input exceeds the context window of this model. Please adjust your input and try again."
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+			"",
+			"event: response.failed",
+			`data: {"type":"response.failed","response":{"id":"resp_1","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"` + upstreamMessage + `"}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-pass-context-window-passthrough-rule"}},
+	}
+
+	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.True(t, IsResponseCommitted(c))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	body := rec.Body.String()
+	require.Equal(t, "upstream_error", gjson.Get(body, "error.type").String())
+	require.Equal(t, upstreamMessage, gjson.Get(body, "error.message").String())
+	require.NotContains(t, body, "response.failed")
+	require.NotContains(t, body, "Upstream request failed")
+	// 命中透传规则也应记录 ops 上游错误事件（对齐 CC/Messages 与 antigravity 先例）。
+	opsVal, opsRecorded := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, opsRecorded, "passthrough hit should record an ops upstream error event")
+	opsEvents, _ := opsVal.([]*OpsUpstreamErrorEvent)
+	require.NotEmpty(t, opsEvents)
+}
+
+func TestOpenAIStreamingPassthroughContextWindowResponseFailedBeforeOutputWithoutRulePassesThrough(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+			"",
+			"event: response.failed",
+			`data: {"type":"response.failed","response":{"id":"resp_1","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}}`,
+			"",
+		}, "\n"))),
+		Header: http.Header{"X-Request-Id": []string{"rid-pass-context-window-no-rule"}},
+	}
+
+	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	body := rec.Body.String()
+	require.Contains(t, body, "event: response.failed")
+	require.Contains(t, body, "context_length_exceeded")
+	require.Contains(t, body, "Your input exceeds the context window")
 }
 
 func TestOpenAIStreamingPassthroughResponseFailedAfterOutputSanitizesVerboseResponseForClient(t *testing.T) {
@@ -1827,12 +1972,13 @@ func TestOpenAIStreamingPassthroughResponseFailedAfterOutputSanitizesVerboseResp
 		Header: http.Header{"X-Request-Id": []string{"rid-pass-failed-after-output"}},
 	}
 
-	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "", false)
+	_, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "", "", false)
 	require.Error(t, err)
 
 	body := rec.Body.String()
 	require.Contains(t, body, "event: response.failed")
 	require.Contains(t, body, "context_length_exceeded")
+	require.Contains(t, body, `"type":"invalid_request_error"`)
 	require.Contains(t, body, "Your input exceeds the context window")
 	require.NotContains(t, body, "You are GPT-5.1 running in the Codex CLI")
 	require.NotContains(t, body, `"instructions"`)
@@ -1865,7 +2011,7 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.done\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":1}}}}\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", false)
+	result, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", false)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -1900,7 +2046,7 @@ func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucce
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.incomplete\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":1}}}}\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", false)
+	result, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", false)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -1940,7 +2086,7 @@ func TestOpenAIStreamingPassthroughImageKeepaliveSendsHeartbeat(t *testing.T) {
 		_, _ = pw.Write([]byte("data: [DONE]\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", true)
+	result, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", true)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -1977,7 +2123,7 @@ func TestOpenAIStreamingPassthroughKeepaliveNotSentBeforeClientOutput(t *testing
 		_, _ = pw.Write([]byte("data: [DONE]\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", true)
+	result, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "", true)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -2972,7 +3118,7 @@ func TestStreamingPassthroughCyberPolicyMarksAndPassesThrough(t *testing.T) {
 		Header: http.Header{"X-Request-Id": []string{"rid-cyber"}},
 	}
 
-	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "a"}, time.Now(), "m", "m", false)
+	_, err := svc.handleStreamingResponsePassthroughWithImageIntent(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "a"}, time.Now(), "m", "m", false)
 	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr), "cyber must NOT failover")
