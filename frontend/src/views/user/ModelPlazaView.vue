@@ -170,7 +170,7 @@
           <!-- 卡片头 -->
           <div class="mb-1 flex items-start justify-between gap-2">
             <div class="flex min-w-0 items-center gap-2">
-              <PlatformIcon :platform="m.platform as GroupPlatform" size="sm" />
+              <ModelIcon :model="m.name" size="16px" />
               <span class="truncate font-mono text-sm font-semibold text-gray-900 dark:text-white" :title="m.name">
                 {{ m.name }}
               </span>
@@ -315,6 +315,7 @@
             >
               <td class="px-4 py-3">
                 <div class="flex items-center gap-1.5">
+                  <ModelIcon :model="m.name" size="14px" />
                   <span class="font-mono text-sm font-medium text-gray-900 dark:text-white">{{ m.name }}</span>
                   <button
                     @click="copyModelName(m.name)"
@@ -386,6 +387,7 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
+import ModelIcon from '@/components/common/ModelIcon.vue'
 import userChannelsAPI, {
   type ModelPlazaMeta,
   type UserAvailableGroup,

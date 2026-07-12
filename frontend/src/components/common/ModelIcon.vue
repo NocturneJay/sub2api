@@ -9,7 +9,7 @@
     fill="currentColor"
     fill-rule="evenodd"
   >
-    <path v-for="(p, idx) in iconInfo.paths" :key="idx" :d="p" :fill="iconInfo.color" />
+    <path v-for="(p, idx) in iconInfo.paths" :key="idx" :d="p" :fill="iconFill" />
   </svg>
   <span v-else class="model-icon-fallback" :style="{ width: size, height: size, fontSize: `calc(${size} * 0.5)` }">
     {{ fallbackText }}
@@ -165,7 +165,8 @@ const iconKey = computed(() => {
   // OpenAI models
   if (modelLower.startsWith('gpt') || modelLower.startsWith('o1') ||
       modelLower.startsWith('o3') || modelLower.startsWith('o4') ||
-      modelLower.includes('chatgpt') || modelLower.includes('dall-e') ||
+      modelLower.includes('chatgpt') || modelLower.includes('codex') ||
+      modelLower.includes('dall-e') ||
       modelLower.includes('whisper') || modelLower.includes('tts-1') ||
       modelLower.includes('text-embedding-3') || modelLower.includes('text-moderation') ||
       modelLower.includes('babbage') || modelLower.includes('davinci') ||
@@ -259,6 +260,14 @@ const iconKey = computed(() => {
 })
 
 const iconInfo = computed(() => iconKey.value ? iconData[iconKey.value] : null)
+
+// 近黑品牌色在暗色模式下不可见,改用 currentColor 跟随文字颜色。
+const DARK_BRAND_COLORS = new Set(['#000000', '#16191E', '#003425'])
+
+const iconFill = computed(() => {
+  if (!iconInfo.value) return 'currentColor'
+  return DARK_BRAND_COLORS.has(iconInfo.value.color) ? 'currentColor' : iconInfo.value.color
+})
 </script>
 
 <style scoped>
