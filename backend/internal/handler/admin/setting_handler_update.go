@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 
 	"github.com/gin-gonic/gin"
 )
@@ -137,6 +138,7 @@ type UpdateSettingsRequest struct {
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
+	RedeemPurchaseURL           *string               `json:"redeem_purchase_url"`
 	TableDefaultPageSize        int                   `json:"table_default_page_size"`
 	TablePageSizeOptions        []int                 `json:"table_page_size_options"`
 	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
@@ -325,6 +327,28 @@ type UpdateSettingsRequest struct {
 	AuthSourceDingTalkPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_dingtalk_platform_quotas"`
 
 	AllowUserViewErrorRequests *bool `json:"allow_user_view_error_requests"`
+}
+
+func validateRedeemPurchaseURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	if _, err := urlvalidator.ValidateURLFormat(trimmed, false); err != nil {
+		return "", err
+	}
+	return trimmed, nil
+}
+
+func normalizeCustomMenuOpenMode(raw string) (string, error) {
+	mode := strings.TrimSpace(raw)
+	if mode == "" {
+		return "iframe", nil
+	}
+	if mode != "iframe" && mode != "new_tab" {
+		return "", errors.New("custom menu open mode must be 'iframe' or 'new_tab'")
+	}
+	return mode, nil
 }
 
 // UpdateSettings 更新系统设置
@@ -919,6 +943,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	redeemPurchaseURL := previousSettings.RedeemPurchaseURL
+	if req.RedeemPurchaseURL != nil {
+		var err error
+		redeemPurchaseURL, err = validateRedeemPurchaseURL(*req.RedeemPurchaseURL)
+		if err != nil {
+			response.BadRequest(c, "Redeem Purchase URL must be an absolute https URL")
+			return
+		}
+	}
+
 	// Frontend URL 验证
 	req.FrontendURL = strings.TrimSpace(req.FrontendURL)
 	if req.FrontendURL != "" {
@@ -945,6 +979,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		for i, item := range items {
+			openMode, err := normalizeCustomMenuOpenMode(item.OpenMode)
+			if err != nil {
+				response.BadRequest(c, "Custom menu item open mode must be 'iframe' or 'new_tab'")
+				return
+			}
+			items[i].OpenMode = openMode
 			if strings.TrimSpace(item.Label) == "" {
 				response.BadRequest(c, "Custom menu item label is required")
 				return
@@ -955,6 +995,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			urlTrimmed := strings.TrimSpace(item.URL)
 			if strings.HasPrefix(urlTrimmed, "md:") {
+				if openMode == "new_tab" {
+					response.BadRequest(c, "Custom menu item markdown pages cannot use new_tab mode")
+					return
+				}
 				// Markdown page mode: URL = "md:<slug>"
 				slug := strings.TrimPrefix(urlTrimmed, "md:")
 				if slug == "" {
@@ -1269,6 +1313,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                    req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            purchaseEnabled,
 		PurchaseSubscriptionURL:                purchaseURL,
+		RedeemPurchaseURL:                      redeemPurchaseURL,
 		TableDefaultPageSize:                   req.TableDefaultPageSize,
 		TablePageSizeOptions:                   req.TablePageSizeOptions,
 		CustomMenuItems:                        customMenuJSON,
@@ -1776,6 +1821,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                                    updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:                            updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                                updatedSettings.PurchaseSubscriptionURL,
+		RedeemPurchaseURL:                                      updatedSettings.RedeemPurchaseURL,
 		TableDefaultPageSize:                                   updatedSettings.TableDefaultPageSize,
 		TablePageSizeOptions:                                   updatedSettings.TablePageSizeOptions,
 		CustomMenuItems:                                        dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),

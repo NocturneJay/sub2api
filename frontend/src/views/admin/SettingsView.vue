@@ -5369,6 +5369,29 @@
                 </p>
               </div>
 
+              <!-- Redeem Purchase URL -->
+              <div>
+                <label
+                  for="redeem-purchase-url"
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.redeemPurchaseUrl") }}
+                </label>
+                <input
+                  id="redeem-purchase-url"
+                  v-model="form.redeem_purchase_url"
+                  data-testid="redeem-purchase-url-input"
+                  type="url"
+                  inputmode="url"
+                  autocomplete="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.site.redeemPurchaseUrlPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.redeemPurchaseUrlHint") }}
+                </p>
+              </div>
+
               <!-- Site Logo Upload -->
               <div>
                 <label
@@ -5571,6 +5594,27 @@
                         t('admin.settings.customMenu.urlPlaceholder')
                       "
                     />
+                  </div>
+
+                  <!-- Open mode (full width) -->
+                  <div class="sm:col-span-2">
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      {{ t("admin.settings.customMenu.openMode") }}
+                    </label>
+                    <select
+                      v-model="item.open_mode"
+                      class="input text-sm"
+                      :data-testid="`custom-menu-open-mode-${index}`"
+                    >
+                      <option value="iframe">
+                        {{ t("admin.settings.customMenu.openModeIframe") }}
+                      </option>
+                      <option value="new_tab">
+                        {{ t("admin.settings.customMenu.openModeNewTab") }}
+                      </option>
+                    </select>
                   </div>
 
                   <!-- SVG Icon (full width) -->
@@ -8122,6 +8166,7 @@ const form = reactive<SettingsForm>({
   api_base_url: "",
   contact_info: "",
   doc_url: "",
+  redeem_purchase_url: "",
   home_content: "",
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
@@ -8157,6 +8202,7 @@ const form = reactive<SettingsForm>({
     label: string;
     icon_svg: string;
     url: string;
+    open_mode: "iframe" | "new_tab";
     visibility: "user" | "admin";
     sort_order: number;
   }>,
@@ -8897,6 +8943,7 @@ function addMenuItem() {
     label: "",
     icon_svg: "",
     url: "",
+    open_mode: "iframe",
     visibility: "user",
     sort_order: form.custom_menu_items.length,
   });
@@ -9089,6 +9136,10 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.custom_menu_items = (settings.custom_menu_items ?? []).map((item) => ({
+      ...item,
+      open_mode: item.open_mode === "new_tab" ? "new_tab" : "iframe",
+    }));
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
         defaultClaudeOAuthSystemPromptBlocks;
@@ -9430,6 +9481,24 @@ async function saveSettings() {
     // Optional URL fields: auto-clear invalid values so they don't cause backend 400 errors
     if (!isValidHttpUrl(form.frontend_url)) form.frontend_url = "";
     if (!isValidHttpUrl(form.doc_url)) form.doc_url = "";
+    const redeemPurchaseUrl = form.redeem_purchase_url.trim();
+    if (redeemPurchaseUrl) {
+      try {
+        const parsedRedeemPurchaseUrl = new URL(redeemPurchaseUrl);
+        if (
+          parsedRedeemPurchaseUrl.protocol !== "https:" ||
+          !parsedRedeemPurchaseUrl.hostname
+        ) {
+          throw new Error("invalid redeem purchase URL");
+        }
+      } catch {
+        appStore.showError(
+          t("admin.settings.site.redeemPurchaseUrlInvalid"),
+        );
+        return;
+      }
+    }
+    form.redeem_purchase_url = redeemPurchaseUrl;
     syncWeChatConnectMode();
     const wechatStoredMode = deriveWeChatConnectStoredMode(
       form.wechat_connect_open_enabled,
@@ -9477,6 +9546,7 @@ async function saveSettings() {
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
       doc_url: form.doc_url,
+      redeem_purchase_url: form.redeem_purchase_url,
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,

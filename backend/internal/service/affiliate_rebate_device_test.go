@@ -153,7 +153,7 @@ func newAffiliateRebateDeviceTestService(repo *affiliateRebateRepoStub) *Affilia
 	return NewAffiliateService(repo, settingSvc, nil, nil)
 }
 
-func TestAccrueInviteRebateForOrderRequiresSignupDeviceHash(t *testing.T) {
+func TestAccrueInviteRebateForOrderAllowsMissingSignupDeviceHash(t *testing.T) {
 	inviterID := int64(10)
 	repo := &affiliateRebateRepoStub{
 		inviteeSummary: &AffiliateSummary{
@@ -172,12 +172,12 @@ func TestAccrueInviteRebateForOrderRequiresSignupDeviceHash(t *testing.T) {
 	rebate, err := newAffiliateRebateDeviceTestService(repo).AccrueInviteRebateForOrder(context.Background(), 20, 100, nil)
 
 	require.NoError(t, err)
-	require.Zero(t, rebate)
+	require.InDelta(t, 20, rebate, 1e-9)
 	require.Empty(t, repo.conflictChecks)
-	require.Empty(t, repo.accrueCalls)
+	require.Equal(t, []float64{20}, repo.accrueCalls)
 }
 
-func TestAccrueInviteRebateForOrderUsesSignupDeviceHash(t *testing.T) {
+func TestAccrueInviteRebateForOrderIgnoresSignupDeviceConflict(t *testing.T) {
 	inviterID := int64(10)
 	deviceHash := "device-hash"
 	repo := &affiliateRebateRepoStub{
@@ -193,13 +193,14 @@ func TestAccrueInviteRebateForOrderUsesSignupDeviceHash(t *testing.T) {
 			AffCode:   "INVITER",
 			CreatedAt: time.Now().Add(-2 * time.Hour),
 		},
+		conflict: true,
 	}
 
 	rebate, err := newAffiliateRebateDeviceTestService(repo).AccrueInviteRebateForOrder(context.Background(), 20, 100, nil)
 
 	require.NoError(t, err)
 	require.InDelta(t, 20, rebate, 1e-9)
-	require.Equal(t, []string{"device-hash"}, repo.conflictChecks)
+	require.Empty(t, repo.conflictChecks)
 	require.Equal(t, []float64{20}, repo.accrueCalls)
 }
 

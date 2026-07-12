@@ -357,14 +357,6 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	if inviteeSummary.InviterID == nil || *inviteeSummary.InviterID <= 0 {
 		return 0, nil
 	}
-	if inviteeSummary.SignupDeviceHash == nil || strings.TrimSpace(*inviteeSummary.SignupDeviceHash) == "" {
-		logger.LegacyPrintf("service.affiliate", "[Affiliate] Skipped rebate for invitee %d: missing signup device", inviteeUserID)
-		return 0, nil
-	}
-	if s.hasSignupDeviceRebateConflict(ctx, *inviteeSummary.InviterID, inviteeUserID, inviteeSummary.SignupDeviceHash) {
-		logger.LegacyPrintf("service.affiliate", "[Affiliate] Skipped rebate for invitee %d: same signup device already used", inviteeUserID)
-		return 0, nil
-	}
 
 	// 加载邀请人 profile，优先使用专属比例（覆盖全局）
 	inviterSummary, err := s.repo.EnsureUserAffiliate(ctx, *inviteeSummary.InviterID)
@@ -415,18 +407,6 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 		return 0, nil
 	}
 	return rebate, nil
-}
-
-func (s *AffiliateService) hasSignupDeviceRebateConflict(ctx context.Context, inviterID, inviteeUserID int64, deviceHash *string) bool {
-	if s == nil || s.repo == nil || deviceHash == nil || strings.TrimSpace(*deviceHash) == "" {
-		return false
-	}
-	conflict, err := s.repo.HasSignupDeviceRebateConflict(ctx, inviterID, inviteeUserID, strings.TrimSpace(*deviceHash))
-	if err != nil {
-		logger.LegacyPrintf("service.affiliate", "[Affiliate] Failed to check signup device conflict: inviter=%d invitee=%d err=%v", inviterID, inviteeUserID, err)
-		return false
-	}
-	return conflict
 }
 
 func hashAffiliateDeviceID(raw string) string {

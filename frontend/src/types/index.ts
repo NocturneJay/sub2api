@@ -172,6 +172,7 @@ export interface CustomMenuItem {
   icon_svg: string
   url: string
   page_slug?: string
+  open_mode?: 'iframe' | 'new_tab'
   visibility: 'user' | 'admin'
   sort_order: number
 }
@@ -209,6 +210,8 @@ export interface PublicSettings {
   api_base_url: string
   contact_info: string
   doc_url: string
+  /** Optional HTTPS link shown as a purchase action on the redeem page. */
+  redeem_purchase_url?: string
   home_content: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean

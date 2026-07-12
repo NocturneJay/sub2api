@@ -180,6 +180,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "session_hash 粘性",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
+    "admin.settings.site.redeemPurchaseUrlInvalid": "兑换码购买链接必须是完整的 HTTPS 地址。",
     "admin.settings.platformQuota.platform": "平台",
     "admin.settings.platformQuota.daily": "日限额 (USD)",
     "admin.settings.platformQuota.weekly": "周限额 (USD)",
@@ -324,6 +325,7 @@ const baseSettingsResponse = {
   api_base_url: "",
   contact_info: "",
   doc_url: "",
+  redeem_purchase_url: "",
   home_content: "",
   hide_ccs_import_button: false,
   table_default_page_size: 20,
@@ -604,6 +606,39 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(wrapper.text()).not.toContain("可见方式");
     expect(wrapper.text()).not.toContain("支付来源");
+  });
+
+  it("submits the configured redeem code purchase URL", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="redeem-purchase-url-input"]')
+      .setValue("https://shop.example.com/redeem-codes");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redeem_purchase_url: "https://shop.example.com/redeem-codes",
+      }),
+    );
+  });
+
+  it("rejects a non-HTTPS redeem code purchase URL", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="redeem-purchase-url-input"]')
+      .setValue("http://shop.example.com/redeem-codes");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(
+      "兑换码购买链接必须是完整的 HTTPS 地址。",
+    );
   });
 
   it("links payment guidance to README sections instead of removed payment docs", async () => {

@@ -24,9 +24,22 @@
         <div class="p-6">
           <form @submit.prevent="handleRedeem" class="space-y-5">
             <div>
-              <label for="code" class="input-label">
-                {{ t('redeem.redeemCodeLabel') }}
-              </label>
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label for="code" class="input-label mb-0">
+                  {{ t('redeem.redeemCodeLabel') }}
+                </label>
+                <a
+                  v-if="redeemPurchaseUrl"
+                  data-testid="redeem-purchase-link"
+                  :href="redeemPurchaseUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn btn-secondary w-full shrink-0 justify-center whitespace-nowrap px-4 py-2 sm:w-auto"
+                >
+                  <Icon name="externalLink" size="sm" :stroke-width="2" />
+                  {{ t('redeem.purchaseCode') }}
+                </a>
+              </div>
               <div class="relative mt-1">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
                   <Icon name="gift" size="md" class="text-gray-400 dark:text-dark-500" />
@@ -347,10 +360,11 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
-import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
+import { redeemAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
+import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -358,6 +372,11 @@ const appStore = useAppStore()
 const subscriptionStore = useSubscriptionStore()
 
 const user = computed(() => authStore.user)
+const contactInfo = computed(() => appStore.cachedPublicSettings?.contact_info?.trim() || '')
+const redeemPurchaseUrl = computed(() => {
+  const url = sanitizeUrl(appStore.cachedPublicSettings?.redeem_purchase_url || '')
+  return url.startsWith('https://') ? url : ''
+})
 
 const redeemCode = ref('')
 const submitting = ref(false)
@@ -375,7 +394,6 @@ const errorMessage = ref('')
 // History data
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
-const contactInfo = ref('')
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
@@ -478,12 +496,7 @@ const handleRedeem = async () => {
 
 onMounted(async () => {
   fetchHistory()
-  try {
-    const settings = await authAPI.getPublicSettings()
-    contactInfo.value = settings.contact_info || ''
-  } catch (error) {
-    console.error('Failed to load contact info:', error)
-  }
+  await appStore.fetchPublicSettings()
 })
 </script>
 

@@ -296,6 +296,17 @@ func TestSettingService_UpdateSettings_TablePreferences(t *testing.T) {
 	require.Equal(t, "[20,100]", repo.updates[SettingKeyTablePageSizeOptions])
 }
 
+func TestSettingService_UpdateSettings_TrimsRedeemPurchaseURL(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		RedeemPurchaseURL: "  https://shop.example.com/redeem  ",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://shop.example.com/redeem", repo.updates[SettingKeyRedeemPurchaseURL])
+}
+
 func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()

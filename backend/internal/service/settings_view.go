@@ -137,6 +137,7 @@ type SystemSettings struct {
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
+	RedeemPurchaseURL           string
 	TableDefaultPageSize        int
 	TablePageSizeOptions        []int
 	CustomMenuItems             string // JSON array of custom menu items
@@ -293,6 +294,7 @@ type PublicSettings struct {
 
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
+	RedeemPurchaseURL           string
 	TableDefaultPageSize        int
 	TablePageSizeOptions        []int
 	CustomMenuItems             string // JSON array of custom menu items

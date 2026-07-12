@@ -53,3 +53,25 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
   })
 })
+
+describe('AppSidebar custom menu open mode', () => {
+  it('renders new-tab items as hardened anchors and keeps iframe items as router links', () => {
+    expect(componentSource).toContain('v-if="item.openInNewTab"')
+    expect(componentSource).toContain(':href="item.externalUrl || undefined"')
+    expect(componentSource).toContain('target="_blank"')
+    expect(componentSource).toContain('rel="noopener noreferrer"')
+    expect(componentSource).toContain('<router-link\n                v-else')
+  })
+
+  it('derives custom navigation from the current user context', () => {
+    expect(componentSource).toContain("import { resolveCustomMenuNavigation } from '@/utils/custom-menu'")
+    expect(componentSource).toContain('...resolveCustomMenuNavigation(item, {')
+    expect(componentSource).toContain('userId: authStore.user?.id')
+    expect(componentSource).toContain('authToken: authStore.token')
+    expect(componentSource).toContain("theme: isDark.value ? 'dark' : 'light'")
+    expect(componentSource).toContain('lang: locale.value')
+    expect(componentSource).toContain('customMenuItemsForUser.value.map(buildCustomNavItem)')
+    expect(componentSource).toContain('filtered.push(buildCustomNavItem(cm))')
+    expect(componentSource).toContain('visible.push(buildCustomNavItem(cm))')
+  })
+})

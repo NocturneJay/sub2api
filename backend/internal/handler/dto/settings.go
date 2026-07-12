@@ -14,6 +14,7 @@ type CustomMenuItem struct {
 	IconSVG    string `json:"icon_svg"`
 	URL        string `json:"url"`
 	PageSlug   string `json:"page_slug,omitempty"`
+	OpenMode   string `json:"open_mode,omitempty"`
 	Visibility string `json:"visibility"` // "user" or "admin"
 	SortOrder  int    `json:"sort_order"`
 }
@@ -137,6 +138,7 @@ type SystemSettings struct {
 	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled bool             `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     string           `json:"purchase_subscription_url"`
+	RedeemPurchaseURL           string           `json:"redeem_purchase_url"`
 	TableDefaultPageSize        int              `json:"table_default_page_size"`
 	TablePageSizeOptions        []int            `json:"table_page_size_options"`
 	CustomMenuItems             []CustomMenuItem `json:"custom_menu_items"`
@@ -326,6 +328,7 @@ type PublicSettings struct {
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
+	RedeemPurchaseURL                string                   `json:"redeem_purchase_url"`
 	TableDefaultPageSize             int                      `json:"table_default_page_size"`
 	TablePageSizeOptions             []int                    `json:"table_page_size_options"`
 	CustomMenuItems                  []CustomMenuItem         `json:"custom_menu_items"`

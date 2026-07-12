@@ -598,6 +598,7 @@ export default {
     redeemCodeLabel: 'Redeem Code',
     redeemCodePlaceholder: 'Enter your redeem code',
     redeemCodeHint: 'Redeem codes are case-sensitive',
+    purchaseCode: 'Buy Redeem Codes',
     redeeming: 'Redeeming...',
     redeemButton: 'Redeem Code',
     redeemSuccess: 'Code Redeemed Successfully!',
