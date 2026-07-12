@@ -21,8 +21,29 @@
         </div>
       </div>
 
-      <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
+      <!-- Right: Custom shortcuts + Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex items-center gap-3">
+        <!-- New-tab custom menu shortcuts -->
+        <div v-if="headerCustomShortcuts.length" class="hidden items-center gap-1 sm:flex">
+          <a
+            v-for="shortcut in headerCustomShortcuts"
+            :key="shortcut.id"
+            :href="shortcut.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex h-9 flex-shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-primary-400"
+            :aria-label="shortcut.label"
+          >
+            <span
+              v-if="shortcut.iconSvg"
+              class="header-shortcut-icon h-5 w-5"
+              v-html="sanitizeSvg(shortcut.iconSvg)"
+            ></span>
+            <Icon v-else name="sparkles" size="sm" />
+            <span class="header-shortcut-label whitespace-nowrap">{{ shortcut.label }}</span>
+          </a>
+        </div>
+
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
@@ -249,11 +270,14 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
+import { resolveCustomMenuNavigation } from '@/utils/custom-menu'
+import { detectTheme } from '@/utils/embedded-url'
 
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
@@ -272,6 +296,36 @@ const balanceAvailableText = computed(() => t('common.availableBalance') === 'co
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
 const balanceFrozenLabel = computed(() => `${balanceFrozenText.value} ${formatHeaderMoney(frozenBalance.value)}`)
+
+const headerCustomShortcuts = computed(() => {
+  const publicItems = appStore.cachedPublicSettings?.custom_menu_items ?? []
+  const adminItems = authStore.isAdmin
+    ? adminSettingsStore.customMenuItems.filter((item) => item.visibility === 'admin')
+    : []
+  const uniqueItems = new Map(
+    [...publicItems, ...adminItems]
+      .filter((item) => item.open_mode === 'new_tab')
+      .map((item) => [item.id, item]),
+  )
+
+  return [...uniqueItems.values()]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((item) => {
+      const navigation = resolveCustomMenuNavigation(item, {
+        userId: authStore.user?.id,
+        authToken: authStore.token,
+        theme: detectTheme(),
+        lang: locale.value,
+      })
+      return {
+        id: item.id,
+        label: item.label,
+        iconSvg: item.icon_svg,
+        href: navigation.externalUrl ?? '',
+      }
+    })
+    .filter((item) => item.href)
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {
@@ -361,6 +415,9 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 onMounted(() => {
+  if (authStore.isAdmin) {
+    void adminSettingsStore.fetch()
+  }
   document.addEventListener('click', handleClickOutside)
 })
 
@@ -370,6 +427,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.header-shortcut-icon {
+  color: currentColor;
+}
+
+.header-shortcut-icon :deep(svg) {
+  display: block;
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: all 0.2s ease;
