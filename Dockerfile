@@ -39,8 +39,7 @@ RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/stor
 # Copy only that subtree to keep the build dependency minimal.
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
-# 生产服务器仅 2GB 内存：抬高 Node 堆上限，靠交换空间完成打包
-RUN NODE_OPTIONS="--max-old-space-size=2048" pnpm run build
+RUN pnpm run build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder
@@ -56,11 +55,6 @@ ARG GOSUMDB
 
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
-
-# Keep in-place production builds from exhausting the 2 GiB host.
-ENV GOMAXPROCS=1
-ENV GOMEMLIMIT=1024MiB
-ENV GOGC=50
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -82,7 +76,7 @@ COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 RUN VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
-    CGO_ENABLED=0 GOOS=linux go build -p 1 \
+    CGO_ENABLED=0 GOOS=linux go build \
     -tags embed \
     -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
