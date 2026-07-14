@@ -945,7 +945,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthroughWithImageIntent
 			if trimmedData != "[DONE]" {
 				restoredData, restoreErr := restoreOpenAIResponsesNamespacePayload(c, dataBytes)
 				if restoreErr != nil {
-					return resultWithUsage(), fmt.Errorf("restore OpenAI passthrough namespace response: %w", restoreErr)
+					streamFailoverErr = fmt.Errorf("restore OpenAI passthrough namespace response: %w", restoreErr)
+					return
 				}
 				if !bytes.Equal(restoredData, dataBytes) {
 					dataBytes = restoredData
