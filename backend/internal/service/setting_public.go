@@ -153,6 +153,16 @@ func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 	return s.cfg.Server.FrontendURL
 }
 
+// GetFrontendURLForHost selects the api-cn frontend only for its exact allowlisted
+// request host. Unrecognized hosts fall back to the configured primary URL so an
+// attacker-controlled Host header is never copied into an email link.
+func (s *SettingService) GetFrontendURLForHost(ctx context.Context, requestHost string) string {
+	if isAPICnOAuthHost(requestHost) {
+		return "https://" + apiCnOAuthHost
+	}
+	return s.GetFrontendURL(ctx)
+}
+
 // GetPublicSettings 获取公开设置（无需登录）
 func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings, error) {
 	keys := []string{

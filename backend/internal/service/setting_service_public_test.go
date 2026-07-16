@@ -19,7 +19,10 @@ func (s *settingPublicRepoStub) Get(ctx context.Context, key string) (*Setting, 
 }
 
 func (s *settingPublicRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	if value, ok := s.values[key]; ok {
+		return value, nil
+	}
+	return "", ErrSettingNotFound
 }
 
 func (s *settingPublicRepoStub) Set(ctx context.Context, key, value string) error {
@@ -61,6 +64,35 @@ func TestSettingService_GetPublicSettings_ExposesRegistrationEmailSuffixWhitelis
 	settings, err := svc.GetPublicSettings(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []string{"@example.com", "@foo.bar", "*.edu.cn"}, settings.RegistrationEmailSuffixWhitelist)
+}
+
+func TestSettingService_GetFrontendURLForHostUsesAllowlistedAPICnHost(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyFrontendURL: "https://api.aicatstudios.com",
+		},
+	}, &config.Config{})
+
+	tests := []struct {
+		name        string
+		requestHost string
+		want        string
+	}{
+		{name: "primary host", requestHost: "api.aicatstudios.com", want: "https://api.aicatstudios.com"},
+		{name: "api cn exact", requestHost: "api-cn.aicatstudios.com", want: "https://api-cn.aicatstudios.com"},
+		{name: "api cn case and port", requestHost: "API-CN.AICATSTUDIOS.COM:443", want: "https://api-cn.aicatstudios.com"},
+		{name: "api cn trailing dot", requestHost: "api-cn.aicatstudios.com.", want: "https://api-cn.aicatstudios.com"},
+		{name: "suffix injection", requestHost: "api-cn.aicatstudios.com.evil.example", want: "https://api.aicatstudios.com"},
+		{name: "userinfo injection", requestHost: "api-cn.aicatstudios.com@evil.example", want: "https://api.aicatstudios.com"},
+		{name: "malformed port injection", requestHost: "api-cn.aicatstudios.com:443.evil.example", want: "https://api.aicatstudios.com"},
+		{name: "unknown host", requestHost: "evil.example", want: "https://api.aicatstudios.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, svc.GetFrontendURLForHost(context.Background(), tt.requestHost))
+		})
+	}
 }
 
 func TestSettingService_GetPublicSettings_ExposesTablePreferences(t *testing.T) {

@@ -595,7 +595,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	frontendBaseURL := strings.TrimSpace(h.settingSvc.GetFrontendURL(c.Request.Context()))
+	frontendBaseURL := strings.TrimSpace(h.settingSvc.GetFrontendURLForHost(c.Request.Context(), c.Request.Host))
 	if frontendBaseURL == "" {
 		slog.Error("frontend_url not configured in settings or config; cannot build password reset link")
 		response.InternalError(c, "Password reset is not configured")

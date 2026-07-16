@@ -127,4 +127,8 @@ func TestSettingService_OAuthConfigForHostRejectsIncompleteOrWrongHostOverrides(
 	googleCfg, err := svc.GetEmailOAuthProviderConfigForHost(context.Background(), "google", "attacker.example")
 	require.NoError(t, err)
 	require.Equal(t, "https://api.aicatstudios.com/api/v1/auth/oauth/google/callback", googleCfg.RedirectURL)
+
+	googleCfg, err = svc.GetEmailOAuthProviderConfigForHost(context.Background(), "google", "api-cn.aicatstudios.com:443.evil.example")
+	require.NoError(t, err)
+	require.Equal(t, "https://api.aicatstudios.com/api/v1/auth/oauth/google/callback", googleCfg.RedirectURL)
 }

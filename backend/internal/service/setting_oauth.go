@@ -20,7 +20,10 @@ const apiCnOAuthHost = "api-cn.aicatstudios.com"
 
 func normalizeOAuthRequestHost(raw string) string {
 	host := strings.TrimSpace(raw)
-	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+	if parsedHost, port, err := net.SplitHostPort(host); err == nil {
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return ""
+		}
 		host = parsedHost
 	}
 	return strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
