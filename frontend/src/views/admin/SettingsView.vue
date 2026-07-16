@@ -1803,6 +1803,69 @@
                       {{ t("admin.settings.linuxdo.redirectUrlHint") }}
                     </p>
                   </div>
+
+                  <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      {{ localText("api-cn 次级客户端", "api-cn secondary client") }}
+                    </h3>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        localText(
+                          "仅 api-cn.aicatstudios.com 使用这套独立 LinuxDo 应用；主站继续使用上方配置。",
+                          "Used only by api-cn.aicatstudios.com; the primary site keeps the configuration above.",
+                        )
+                      }}
+                    </p>
+                    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          api-cn Client ID
+                        </label>
+                        <input
+                          v-model="form.linuxdo_connect_api_cn_client_id"
+                          data-testid="linuxdo-api-cn-client-id"
+                          type="text"
+                          class="input font-mono text-sm"
+                          placeholder="LinuxDo api-cn Client ID"
+                        />
+                      </div>
+                      <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          api-cn Client Secret
+                        </label>
+                        <input
+                          v-model="form.linuxdo_connect_api_cn_client_secret"
+                          data-testid="linuxdo-api-cn-client-secret"
+                          type="password"
+                          class="input font-mono text-sm"
+                          :placeholder="
+                            form.linuxdo_connect_api_cn_client_secret_configured
+                              ? localText('密钥已配置，留空以保留当前值。', 'Secret configured. Leave empty to keep the current value.')
+                              : 'LinuxDo api-cn Client Secret'
+                          "
+                        />
+                      </div>
+                    </div>
+                    <div class="mt-4">
+                      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ localText("api-cn 回调地址", "api-cn Callback URL") }}
+                      </label>
+                      <input
+                        v-model="form.linuxdo_connect_api_cn_redirect_url"
+                        data-testid="linuxdo-api-cn-redirect-url"
+                        type="url"
+                        class="input font-mono text-sm"
+                        placeholder="https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm mt-2"
+                        @click="setAndCopyApiCnOAuthRedirectUrl('linuxdo')"
+                      >
+                        {{ localText("填入并复制 api-cn 回调", "Set and copy api-cn callback") }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2015,6 +2078,34 @@
                           {{ googleOAuthRedirectUrlSuggestion }}
                         </code>
                       </div>
+                    </div>
+
+                    <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ localText("api-cn 次级回调地址", "api-cn secondary callback URL") }}
+                      </label>
+                      <input
+                        v-model="form.google_oauth_api_cn_redirect_url"
+                        data-testid="google-api-cn-redirect-url"
+                        type="url"
+                        class="input font-mono text-sm"
+                        placeholder="https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback"
+                      />
+                      <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                        {{
+                          localText(
+                            "与主站共用上方 Google Client ID/Secret，仅在 api-cn 请求中使用此回调。",
+                            "Reuses the Google Client ID/Secret above and applies this callback only to api-cn requests.",
+                          )
+                        }}
+                      </p>
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm mt-2"
+                        @click="setAndCopyApiCnOAuthRedirectUrl('google')"
+                      >
+                        {{ localText("填入并复制 api-cn 回调", "Set and copy api-cn callback") }}
+                      </button>
                     </div>
 
                     <div>
@@ -8071,6 +8162,7 @@ type SettingsForm = Omit<
   smtp_password: string;
   turnstile_secret_key: string;
   linuxdo_connect_client_secret: string;
+  linuxdo_connect_api_cn_client_secret: string;
   dingtalk_connect_client_secret: string;
   wechat_connect_app_secret: string;
   wechat_connect_open_app_secret: string;
@@ -8196,6 +8288,10 @@ const form = reactive<SettingsForm>({
   linuxdo_connect_client_secret: "",
   linuxdo_connect_client_secret_configured: false,
   linuxdo_connect_redirect_url: "",
+  linuxdo_connect_api_cn_client_id: "",
+  linuxdo_connect_api_cn_client_secret: "",
+  linuxdo_connect_api_cn_client_secret_configured: false,
+  linuxdo_connect_api_cn_redirect_url: "",
   // DingTalk Connect OAuth 登录
   dingtalk_connect_enabled: false,
   dingtalk_connect_client_id: "",
@@ -8271,6 +8367,7 @@ const form = reactive<SettingsForm>({
   google_oauth_client_secret_configured: false,
   google_oauth_redirect_url: "",
   google_oauth_frontend_redirect_url: "/auth/oauth/callback",
+  google_oauth_api_cn_redirect_url: "",
   // Model fallback
   enable_model_fallback: false,
   fallback_model_anthropic: "claude-3-5-sonnet-20241022",
@@ -8805,6 +8902,24 @@ const googleOAuthRedirectUrlSuggestion = computed(() => {
   return buildApiCallbackUrl("/auth/oauth/google/callback");
 });
 
+const apiCnLinuxDoRedirectUrl =
+  "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback";
+const apiCnGoogleRedirectUrl =
+  "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback";
+
+async function setAndCopyApiCnOAuthRedirectUrl(provider: "linuxdo" | "google") {
+  const url = provider === "linuxdo" ? apiCnLinuxDoRedirectUrl : apiCnGoogleRedirectUrl;
+  if (provider === "linuxdo") {
+    form.linuxdo_connect_api_cn_redirect_url = url;
+  } else {
+    form.google_oauth_api_cn_redirect_url = url;
+  }
+  await copyToClipboard(
+    url,
+    localText("api-cn 回调地址已写入并复制。", "api-cn callback URL set and copied."),
+  );
+}
+
 async function setAndCopyEmailOAuthRedirectUrl(provider: EmailOAuthProvider) {
   const url =
     provider === "github"
@@ -9155,6 +9270,7 @@ async function loadSettings() {
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";
+    form.linuxdo_connect_api_cn_client_secret = "";
     form.dingtalk_connect_client_secret = "";
     form.github_oauth_client_secret = "";
     form.google_oauth_client_secret = "";
@@ -9536,6 +9652,11 @@ async function saveSettings() {
       linuxdo_connect_client_secret:
         form.linuxdo_connect_client_secret || undefined,
       linuxdo_connect_redirect_url: form.linuxdo_connect_redirect_url,
+      linuxdo_connect_api_cn_client_id: form.linuxdo_connect_api_cn_client_id,
+      linuxdo_connect_api_cn_client_secret:
+        form.linuxdo_connect_api_cn_client_secret || undefined,
+      linuxdo_connect_api_cn_redirect_url:
+        form.linuxdo_connect_api_cn_redirect_url,
       dingtalk_connect_enabled: form.dingtalk_connect_enabled,
       dingtalk_connect_client_id: form.dingtalk_connect_client_id,
       dingtalk_connect_client_secret:
@@ -9618,6 +9739,8 @@ async function saveSettings() {
       google_oauth_redirect_url: form.google_oauth_redirect_url,
       google_oauth_frontend_redirect_url:
         form.google_oauth_frontend_redirect_url,
+      google_oauth_api_cn_redirect_url:
+        form.google_oauth_api_cn_redirect_url,
       enable_model_fallback: form.enable_model_fallback,
       fallback_model_anthropic: form.fallback_model_anthropic,
       fallback_model_openai: form.fallback_model_openai,
@@ -9798,6 +9921,7 @@ async function saveSettings() {
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";
+    form.linuxdo_connect_api_cn_client_secret = "";
     form.dingtalk_connect_client_secret = "";
     form.github_oauth_client_secret = "";
     form.google_oauth_client_secret = "";

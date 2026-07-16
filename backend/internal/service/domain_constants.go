@@ -170,10 +170,13 @@ const (
 	SettingKeyTotpEnabled = "totp_enabled" // 是否启用 TOTP 2FA 功能
 
 	// LinuxDo Connect OAuth 登录设置
-	SettingKeyLinuxDoConnectEnabled      = "linuxdo_connect_enabled"
-	SettingKeyLinuxDoConnectClientID     = "linuxdo_connect_client_id"
-	SettingKeyLinuxDoConnectClientSecret = "linuxdo_connect_client_secret"
-	SettingKeyLinuxDoConnectRedirectURL  = "linuxdo_connect_redirect_url"
+	SettingKeyLinuxDoConnectEnabled           = "linuxdo_connect_enabled"
+	SettingKeyLinuxDoConnectClientID          = "linuxdo_connect_client_id"
+	SettingKeyLinuxDoConnectClientSecret      = "linuxdo_connect_client_secret"
+	SettingKeyLinuxDoConnectRedirectURL       = "linuxdo_connect_redirect_url"
+	SettingKeyLinuxDoConnectAPICnClientID     = "linuxdo_connect_api_cn_client_id"
+	SettingKeyLinuxDoConnectAPICnClientSecret = "linuxdo_connect_api_cn_client_secret"
+	SettingKeyLinuxDoConnectAPICnRedirectURL  = "linuxdo_connect_api_cn_redirect_url"
 
 	// DingTalk Connect OAuth 登录设置
 	SettingKeyDingTalkConnectEnabled                 = "dingtalk_connect_enabled"
@@ -246,6 +249,7 @@ const (
 	SettingKeyGoogleOAuthClientSecret        = "google_oauth_client_secret"
 	SettingKeyGoogleOAuthRedirectURL         = "google_oauth_redirect_url"
 	SettingKeyGoogleOAuthFrontendRedirectURL = "google_oauth_frontend_redirect_url"
+	SettingKeyGoogleOAuthAPICnRedirectURL    = "google_oauth_api_cn_redirect_url"
 
 	// OEM设置
 	SettingKeySiteName                    = "site_name"                     // 网站名称

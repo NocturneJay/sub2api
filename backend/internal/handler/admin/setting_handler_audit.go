@@ -113,6 +113,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.LinuxDoConnectRedirectURL != after.LinuxDoConnectRedirectURL {
 		changed = append(changed, "linuxdo_connect_redirect_url")
 	}
+	if before.LinuxDoConnectAPICnClientID != after.LinuxDoConnectAPICnClientID {
+		changed = append(changed, "linuxdo_connect_api_cn_client_id")
+	}
+	if req.LinuxDoConnectAPICnClientSecret != "" {
+		changed = append(changed, "linuxdo_connect_api_cn_client_secret")
+	}
+	if before.LinuxDoConnectAPICnRedirectURL != after.LinuxDoConnectAPICnRedirectURL {
+		changed = append(changed, "linuxdo_connect_api_cn_redirect_url")
+	}
+	if before.GoogleOAuthAPICnRedirectURL != after.GoogleOAuthAPICnRedirectURL {
+		changed = append(changed, "google_oauth_api_cn_redirect_url")
+	}
 	if before.DingTalkConnectEnabled != after.DingTalkConnectEnabled {
 		changed = append(changed, "dingtalk_connect_enabled")
 	}

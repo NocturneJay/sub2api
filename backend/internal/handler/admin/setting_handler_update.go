@@ -51,10 +51,13 @@ type UpdateSettingsRequest struct {
 	APIKeyACLTrustForwardedIP *bool `json:"api_key_acl_trust_forwarded_ip"`
 
 	// LinuxDo Connect OAuth 登录
-	LinuxDoConnectEnabled      bool   `json:"linuxdo_connect_enabled"`
-	LinuxDoConnectClientID     string `json:"linuxdo_connect_client_id"`
-	LinuxDoConnectClientSecret string `json:"linuxdo_connect_client_secret"`
-	LinuxDoConnectRedirectURL  string `json:"linuxdo_connect_redirect_url"`
+	LinuxDoConnectEnabled           bool   `json:"linuxdo_connect_enabled"`
+	LinuxDoConnectClientID          string `json:"linuxdo_connect_client_id"`
+	LinuxDoConnectClientSecret      string `json:"linuxdo_connect_client_secret"`
+	LinuxDoConnectRedirectURL       string `json:"linuxdo_connect_redirect_url"`
+	LinuxDoConnectAPICnClientID     string `json:"linuxdo_connect_api_cn_client_id"`
+	LinuxDoConnectAPICnClientSecret string `json:"linuxdo_connect_api_cn_client_secret"`
+	LinuxDoConnectAPICnRedirectURL  string `json:"linuxdo_connect_api_cn_redirect_url"`
 
 	// DingTalk Connect OAuth 登录
 	DingTalkConnectEnabled                 bool   `json:"dingtalk_connect_enabled"`
@@ -126,6 +129,7 @@ type UpdateSettingsRequest struct {
 	GoogleOAuthClientSecret        string `json:"google_oauth_client_secret"`
 	GoogleOAuthRedirectURL         string `json:"google_oauth_redirect_url"`
 	GoogleOAuthFrontendRedirectURL string `json:"google_oauth_frontend_redirect_url"`
+	GoogleOAuthAPICnRedirectURL    string `json:"google_oauth_api_cn_redirect_url"`
 
 	// OEM设置
 	SiteName                    string                `json:"site_name"`
@@ -554,6 +558,39 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return
 			}
 			req.LinuxDoConnectClientSecret = previousSettings.LinuxDoConnectClientSecret
+		}
+	}
+
+	req.LinuxDoConnectAPICnClientID = strings.TrimSpace(req.LinuxDoConnectAPICnClientID)
+	req.LinuxDoConnectAPICnClientSecret = strings.TrimSpace(req.LinuxDoConnectAPICnClientSecret)
+	req.LinuxDoConnectAPICnRedirectURL = strings.TrimSpace(req.LinuxDoConnectAPICnRedirectURL)
+	apiCnLinuxDoConfigured := req.LinuxDoConnectAPICnClientID != "" ||
+		req.LinuxDoConnectAPICnClientSecret != "" ||
+		req.LinuxDoConnectAPICnRedirectURL != "" ||
+		previousSettings.LinuxDoConnectAPICnClientSecretConfigured
+	if apiCnLinuxDoConfigured {
+		if req.LinuxDoConnectAPICnClientID == "" {
+			response.BadRequest(c, "api-cn LinuxDo Client ID is required")
+			return
+		}
+		if req.LinuxDoConnectAPICnRedirectURL != "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback" {
+			response.BadRequest(c, "api-cn LinuxDo Redirect URL must match the registered callback")
+			return
+		}
+		if req.LinuxDoConnectAPICnClientSecret == "" {
+			if previousSettings.LinuxDoConnectAPICnClientSecret == "" {
+				response.BadRequest(c, "api-cn LinuxDo Client Secret is required")
+				return
+			}
+			req.LinuxDoConnectAPICnClientSecret = previousSettings.LinuxDoConnectAPICnClientSecret
+		}
+	}
+
+	req.GoogleOAuthAPICnRedirectURL = strings.TrimSpace(req.GoogleOAuthAPICnRedirectURL)
+	if req.GoogleOAuthAPICnRedirectURL != "" {
+		if req.GoogleOAuthAPICnRedirectURL != "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback" {
+			response.BadRequest(c, "api-cn Google Redirect URL must match the registered callback")
+			return
 		}
 	}
 
@@ -1244,6 +1281,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LinuxDoConnectClientID:                 req.LinuxDoConnectClientID,
 		LinuxDoConnectClientSecret:             req.LinuxDoConnectClientSecret,
 		LinuxDoConnectRedirectURL:              req.LinuxDoConnectRedirectURL,
+		LinuxDoConnectAPICnClientID:            req.LinuxDoConnectAPICnClientID,
+		LinuxDoConnectAPICnClientSecret:        req.LinuxDoConnectAPICnClientSecret,
+		LinuxDoConnectAPICnRedirectURL:         req.LinuxDoConnectAPICnRedirectURL,
 		DingTalkConnectEnabled:                 req.DingTalkConnectEnabled,
 		DingTalkConnectClientID:                req.DingTalkConnectClientID,
 		DingTalkConnectClientSecret:            req.DingTalkConnectClientSecret,
@@ -1308,6 +1348,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GoogleOAuthClientSecret:                req.GoogleOAuthClientSecret,
 		GoogleOAuthRedirectURL:                 req.GoogleOAuthRedirectURL,
 		GoogleOAuthFrontendRedirectURL:         req.GoogleOAuthFrontendRedirectURL,
+		GoogleOAuthAPICnRedirectURL:            req.GoogleOAuthAPICnRedirectURL,
 		SiteName:                               req.SiteName,
 		SiteLogo:                               req.SiteLogo,
 		SiteSubtitle:                           req.SiteSubtitle,
@@ -1753,6 +1794,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LinuxDoConnectClientID:                                 updatedSettings.LinuxDoConnectClientID,
 		LinuxDoConnectClientSecretConfigured:                   updatedSettings.LinuxDoConnectClientSecretConfigured,
 		LinuxDoConnectRedirectURL:                              updatedSettings.LinuxDoConnectRedirectURL,
+		LinuxDoConnectAPICnClientID:                            updatedSettings.LinuxDoConnectAPICnClientID,
+		LinuxDoConnectAPICnClientSecretConfigured:              updatedSettings.LinuxDoConnectAPICnClientSecretConfigured,
+		LinuxDoConnectAPICnRedirectURL:                         updatedSettings.LinuxDoConnectAPICnRedirectURL,
 		DingTalkConnectEnabled:                                 updatedSettings.DingTalkConnectEnabled,
 		DingTalkConnectClientID:                                updatedSettings.DingTalkConnectClientID,
 		DingTalkConnectClientSecretConfigured:                  updatedSettings.DingTalkConnectClientSecretConfigured,
@@ -1817,6 +1861,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GoogleOAuthClientSecretConfigured:                      updatedSettings.GoogleOAuthClientSecretConfigured,
 		GoogleOAuthRedirectURL:                                 updatedSettings.GoogleOAuthRedirectURL,
 		GoogleOAuthFrontendRedirectURL:                         updatedSettings.GoogleOAuthFrontendRedirectURL,
+		GoogleOAuthAPICnRedirectURL:                            updatedSettings.GoogleOAuthAPICnRedirectURL,
 		SiteName:                                               updatedSettings.SiteName,
 		SiteLogo:                                               updatedSettings.SiteLogo,
 		SiteSubtitle:                                           updatedSettings.SiteSubtitle,

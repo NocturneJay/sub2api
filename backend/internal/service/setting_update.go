@@ -101,6 +101,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		settings.GitHubOAuthFrontendRedirectURL = defaultGitHubOAuthFrontend
 	}
 	settings.GoogleOAuthRedirectURL = strings.TrimSpace(settings.GoogleOAuthRedirectURL)
+	settings.GoogleOAuthAPICnRedirectURL = strings.TrimSpace(settings.GoogleOAuthAPICnRedirectURL)
 	settings.GoogleOAuthFrontendRedirectURL = strings.TrimSpace(settings.GoogleOAuthFrontendRedirectURL)
 	if settings.GoogleOAuthFrontendRedirectURL == "" {
 		settings.GoogleOAuthFrontendRedirectURL = defaultGoogleOAuthFrontend
@@ -158,8 +159,13 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyLinuxDoConnectEnabled] = strconv.FormatBool(settings.LinuxDoConnectEnabled)
 	updates[SettingKeyLinuxDoConnectClientID] = settings.LinuxDoConnectClientID
 	updates[SettingKeyLinuxDoConnectRedirectURL] = settings.LinuxDoConnectRedirectURL
+	updates[SettingKeyLinuxDoConnectAPICnClientID] = strings.TrimSpace(settings.LinuxDoConnectAPICnClientID)
+	updates[SettingKeyLinuxDoConnectAPICnRedirectURL] = strings.TrimSpace(settings.LinuxDoConnectAPICnRedirectURL)
 	if settings.LinuxDoConnectClientSecret != "" {
 		updates[SettingKeyLinuxDoConnectClientSecret] = settings.LinuxDoConnectClientSecret
+	}
+	if settings.LinuxDoConnectAPICnClientSecret != "" {
+		updates[SettingKeyLinuxDoConnectAPICnClientSecret] = strings.TrimSpace(settings.LinuxDoConnectAPICnClientSecret)
 	}
 
 	// DingTalk Connect OAuth 登录
@@ -220,6 +226,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyGoogleOAuthClientID] = strings.TrimSpace(settings.GoogleOAuthClientID)
 	updates[SettingKeyGoogleOAuthRedirectURL] = settings.GoogleOAuthRedirectURL
 	updates[SettingKeyGoogleOAuthFrontendRedirectURL] = settings.GoogleOAuthFrontendRedirectURL
+	updates[SettingKeyGoogleOAuthAPICnRedirectURL] = settings.GoogleOAuthAPICnRedirectURL
 	if settings.GoogleOAuthClientSecret != "" {
 		updates[SettingKeyGoogleOAuthClientSecret] = strings.TrimSpace(settings.GoogleOAuthClientSecret)
 	}

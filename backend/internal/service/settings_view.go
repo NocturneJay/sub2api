@@ -41,11 +41,15 @@ type SystemSettings struct {
 	APIKeyACLTrustForwardedIP    bool
 
 	// LinuxDo Connect OAuth 登录
-	LinuxDoConnectEnabled                bool
-	LinuxDoConnectClientID               string
-	LinuxDoConnectClientSecret           string
-	LinuxDoConnectClientSecretConfigured bool
-	LinuxDoConnectRedirectURL            string
+	LinuxDoConnectEnabled                     bool
+	LinuxDoConnectClientID                    string
+	LinuxDoConnectClientSecret                string
+	LinuxDoConnectClientSecretConfigured      bool
+	LinuxDoConnectRedirectURL                 string
+	LinuxDoConnectAPICnClientID               string
+	LinuxDoConnectAPICnClientSecret           string
+	LinuxDoConnectAPICnClientSecretConfigured bool
+	LinuxDoConnectAPICnRedirectURL            string
 
 	// DingTalk Connect OAuth 登录
 	DingTalkConnectEnabled                 bool
@@ -126,6 +130,7 @@ type SystemSettings struct {
 	GoogleOAuthClientSecretConfigured bool
 	GoogleOAuthRedirectURL            string
 	GoogleOAuthFrontendRedirectURL    string
+	GoogleOAuthAPICnRedirectURL       string
 
 	SiteName                    string
 	SiteLogo                    string

@@ -90,6 +90,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyGoogleOAuthClientSecret:                   "",
 		SettingKeyGoogleOAuthRedirectURL:                    "",
 		SettingKeyGoogleOAuthFrontendRedirectURL:            defaultGoogleOAuthFrontend,
+		SettingKeyGoogleOAuthAPICnRedirectURL:               "",
+		SettingKeyLinuxDoConnectAPICnClientID:               "",
+		SettingKeyLinuxDoConnectAPICnClientSecret:           "",
+		SettingKeyLinuxDoConnectAPICnRedirectURL:            "",
 		SettingKeyOIDCConnectEnabled:                        "false",
 		SettingKeyOIDCConnectProviderName:                   "OIDC",
 		SettingKeyOIDCConnectClientID:                       "",
@@ -373,6 +377,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.LinuxDoConnectClientSecret = strings.TrimSpace(linuxDoBase.ClientSecret)
 	}
 	result.LinuxDoConnectClientSecretConfigured = result.LinuxDoConnectClientSecret != ""
+	result.LinuxDoConnectAPICnClientID = strings.TrimSpace(settings[SettingKeyLinuxDoConnectAPICnClientID])
+	result.LinuxDoConnectAPICnClientSecret = strings.TrimSpace(settings[SettingKeyLinuxDoConnectAPICnClientSecret])
+	result.LinuxDoConnectAPICnClientSecretConfigured = result.LinuxDoConnectAPICnClientSecret != ""
+	result.LinuxDoConnectAPICnRedirectURL = strings.TrimSpace(settings[SettingKeyLinuxDoConnectAPICnRedirectURL])
 
 	// DingTalk Connect 设置：
 	// - 兼容 config.yaml/env
@@ -651,6 +659,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.GoogleOAuthClientSecretConfigured = result.GoogleOAuthClientSecret != ""
 	result.GoogleOAuthRedirectURL = strings.TrimSpace(googleEffective.RedirectURL)
 	result.GoogleOAuthFrontendRedirectURL = strings.TrimSpace(googleEffective.FrontendRedirectURL)
+	result.GoogleOAuthAPICnRedirectURL = strings.TrimSpace(settings[SettingKeyGoogleOAuthAPICnRedirectURL])
 
 	// WeChat Connect 设置：
 	// - 优先读取 DB 系统设置

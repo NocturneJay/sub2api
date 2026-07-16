@@ -55,10 +55,13 @@ type SystemSettings struct {
 	TurnstileSecretKeyConfigured bool   `json:"turnstile_secret_key_configured"`
 	APIKeyACLTrustForwardedIP    bool   `json:"api_key_acl_trust_forwarded_ip"`
 
-	LinuxDoConnectEnabled                bool   `json:"linuxdo_connect_enabled"`
-	LinuxDoConnectClientID               string `json:"linuxdo_connect_client_id"`
-	LinuxDoConnectClientSecretConfigured bool   `json:"linuxdo_connect_client_secret_configured"`
-	LinuxDoConnectRedirectURL            string `json:"linuxdo_connect_redirect_url"`
+	LinuxDoConnectEnabled                     bool   `json:"linuxdo_connect_enabled"`
+	LinuxDoConnectClientID                    string `json:"linuxdo_connect_client_id"`
+	LinuxDoConnectClientSecretConfigured      bool   `json:"linuxdo_connect_client_secret_configured"`
+	LinuxDoConnectRedirectURL                 string `json:"linuxdo_connect_redirect_url"`
+	LinuxDoConnectAPICnClientID               string `json:"linuxdo_connect_api_cn_client_id"`
+	LinuxDoConnectAPICnClientSecretConfigured bool   `json:"linuxdo_connect_api_cn_client_secret_configured"`
+	LinuxDoConnectAPICnRedirectURL            string `json:"linuxdo_connect_api_cn_redirect_url"`
 
 	DingTalkConnectEnabled                 bool   `json:"dingtalk_connect_enabled"`
 	DingTalkConnectClientID                string `json:"dingtalk_connect_client_id"`
@@ -127,6 +130,7 @@ type SystemSettings struct {
 	GoogleOAuthClientSecretConfigured bool   `json:"google_oauth_client_secret_configured"`
 	GoogleOAuthRedirectURL            string `json:"google_oauth_redirect_url"`
 	GoogleOAuthFrontendRedirectURL    string `json:"google_oauth_frontend_redirect_url"`
+	GoogleOAuthAPICnRedirectURL       string `json:"google_oauth_api_cn_redirect_url"`
 
 	SiteName                    string           `json:"site_name"`
 	SiteLogo                    string           `json:"site_logo"`

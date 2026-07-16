@@ -348,6 +348,10 @@ const baseSettingsResponse = {
   linuxdo_connect_client_id: "",
   linuxdo_connect_client_secret_configured: false,
   linuxdo_connect_redirect_url: "",
+  linuxdo_connect_api_cn_client_id: "",
+  linuxdo_connect_api_cn_client_secret_configured: false,
+  linuxdo_connect_api_cn_redirect_url: "",
+  google_oauth_api_cn_redirect_url: "",
   wechat_connect_enabled: true,
   wechat_connect_app_id: "wx-app-id-123",
   wechat_connect_app_secret_configured: true,
@@ -606,6 +610,50 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(wrapper.text()).not.toContain("可见方式");
     expect(wrapper.text()).not.toContain("支付来源");
+  });
+
+  it("loads and saves the api-cn OAuth overrides without replacing primary credentials", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      linuxdo_connect_enabled: true,
+      linuxdo_connect_client_id: "linuxdo-primary-id",
+      linuxdo_connect_api_cn_client_id: "linuxdo-api-cn-id",
+      linuxdo_connect_api_cn_client_secret_configured: true,
+      linuxdo_connect_api_cn_redirect_url:
+        "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback",
+      google_oauth_api_cn_redirect_url:
+        "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+    expect(wrapper.get('[data-testid="linuxdo-api-cn-client-id"]').element).toHaveProperty(
+      "value",
+      "linuxdo-api-cn-id",
+    );
+    await wrapper
+      .get('[data-testid="linuxdo-api-cn-client-secret"]')
+      .setValue("linuxdo-api-cn-secret");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        linuxdo_connect_client_id: "linuxdo-primary-id",
+        linuxdo_connect_api_cn_client_id: "linuxdo-api-cn-id",
+        linuxdo_connect_api_cn_client_secret: "linuxdo-api-cn-secret",
+        linuxdo_connect_api_cn_redirect_url:
+          "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback",
+        google_oauth_api_cn_redirect_url:
+          "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback",
+      }),
+    );
+    expect(
+      (wrapper.get('[data-testid="linuxdo-api-cn-client-secret"]').element as HTMLInputElement)
+        .value,
+    ).toBe("");
   });
 
   it("submits the configured redeem code purchase URL", async () => {

@@ -459,6 +459,9 @@ export interface SystemSettings {
   linuxdo_connect_client_id: string;
   linuxdo_connect_client_secret_configured: boolean;
   linuxdo_connect_redirect_url: string;
+  linuxdo_connect_api_cn_client_id: string;
+  linuxdo_connect_api_cn_client_secret_configured: boolean;
+  linuxdo_connect_api_cn_redirect_url: string;
 
   // DingTalk Connect OAuth settings
   dingtalk_connect_enabled: boolean;
@@ -529,6 +532,7 @@ export interface SystemSettings {
   google_oauth_client_secret_configured: boolean;
   google_oauth_redirect_url: string;
   google_oauth_frontend_redirect_url: string;
+  google_oauth_api_cn_redirect_url: string;
 
   // Model fallback configuration
   enable_model_fallback: boolean;
@@ -753,6 +757,9 @@ export interface UpdateSettingsRequest {
   linuxdo_connect_client_id?: string;
   linuxdo_connect_client_secret?: string;
   linuxdo_connect_redirect_url?: string;
+  linuxdo_connect_api_cn_client_id?: string;
+  linuxdo_connect_api_cn_client_secret?: string;
+  linuxdo_connect_api_cn_redirect_url?: string;
   dingtalk_connect_enabled?: boolean;
   dingtalk_connect_client_id?: string;
   dingtalk_connect_client_secret?: string;
@@ -817,6 +824,7 @@ export interface UpdateSettingsRequest {
   google_oauth_client_secret?: string;
   google_oauth_redirect_url?: string;
   google_oauth_frontend_redirect_url?: string;
+  google_oauth_api_cn_redirect_url?: string;
   enable_model_fallback?: boolean;
   fallback_model_anthropic?: string;
   fallback_model_openai?: string;

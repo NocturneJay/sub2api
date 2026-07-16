@@ -59,7 +59,7 @@ func (h *AuthHandler) CompleteGoogleOAuthRegistration(c *gin.Context) {
 }
 
 func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
-	cfg, err := h.getEmailOAuthConfig(c.Request.Context(), provider)
+	cfg, err := h.getEmailOAuthConfig(c.Request.Context(), provider, c.Request.Host)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -94,7 +94,7 @@ func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
 }
 
 func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {
-	cfg, cfgErr := h.getEmailOAuthConfig(c.Request.Context(), provider)
+	cfg, cfgErr := h.getEmailOAuthConfig(c.Request.Context(), provider, c.Request.Host)
 	if cfgErr != nil {
 		response.ErrorFrom(c, cfgErr)
 		return
@@ -443,9 +443,9 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 	writeOAuthTokenPairResponse(c, tokenPair)
 }
 
-func (h *AuthHandler) getEmailOAuthConfig(ctx context.Context, provider string) (config.EmailOAuthProviderConfig, error) {
+func (h *AuthHandler) getEmailOAuthConfig(ctx context.Context, provider, requestHost string) (config.EmailOAuthProviderConfig, error) {
 	if h != nil && h.settingSvc != nil {
-		return h.settingSvc.GetEmailOAuthProviderConfig(ctx, provider)
+		return h.settingSvc.GetEmailOAuthProviderConfigForHost(ctx, provider, requestHost)
 	}
 	return config.EmailOAuthProviderConfig{}, infraerrors.ServiceUnavailable("CONFIG_NOT_READY", "config not loaded")
 }

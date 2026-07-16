@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +15,33 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/imroc/req/v3"
 )
+
+const apiCnOAuthHost = "api-cn.aicatstudios.com"
+
+func normalizeOAuthRequestHost(raw string) string {
+	host := strings.TrimSpace(raw)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	return strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
+}
+
+func isAPICnOAuthHost(raw string) bool {
+	return normalizeOAuthRequestHost(raw) == apiCnOAuthHost
+}
+
+func validateAPICnOAuthRedirectURL(raw, expectedPath string) error {
+	if err := config.ValidateAbsoluteHTTPURL(raw); err != nil {
+		return err
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" ||
+		!strings.EqualFold(parsed.Hostname(), apiCnOAuthHost) || parsed.Path != expectedPath ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("redirect url must be https://%s%s", apiCnOAuthHost, expectedPath)
+	}
+	return nil
+}
 
 // CoerceDingTalkCorpPolicyForWrite 是 coerceDeprecatedDingTalkCorpPolicy 的导出版本，
 // 用于 admin handler 在写入路径上对客户端直传的入参做防御性 coerce（前端 UI 虽已无 whitelist 选项，
@@ -468,6 +497,28 @@ func (s *SettingService) GetEmailOAuthProviderConfig(ctx context.Context, provid
 	return cfg, nil
 }
 
+// GetEmailOAuthProviderConfigForHost keeps the primary OAuth client unchanged while
+// selecting the explicitly configured api-cn callback for requests on that host.
+func (s *SettingService) GetEmailOAuthProviderConfigForHost(ctx context.Context, provider, requestHost string) (config.EmailOAuthProviderConfig, error) {
+	cfg, err := s.GetEmailOAuthProviderConfig(ctx, provider)
+	if err != nil || strings.ToLower(strings.TrimSpace(provider)) != "google" || !isAPICnOAuthHost(requestHost) {
+		return cfg, err
+	}
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyGoogleOAuthAPICnRedirectURL})
+	if err != nil {
+		return config.EmailOAuthProviderConfig{}, fmt.Errorf("get api-cn google oauth settings: %w", err)
+	}
+	redirectURL := strings.TrimSpace(settings[SettingKeyGoogleOAuthAPICnRedirectURL])
+	if redirectURL == "" {
+		return config.EmailOAuthProviderConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "api-cn google oauth redirect url not configured")
+	}
+	if err := validateAPICnOAuthRedirectURL(redirectURL, "/api/v1/auth/oauth/google/callback"); err != nil {
+		return config.EmailOAuthProviderConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "api-cn google oauth redirect url invalid")
+	}
+	cfg.RedirectURL = redirectURL
+	return cfg, nil
+}
+
 // GetLinuxDoConnectOAuthConfig 返回用于登录的"最终生效" LinuxDo Connect 配置。
 //
 // 优先级：
@@ -555,6 +606,33 @@ func (s *SettingService) GetLinuxDoConnectOAuthConfig(ctx context.Context) (conf
 	}
 
 	return effective, nil
+}
+
+// GetLinuxDoConnectOAuthConfigForHost selects the independent api-cn OAuth app
+// only for the exact configured production hostname. Other hosts keep the primary app.
+func (s *SettingService) GetLinuxDoConnectOAuthConfigForHost(ctx context.Context, requestHost string) (config.LinuxDoConnectConfig, error) {
+	cfg, err := s.GetLinuxDoConnectOAuthConfig(ctx)
+	if err != nil || !isAPICnOAuthHost(requestHost) {
+		return cfg, err
+	}
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyLinuxDoConnectAPICnClientID,
+		SettingKeyLinuxDoConnectAPICnClientSecret,
+		SettingKeyLinuxDoConnectAPICnRedirectURL,
+	})
+	if err != nil {
+		return config.LinuxDoConnectConfig{}, fmt.Errorf("get api-cn linuxdo oauth settings: %w", err)
+	}
+	cfg.ClientID = strings.TrimSpace(settings[SettingKeyLinuxDoConnectAPICnClientID])
+	cfg.ClientSecret = strings.TrimSpace(settings[SettingKeyLinuxDoConnectAPICnClientSecret])
+	cfg.RedirectURL = strings.TrimSpace(settings[SettingKeyLinuxDoConnectAPICnRedirectURL])
+	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURL == "" {
+		return config.LinuxDoConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "api-cn linuxdo oauth client is not configured")
+	}
+	if err := validateAPICnOAuthRedirectURL(cfg.RedirectURL, "/api/v1/auth/oauth/linuxdo/callback"); err != nil {
+		return config.LinuxDoConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "api-cn linuxdo oauth redirect url invalid")
+	}
+	return cfg, nil
 }
 
 // GetDingTalkConnectOAuthConfig 返回用于登录的"最终生效" DingTalk Connect 配置。
