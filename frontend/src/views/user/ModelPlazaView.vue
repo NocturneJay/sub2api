@@ -132,7 +132,7 @@
                 <template v-else>{{ g.rate_multiplier }}x</template>
               </span>
               <span
-                v-if="g.image_rate_independent"
+                v-if="showImageRateBadge(g)"
                 class="rounded bg-purple-100 px-1 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
               >
                 {{ t('modelPlaza.imageRateBadge', { rate: g.image_rate_multiplier }) }}
@@ -700,10 +700,19 @@ function groupHasPeak(g: UserAvailableGroup): boolean {
   return groupHasPeakRate(g)
 }
 
+/**
+ * "图 xN"角标只在图片独立倍率有信息量时显示:
+ * 全站图片倍率普遍为 x1 时,逐个分组标"图 x1"是纯噪音,藏掉;
+ * 只有设了非 1 的独立图片倍率(如图片五折 x0.5)才值得提示用户。
+ */
+function showImageRateBadge(g: UserAvailableGroup): boolean {
+  return g.image_rate_independent && g.image_rate_multiplier !== 1
+}
+
 function chipTitle(g: UserAvailableGroup): string {
   const parts: string[] = []
   if (g.is_exclusive) parts.push(t('modelPlaza.exclusiveTooltip'))
-  if (g.image_rate_independent) {
+  if (showImageRateBadge(g)) {
     parts.push(t('modelPlaza.imageRateTooltip', { rate: g.image_rate_multiplier }))
   }
   if (groupHasPeak(g)) {
