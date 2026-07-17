@@ -267,7 +267,8 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/models',
+    // 注意:不能用 /models —— 后端网关把根路径 /models 注册为 OpenAI 兼容 API,会抢占直链刷新。
+    path: '/model-plaza',
     name: 'UserModelPlaza',
     component: () => import('@/views/user/ModelPlazaView.vue'),
     meta: {
