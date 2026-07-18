@@ -256,6 +256,22 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	return tokenPair, user, nil
 }
 
+// RegisterVerifiedOAuthEmailAccountPasswordless creates an OAuth-only local
+// account. The generated password is intentionally not returned to the caller;
+// users can opt into password login later through the password-reset flow.
+func (s *AuthService) RegisterVerifiedOAuthEmailAccountPasswordless(
+	ctx context.Context,
+	email string,
+	invitationCode string,
+	signupSource string,
+) (*TokenPair, *User, error) {
+	randomPassword, err := randomHexString(32)
+	if err != nil {
+		return nil, nil, ErrServiceUnavailable
+	}
+	return s.RegisterVerifiedOAuthEmailAccount(ctx, email, randomPassword, invitationCode, signupSource)
+}
+
 // FinalizeOAuthEmailAccount applies invitation usage and normal signup bootstrap
 // only after the pending OAuth flow has fully reached its last reversible step.
 func (s *AuthService) FinalizeOAuthEmailAccount(

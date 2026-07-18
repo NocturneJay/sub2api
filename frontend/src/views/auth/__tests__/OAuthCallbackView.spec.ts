@@ -174,15 +174,12 @@ describe('OAuthCallbackView', () => {
 
     const wrapper = mount(OAuthCallbackView)
     await vi.dynamicImportSettled()
-    const passwordInputs = wrapper.findAll('input[type="password"]')
-    await passwordInputs[0].setValue('secret-123')
-    await passwordInputs[1].setValue('secret-123')
+    expect(wrapper.findAll('input[type="password"]')).toHaveLength(0)
     const invitationInput = wrapper.find('input[type="text"]')
     await invitationInput.setValue('INVITE456')
     await wrapper.findAll('button').at(0)?.trigger('click')
 
     expect(apiPostMock).toHaveBeenCalledWith('/auth/oauth/google/complete-registration', {
-      password: 'secret-123',
       invitation_code: 'INVITE456',
       aff_code: 'AFF456',
       affiliate_device_id: expect.stringMatching(/^fp2-/),
@@ -190,7 +187,7 @@ describe('OAuthCallbackView', () => {
     expect(setTokenMock).toHaveBeenCalledWith('token-1')
   })
 
-  it('completes email oauth registration with readonly email and without posting email', async () => {
+  it('completes a legacy pending email oauth registration without asking for a password', async () => {
     routeState.path = '/auth/oauth/callback'
     exchangePendingOAuthCompletionMock.mockResolvedValue({
       error: 'registration_completion_required',
@@ -214,14 +211,10 @@ describe('OAuthCallbackView', () => {
     expect(emailInput.attributes('readonly')).toBeDefined()
     expect(emailInput.attributes('disabled')).toBeDefined()
 
-    const passwordInputs = wrapper.findAll('input[type="password"]')
-    await passwordInputs[0].setValue('secret-456')
-    await passwordInputs[1].setValue('secret-456')
+    expect(wrapper.findAll('input[type="password"]')).toHaveLength(0)
     await wrapper.findAll('button').at(0)?.trigger('click')
 
-    expect(apiPostMock).toHaveBeenCalledWith('/auth/oauth/github/complete-registration', {
-      password: 'secret-456',
-    })
+    expect(apiPostMock).toHaveBeenCalledWith('/auth/oauth/github/complete-registration', {})
     expect(apiPostMock.mock.calls[0][1]).not.toHaveProperty('email')
     expect(setTokenMock).toHaveBeenCalledWith('token-2')
   })

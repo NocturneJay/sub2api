@@ -32,6 +32,7 @@ import { useI18n } from 'vue-i18n'
 import GitHubMark from './GitHubMark.vue'
 import GoogleMark from './GoogleMark.vue'
 import { resolveAffiliateReferralCode, storeOAuthAffiliateCode } from '@/utils/oauthAffiliate'
+import { getAffiliateDeviceID } from '@/utils/affiliateDevice'
 
 type EmailOAuthProvider = 'github' | 'google'
 const EMAIL_OAUTH_PENDING_PROVIDER_KEY = 'email_oauth_pending_provider'
@@ -80,6 +81,10 @@ function startLogin(provider: EmailOAuthProvider): void {
   const params = new URLSearchParams({ redirect: redirectTo })
   if (affiliateCode) {
     params.set('aff_code', affiliateCode)
+    const affiliateDeviceID = getAffiliateDeviceID()
+    if (affiliateDeviceID) {
+      params.set('affiliate_device_id', affiliateDeviceID)
+    }
   }
   const startURL = `${normalized}/auth/oauth/${provider}/start?${params.toString()}`
   window.location.href = startURL

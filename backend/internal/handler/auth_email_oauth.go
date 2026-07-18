@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	emailOAuthCookiePath      = "/api/v1/auth/oauth"
-	emailOAuthStateCookieName = "email_oauth_state"
-	emailOAuthRedirectCookie  = "email_oauth_redirect"
-	emailOAuthProviderCookie  = "email_oauth_provider"
-	emailOAuthAffiliateCookie = "email_oauth_affiliate"
-	emailOAuthCookieMaxAgeSec = 10 * 60
-	emailOAuthDefaultRedirect = "/dashboard"
+	emailOAuthCookiePath            = "/api/v1/auth/oauth"
+	emailOAuthStateCookieName       = "email_oauth_state"
+	emailOAuthRedirectCookie        = "email_oauth_redirect"
+	emailOAuthProviderCookie        = "email_oauth_provider"
+	emailOAuthAffiliateCookie       = "email_oauth_affiliate"
+	emailOAuthAffiliateDeviceCookie = "email_oauth_affiliate_device"
+	emailOAuthCookieMaxAgeSec       = 10 * 60
+	emailOAuthDefaultRedirect       = "/dashboard"
 )
 
 type emailOAuthTokenResponse struct {
@@ -81,8 +82,14 @@ func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
 	captureOAuthPromoCode(c, secureCookie)
 	if affCode := strings.TrimSpace(firstNonEmpty(c.Query("aff_code"), c.Query("aff"))); affCode != "" {
 		emailOAuthSetCookie(c, emailOAuthAffiliateCookie, encodeCookieValue(affCode), secureCookie)
+		if deviceID := strings.TrimSpace(c.Query("affiliate_device_id")); len(deviceID) >= 8 && len(deviceID) <= 128 {
+			emailOAuthSetCookie(c, emailOAuthAffiliateDeviceCookie, encodeCookieValue(deviceID), secureCookie)
+		} else {
+			emailOAuthClearCookie(c, emailOAuthAffiliateDeviceCookie, secureCookie)
+		}
 	} else {
 		emailOAuthClearCookie(c, emailOAuthAffiliateCookie, secureCookie)
+		emailOAuthClearCookie(c, emailOAuthAffiliateDeviceCookie, secureCookie)
 	}
 
 	authURL, err := buildEmailOAuthAuthorizeURL(cfg, state)
@@ -120,6 +127,7 @@ func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {
 		emailOAuthClearCookie(c, emailOAuthRedirectCookie, secureCookie)
 		emailOAuthClearCookie(c, emailOAuthProviderCookie, secureCookie)
 		emailOAuthClearCookie(c, emailOAuthAffiliateCookie, secureCookie)
+		emailOAuthClearCookie(c, emailOAuthAffiliateDeviceCookie, secureCookie)
 		clearOAuthPromoCodeCookie(c, secureCookie)
 	}()
 	expectedState, err := readCookieDecoded(c, emailOAuthStateCookieName)
@@ -171,24 +179,26 @@ func (h *AuthHandler) emailOAuthCallbackWithProfile(
 		UpstreamMetadata: profile.Metadata,
 	}
 	affiliateCode := h.emailOAuthAffiliateCode(c)
-	if shouldCreate, err := h.emailOAuthShouldCreatePendingRegistration(c.Request.Context(), input); err != nil {
+	affiliateDeviceID := h.emailOAuthAffiliateDeviceID(c)
+	isNewUser, err := h.emailOAuthIsNewUser(c.Request.Context(), input)
+	if err != nil {
 		redirectOAuthError(c, frontendCallback, infraerrors.Reason(err), infraerrors.Message(err), "")
 		return
-	} else if shouldCreate {
-		if pendingErr := h.createEmailOAuthRegistrationPendingSession(c, provider, frontendCallback, redirectTo, profile); pendingErr != nil {
-			redirectOAuthError(c, frontendCallback, infraerrors.Reason(pendingErr), infraerrors.Message(pendingErr), "")
+	}
+	if isNewUser {
+		if err := h.ensureBackendModeAllowsNewUserLogin(c.Request.Context()); err != nil {
+			redirectOAuthError(c, frontendCallback, "login_blocked", infraerrors.Reason(err), infraerrors.Message(err))
 			return
 		}
-		redirectToFrontendCallback(c, frontendCallback)
-		return
 	}
 
-	tokenPair, user, err := h.authService.LoginOrRegisterVerifiedEmailOAuthWithSignupCodes(
+	tokenPair, user, err := h.authService.LoginOrRegisterVerifiedEmailOAuthWithSignupCodesAndAffiliateDevice(
 		c.Request.Context(),
 		input,
 		"",
 		affiliateCode,
 		readOAuthPromoCode(c),
+		affiliateDeviceID,
 	)
 	if err != nil {
 		if errors.Is(err, service.ErrOAuthInvitationRequired) {
@@ -216,7 +226,7 @@ func (h *AuthHandler) emailOAuthCallbackWithProfile(
 	redirectWithFragment(c, frontendCallback, fragment)
 }
 
-func (h *AuthHandler) emailOAuthShouldCreatePendingRegistration(ctx context.Context, input service.EmailOAuthIdentityInput) (bool, error) {
+func (h *AuthHandler) emailOAuthIsNewUser(ctx context.Context, input service.EmailOAuthIdentityInput) (bool, error) {
 	client := h.entClient()
 	if client == nil {
 		return false, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
@@ -255,6 +265,19 @@ func (h *AuthHandler) emailOAuthAffiliateCode(c *gin.Context) string {
 	return ""
 }
 
+func (h *AuthHandler) emailOAuthAffiliateDeviceID(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if deviceID, err := readCookieDecoded(c, emailOAuthAffiliateDeviceCookie); err == nil {
+		deviceID = strings.TrimSpace(deviceID)
+		if len(deviceID) >= 8 && len(deviceID) <= 128 {
+			return deviceID
+		}
+	}
+	return ""
+}
+
 func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 	c *gin.Context,
 	provider string,
@@ -274,6 +297,7 @@ func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 	email := strings.TrimSpace(strings.ToLower(profile.Email))
 	username := strings.TrimSpace(profile.Username)
 	affiliateCode := h.emailOAuthAffiliateCode(c)
+	affiliateDeviceID := h.emailOAuthAffiliateDeviceID(c)
 	upstreamClaims := map[string]any{
 		"email":            email,
 		"email_verified":   profile.EmailVerified,
@@ -290,6 +314,9 @@ func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 	}
 	if affiliateCode != "" {
 		upstreamClaims["aff_code"] = affiliateCode
+	}
+	if affiliateDeviceID != "" {
+		upstreamClaims["affiliate_device_id"] = affiliateDeviceID
 	}
 	for key, value := range profile.Metadata {
 		if _, exists := upstreamClaims[key]; !exists {
@@ -334,7 +361,6 @@ func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 }
 
 type completeEmailOAuthRequest struct {
-	Password          string `json:"password" binding:"required,min=6"`
 	InvitationCode    string `json:"invitation_code,omitempty"`
 	AffCode           string `json:"aff_code,omitempty"`
 	AffiliateDeviceID string `json:"affiliate_device_id,omitempty"`
@@ -369,11 +395,14 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 	if affiliateCode == "" {
 		affiliateCode = pendingSessionStringValue(session.UpstreamIdentityClaims, "aff_code")
 	}
+	affiliateDeviceID := strings.TrimSpace(req.AffiliateDeviceID)
+	if affiliateDeviceID == "" {
+		affiliateDeviceID = pendingSessionStringValue(session.UpstreamIdentityClaims, "affiliate_device_id")
+	}
 
-	tokenPair, user, err := h.authService.RegisterVerifiedOAuthEmailAccount(
+	tokenPair, user, err := h.authService.RegisterVerifiedOAuthEmailAccountPasswordless(
 		c.Request.Context(),
 		strings.TrimSpace(session.ResolvedEmail),
-		req.Password,
 		strings.TrimSpace(req.InvitationCode),
 		strings.TrimSpace(session.ProviderType),
 	)
@@ -418,7 +447,7 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		strings.TrimSpace(req.InvitationCode),
 		strings.TrimSpace(session.ProviderType),
 		affiliateCode,
-		strings.TrimSpace(req.AffiliateDeviceID),
+		affiliateDeviceID,
 	); err != nil {
 		_ = tx.Rollback()
 		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))

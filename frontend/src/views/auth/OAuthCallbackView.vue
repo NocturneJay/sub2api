@@ -30,30 +30,6 @@
               disabled
             />
           </div>
-          <div>
-            <label class="input-label">{{ t('auth.passwordLabel') }}</label>
-            <input
-              v-model="password"
-              type="password"
-              class="input w-full"
-              :placeholder="t('auth.createPasswordPlaceholder')"
-              :disabled="isSubmitting"
-              autocomplete="new-password"
-              @keyup.enter="handleSubmitRegistration"
-            />
-          </div>
-          <div>
-            <label class="input-label">{{ t('auth.confirmPassword') }}</label>
-            <input
-              v-model="confirmPassword"
-              type="password"
-              class="input w-full"
-              :placeholder="t('auth.confirmPasswordPlaceholder')"
-              :disabled="isSubmitting"
-              autocomplete="new-password"
-              @keyup.enter="handleSubmitRegistration"
-            />
-          </div>
           <div v-if="invitationRequired">
             <label class="input-label">{{ t('auth.invitationCodeLabel') }}</label>
             <input
@@ -175,8 +151,6 @@ const isSubmitting = ref(false)
 const needsRegistrationCompletion = ref(false)
 const invitationRequired = ref(false)
 const registrationEmail = ref('')
-const password = ref('')
-const confirmPassword = ref('')
 const invitationCode = ref('')
 const registrationError = ref('')
 const pendingProvider = ref<'github' | 'google'>('github')
@@ -213,8 +187,6 @@ const registrationHint = computed(() =>
 )
 const canSubmitRegistration = computed(() => {
   if (!registrationEmail.value.trim()) return false
-  if (password.value.length < 6) return false
-  if (password.value !== confirmPassword.value) return false
   if (invitationRequired.value && !invitationCode.value.trim()) return false
   return true
 })
@@ -329,21 +301,12 @@ async function handleSubmitRegistration() {
     registrationError.value = t('auth.emailRequired')
     return
   }
-  if (password.value.length < 6) {
-    registrationError.value = t('auth.passwordMinLength')
-    return
-  }
-  if (password.value !== confirmPassword.value) {
-    registrationError.value = t('auth.passwordsDoNotMatch')
-    return
-  }
   const code = invitationCode.value.trim()
   if (invitationRequired.value && !code) return
 
   isSubmitting.value = true
   try {
-    const payload: { password: string; invitation_code?: string; aff_code?: string; affiliate_device_id?: string } = {
-      password: password.value,
+    const payload: { invitation_code?: string; aff_code?: string; affiliate_device_id?: string } = {
       ...oauthAffiliatePayload(loadOAuthAffiliateCode())
     }
     if (invitationRequired.value) {

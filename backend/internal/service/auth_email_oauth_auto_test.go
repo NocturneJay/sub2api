@@ -67,6 +67,7 @@ func TestEmailOAuthAuto_SnapshotsPlatformQuotaDefaults(t *testing.T) {
 		"github",
 		"", // invitationCode
 		"", // affiliateCode
+		"", // affiliateDeviceID
 	)
 	require.NoError(t, err)
 	require.NotNil(t, user)
