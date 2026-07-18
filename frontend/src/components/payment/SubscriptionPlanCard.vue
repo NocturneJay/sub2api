@@ -1,5 +1,8 @@
 <template>
   <div
+    :data-plan-name="plan.name"
+    :data-plan-price="plan.price"
+    :data-plan-platform="platform"
     :class="[
       'group relative flex flex-col overflow-hidden rounded-2xl border transition-all',
       'hover:shadow-xl hover:-translate-y-0.5',
@@ -11,27 +14,25 @@
     <div :class="['h-1.5', accentClass]" />
 
     <div class="flex flex-1 flex-col p-4">
-      <!-- Header: name + badge + price -->
-      <div class="mb-3 flex items-start justify-between gap-2">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h3 class="truncate text-base font-bold text-gray-900 dark:text-white">{{ plan.name }}</h3>
-            <span :class="['shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
-              {{ pLabel }}
-            </span>
-          </div>
-          <p v-if="plan.description" class="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-dark-400 line-clamp-2">
-            {{ plan.description }}
-          </p>
+      <!-- Header: full-width name row, then description, then price row -->
+      <div class="mb-3">
+        <div class="flex items-start justify-between gap-2">
+          <h3 class="min-w-0 flex-1 text-base font-bold leading-snug text-gray-900 line-clamp-2 dark:text-white">{{ plan.name }}</h3>
+          <span :class="['mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
+            {{ pLabel }}
+          </span>
         </div>
-        <div class="shrink-0 text-right">
+        <p v-if="plan.description" class="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-dark-400 line-clamp-2">
+          {{ plan.description }}
+        </p>
+        <div class="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
           <div class="flex items-baseline gap-1">
             <span class="text-xs text-gray-400 dark:text-dark-500">$</span>
             <span :class="['text-2xl font-extrabold tracking-tight', textClass]">{{ plan.price }}</span>
             <span v-if="plan.currency" class="text-xs font-medium text-gray-400 dark:text-dark-500">{{ plan.currency }}</span>
+            <span class="text-[11px] text-gray-400 dark:text-dark-500">/ {{ validitySuffix }}</span>
           </div>
-          <span class="text-[11px] text-gray-400 dark:text-dark-500">/ {{ validitySuffix }}</span>
-          <div v-if="plan.original_price" class="mt-0.5 flex items-center justify-end gap-1.5">
+          <div v-if="plan.original_price" class="flex items-center gap-1.5">
             <span class="text-xs text-gray-400 line-through dark:text-dark-500">${{ plan.original_price }}<template v-if="plan.currency"> {{ plan.currency }}</template></span>
             <span :class="['rounded px-1 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
           </div>
