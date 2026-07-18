@@ -25,10 +25,11 @@ func swapMonitorHTTPClient(t *testing.T) {
 
 // captureHandler 把每次收到的请求 body 和 headers 存起来，测试断言用。
 type captureHandler struct {
-	lastBody    map[string]any
-	lastHeaders http.Header
-	respondText string // 写到 Anthropic content[0].text 里（校验用）
-	status      int
+	lastBody        map[string]any
+	lastHeaders     http.Header
+	respondText     string // 写到 Anthropic content[0].text 里（校验用）
+	leadingThinking bool
+	status          int
 }
 
 func (h *captureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,11 +44,15 @@ func (h *captureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(h.status)
-	// 构造 Anthropic 格式的响应：content[0].text = h.respondText
+	content := []map[string]any{{"type": "text", "text": h.respondText}}
+	if h.leadingThinking {
+		content = []map[string]any{
+			{"type": "thinking", "thinking": "intermediate 999"},
+			{"type": "text", "text": answerFromAnthropicRequest(parsed)},
+		}
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"content": []map[string]any{
-			{"type": "text", "text": h.respondText},
-		},
+		"content": content,
 	})
 }
 
@@ -133,6 +138,16 @@ func answerFromOpenAIRequest(body map[string]any) string {
 	return answerFromChallengePrompt(prompt)
 }
 
+func answerFromAnthropicRequest(body map[string]any) string {
+	messages, _ := body["messages"].([]any)
+	if len(messages) == 0 {
+		return "0"
+	}
+	message, _ := messages[0].(map[string]any)
+	prompt, _ := message["content"].(string)
+	return answerFromChallengePrompt(prompt)
+}
+
 var challengeQuestionRegex = regexp.MustCompile(`Q: (\d+) ([+-]) (\d+) = \?\nA:$`)
 
 func answerFromChallengePrompt(prompt string) string {
@@ -161,8 +176,22 @@ func TestRunCheckForModel_OffMode_PreservesDefaultBody(t *testing.T) {
 	if _, ok := h.lastBody["messages"]; !ok {
 		t.Error("default body should contain messages")
 	}
+	if stream, ok := h.lastBody["stream"].(bool); !ok || stream {
+		t.Errorf("default body should force stream=false, got %v", h.lastBody["stream"])
+	}
 	if h.lastHeaders.Get("x-api-key") != "sk-fake" {
 		t.Errorf("expected adapter's x-api-key header, got %q", h.lastHeaders.Get("x-api-key"))
+	}
+}
+
+func TestRunCheckForModel_AnthropicFindsTextAfterThinkingBlock(t *testing.T) {
+	h := &captureHandler{leadingThinking: true}
+	endpoint := setupFakeAnthropic(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-x", nil)
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("text after thinking block should pass challenge, got status=%s message=%q", res.Status, res.Message)
 	}
 }
 
@@ -366,6 +395,7 @@ func TestRunCheckForModel_MergeMode_UserFieldsWinButDenyListProtects(t *testing.
 			"max_tokens": float64(999),   // 应该覆盖默认 50
 			"model":      "hacked-model", // 应该被黑名单挡住，保留原 model
 			"messages":   []any{},        // 同上，被挡
+			"stream":     true,           // 监控只支持非流式响应，也必须被挡
 		},
 		ExtraHeaders: map[string]string{
 			"User-Agent":     "claude-cli/1.0",
@@ -390,6 +420,9 @@ func TestRunCheckForModel_MergeMode_UserFieldsWinButDenyListProtects(t *testing.
 	msgs, _ := h.lastBody["messages"].([]any)
 	if len(msgs) == 0 {
 		t.Error("messages should be protected by deny list (kept default, non-empty)")
+	}
+	if stream, ok := h.lastBody["stream"].(bool); !ok || stream {
+		t.Errorf("stream should be protected as false, got %v", h.lastBody["stream"])
 	}
 	// header 合并
 	if h.lastHeaders.Get("User-Agent") != "claude-cli/1.0" {

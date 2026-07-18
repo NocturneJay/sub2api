@@ -176,6 +176,7 @@ var providerAdapters = map[string]providerAdapter{
 				"model":      model,
 				"messages":   []map[string]string{{"role": "user", "content": prompt}},
 				"max_tokens": monitorChallengeMaxTokens,
+				"stream":     false,
 			})
 		},
 		buildHeaders: func(apiKey string) map[string]string {
@@ -293,7 +294,41 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 	if provider == MonitorProviderOpenAI && apiMode == MonitorAPIModeResponses {
 		return extractOpenAIResponsesText(respBytes), string(respBytes), status, nil
 	}
+	if provider == MonitorProviderAnthropic {
+		return extractAnthropicText(respBytes), string(respBytes), status, nil
+	}
 	return gjson.GetBytes(respBytes, adapter.textPath).String(), string(respBytes), status, nil
+}
+
+// extractAnthropicText 聚合 Messages API content 中的文本块。
+// thinking / tool_use 等块可能排在 text 前面，不能假设答案固定在 content.0.text。
+func extractAnthropicText(respBytes []byte) string {
+	content := gjson.GetBytes(respBytes, "content")
+	if content.Type == gjson.String {
+		return content.String()
+	}
+
+	var texts []string
+	appendText := func(block gjson.Result) {
+		blockType := block.Get("type").String()
+		if blockType != "" && blockType != "text" && blockType != "output_text" {
+			return
+		}
+		if text := block.Get("text").String(); strings.TrimSpace(text) != "" {
+			texts = append(texts, text)
+		}
+	}
+
+	if content.IsArray() {
+		content.ForEach(func(_, block gjson.Result) bool {
+			appendText(block)
+			return true
+		})
+	} else if content.IsObject() {
+		appendText(content)
+	}
+
+	return strings.Join(texts, "")
 }
 
 // extractOpenAIResponsesText 聚合 Responses API 的最终 assistant 文本。
@@ -417,7 +452,7 @@ var bodyMergeKeyDenyList = map[string]map[string]bool{
 	MonitorProviderOpenAI + ":" + MonitorAPIModeChatCompletions: {"model": true, "messages": true, "stream": true},
 	MonitorProviderOpenAI + ":" + MonitorAPIModeResponses:       {"model": true, "instructions": true, "input": true, "stream": true},
 	MonitorProviderGrok:      {"model": true, "messages": true, "stream": true},
-	MonitorProviderAnthropic: {"model": true, "messages": true},
+	MonitorProviderAnthropic: {"model": true, "messages": true, "stream": true},
 	MonitorProviderGemini:    {"contents": true},
 }
 
