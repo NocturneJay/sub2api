@@ -48,14 +48,16 @@ func computeBusinessHealth(overview *OpsDashboardOverview) float64 {
 		}
 	}
 
-	// TTFT score: 1s → 100, 3s → 0 (linear)
-	// Time to first token is critical for user experience
+	// TTFT score: 3s → 100, 10s → 0 (linear)
+	// Uses P95 instead of P99: with low traffic the P99 tail is decided by a
+	// handful of slow requests (long-thinking models, proxied accounts), which
+	// would permanently cap the overall score.
 	ttftScore := 100.0
-	if overview.TTFT.P99 != nil {
-		p99 := float64(*overview.TTFT.P99)
-		if p99 > 1000 {
-			if p99 <= 3000 {
-				ttftScore = (3000 - p99) / 2000 * 100
+	if overview.TTFT.P95 != nil {
+		p95 := float64(*overview.TTFT.P95)
+		if p95 > 3000 {
+			if p95 <= 10000 {
+				ttftScore = (10000 - p95) / 7000 * 100
 			} else {
 				ttftScore = 0
 			}

@@ -31,7 +31,7 @@ func TestComputeDashboardHealthScore_DegradesOnBadSignals(t *testing.T) {
 		UpstreamErrorRate: 0.08,
 
 		Duration: OpsPercentiles{P99: intPtr(20_000)},
-		TTFT:     OpsPercentiles{P99: intPtr(2_000)},
+		TTFT:     OpsPercentiles{P95: intPtr(2_000)},
 
 		SystemMetrics: &OpsSystemMetricsSnapshot{
 			DBOK:                  boolPtr(false),
@@ -79,7 +79,7 @@ func TestComputeDashboardHealthScore_Comprehensive(t *testing.T) {
 				ErrorRate:         0,
 				UpstreamErrorRate: 0,
 				Duration:          OpsPercentiles{P99: intPtr(500)},
-				TTFT:              OpsPercentiles{P99: intPtr(100)},
+				TTFT:              OpsPercentiles{P95: intPtr(100)},
 				SystemMetrics: &OpsSystemMetricsSnapshot{
 					DBOK:               boolPtr(true),
 					RedisOK:            boolPtr(true),
@@ -99,7 +99,7 @@ func TestComputeDashboardHealthScore_Comprehensive(t *testing.T) {
 				ErrorRate:         0.003,
 				UpstreamErrorRate: 0.001,
 				Duration:          OpsPercentiles{P99: intPtr(800)},
-				TTFT:              OpsPercentiles{P99: intPtr(200)},
+				TTFT:              OpsPercentiles{P95: intPtr(200)},
 				SystemMetrics: &OpsSystemMetricsSnapshot{
 					DBOK:               boolPtr(true),
 					RedisOK:            boolPtr(true),
@@ -119,7 +119,7 @@ func TestComputeDashboardHealthScore_Comprehensive(t *testing.T) {
 				ErrorRate:         0.02,
 				UpstreamErrorRate: 0.01,
 				Duration:          OpsPercentiles{P99: intPtr(3000)},
-				TTFT:              OpsPercentiles{P99: intPtr(600)},
+				TTFT:              OpsPercentiles{P95: intPtr(600)},
 				SystemMetrics: &OpsSystemMetricsSnapshot{
 					DBOK:               boolPtr(true),
 					RedisOK:            boolPtr(true),
@@ -303,15 +303,37 @@ func TestComputeBusinessHealth(t *testing.T) {
 			wantMax: 78,
 		},
 		{
-			name: "TTFT boundary 2s",
+			name: "TTFT within 3s full marks",
 			overview: &OpsDashboardOverview{
 				SLA:               0.99,
 				ErrorRate:         0,
 				UpstreamErrorRate: 0,
-				TTFT:              OpsPercentiles{P99: intPtr(2000)},
+				TTFT:              OpsPercentiles{P95: intPtr(2999)},
+			},
+			wantMin: 100,
+			wantMax: 100,
+		},
+		{
+			name: "TTFT midpoint 6.5s",
+			overview: &OpsDashboardOverview{
+				SLA:               0.99,
+				ErrorRate:         0,
+				UpstreamErrorRate: 0,
+				TTFT:              OpsPercentiles{P95: intPtr(6500)},
 			},
 			wantMin: 75,
 			wantMax: 75,
+		},
+		{
+			name: "TTFT above 10s zero",
+			overview: &OpsDashboardOverview{
+				SLA:               0.99,
+				ErrorRate:         0,
+				UpstreamErrorRate: 0,
+				TTFT:              OpsPercentiles{P95: intPtr(12000)},
+			},
+			wantMin: 50,
+			wantMax: 50,
 		},
 		{
 			name: "upstream error dominates",
