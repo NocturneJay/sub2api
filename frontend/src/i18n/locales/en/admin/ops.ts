@@ -199,7 +199,10 @@ export default {
         memoryHigh: 'Memory usage elevated ({usage}%)',
         memoryHighImpact: 'Memory pressure is high, needs attention',
         memoryHighAction: 'Monitor memory trends, check for memory leaks',
-        ttftHigh: 'Time to first token elevated ({ttft}ms)',
+        ttftCritical: 'Time to first token critically high (P95 {ttft}ms)',
+        ttftCriticalImpact: 'Streaming responses stall for too long, degrading user experience',
+        ttftCriticalAction: 'Investigate slow accounts and proxy paths, locate upstream first-byte latency',
+        ttftHigh: 'Time to first token elevated (P95 {ttft}ms)',
         ttftHighImpact: 'User perceived latency increased',
         ttftHighAction: 'Optimize request processing flow, reduce pre-processing time',
         // Error rate diagnostics

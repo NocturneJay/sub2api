@@ -543,11 +543,18 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
     }
   }
 
-  const ttftP99 = ov.ttft?.p99_ms ?? 0
-  if (ttftP99 > 500) {
+  const ttftP95 = ov.ttft?.p95_ms ?? 0
+  if (ttftP95 > 10000) {
+    report.push({
+      type: 'critical',
+      message: t('admin.ops.diagnosis.ttftCritical', { ttft: ttftP95.toFixed(0) }),
+      impact: t('admin.ops.diagnosis.ttftCriticalImpact'),
+      action: t('admin.ops.diagnosis.ttftCriticalAction')
+    })
+  } else if (ttftP95 > 5000) {
     report.push({
       type: 'warning',
-      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftP99.toFixed(0) }),
+      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftP95.toFixed(0) }),
       impact: t('admin.ops.diagnosis.ttftHighImpact'),
       action: t('admin.ops.diagnosis.ttftHighAction')
     })
