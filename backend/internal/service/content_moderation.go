@@ -2863,6 +2863,7 @@ func maskSecretTail(secret string) string {
 // CyberPolicyRecordInput 是一次 cyber_policy 硬阻断的风控记录入参。
 type CyberPolicyRecordInput struct {
 	RequestID       string
+	InputExcerpt    string
 	UserID          int64
 	UserEmail       string
 	APIKeyID        int64
@@ -2925,6 +2926,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		Flagged:         true,
 		HighestCategory: "cyber_policy",
 		HighestScore:    1.0,
+		InputExcerpt:    trimRunes(redactContentModerationSecrets(in.InputExcerpt), maxModerationExcerptRunes*4),
 		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:       time.Now(),
 	}

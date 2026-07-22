@@ -2752,7 +2752,7 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 		return
 	}
 	meta := cyberPolicyOpsErrorMeta{Model: model, InboundEndpoint: GetInboundEndpoint(c), CreatedAt: time.Now(), SessionBlockKey: sessionBlockKey}
-	meta.RequestID = c.Writer.Header().Get("X-Request-Id")
+	meta.RequestID = cyberPolicyRequestID(c)
 	if c.Request != nil && c.Request.URL != nil {
 		meta.RequestPath = c.Request.URL.Path
 	}
@@ -2790,7 +2790,8 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 	}
 	c.Set(cyberPolicyRecordedKey, true)
 
-	requestID := c.Writer.Header().Get("X-Request-Id")
+	requestID := cyberPolicyRequestID(c)
+	auditEvidence := getCyberPolicyAuditEvidence(c)
 	var userID, apiKeyID int64
 	var userEmail, apiKeyName, groupName string
 	var groupID *int64
@@ -2861,6 +2862,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		if cmSvc != nil {
 			cmSvc.RecordCyberPolicyEvent(ctx, service.CyberPolicyRecordInput{
 				RequestID:       requestID,
+				InputExcerpt:    auditEvidence.InputExcerpt,
 				UserID:          userID,
 				UserEmail:       userEmail,
 				APIKeyID:        apiKeyID,
@@ -2913,6 +2915,7 @@ func clearCyberPolicyTurnState(c *gin.Context) {
 	}
 	service.ClearOpsCyberPolicy(c)
 	c.Set(cyberPolicyRecordedKey, false)
+	c.Set(cyberPolicyAuditEvidenceContextKey, cyberPolicyAuditEvidence{})
 }
 
 func summarizeWSCloseErrorForLog(err error) (string, string) {

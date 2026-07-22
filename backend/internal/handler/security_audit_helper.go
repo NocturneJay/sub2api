@@ -11,7 +11,15 @@ import (
 	"go.uber.org/zap"
 )
 
-const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
+const (
+	securityAuditCompletedContextKey   = "sub2api.security_audit.completed"
+	cyberPolicyAuditEvidenceContextKey = "sub2api.security_audit.cyber_policy_evidence"
+	cyberPolicyInputExcerptMaxRunes    = 512
+)
+
+type cyberPolicyAuditEvidence struct {
+	InputExcerpt string
+}
 
 // cachesSecurityAuditCompletion reports whether a successful audit may be
 // reused for the rest of the gin request. WebSocket turns share one Context
@@ -56,6 +64,8 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			return nil
 		}
 	}
+	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
+	captureCyberPolicyAuditEvidence(c, request)
 	if coordinator == nil {
 		legacyDecision := runContentModeration(c, reqLog, legacy, apiKey, subject, protocol, model, body)
 		if legacyDecision == nil {
@@ -75,7 +85,6 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		}
 		return &decision
 	}
-	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
 	if reqLog != nil {
 		reqLog.Info("security_audit.gateway_check_start",
 			zap.String("request_id", request.RequestID), zap.Int64("user_id", request.UserID),
@@ -95,6 +104,44 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			zap.String("stage", request.Stage))
 	}
 	return &decision
+}
+
+func captureCyberPolicyAuditEvidence(c *gin.Context, request securityaudit.Request) {
+	if c == nil {
+		return
+	}
+	excerpt, err := securityaudit.ExtractPromptExcerpt(request, cyberPolicyInputExcerptMaxRunes)
+	if err != nil {
+		excerpt = ""
+	}
+	c.Set(cyberPolicyAuditEvidenceContextKey, cyberPolicyAuditEvidence{InputExcerpt: excerpt})
+}
+
+func getCyberPolicyAuditEvidence(c *gin.Context) cyberPolicyAuditEvidence {
+	if c == nil {
+		return cyberPolicyAuditEvidence{}
+	}
+	value, exists := c.Get(cyberPolicyAuditEvidenceContextKey)
+	if !exists {
+		return cyberPolicyAuditEvidence{}
+	}
+	evidence, _ := value.(cyberPolicyAuditEvidence)
+	return evidence
+}
+
+func cyberPolicyRequestID(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if c.Request != nil {
+		if requestID := contentModerationRequestID(c.Request.Context()); requestID != "" {
+			return requestID
+		}
+	}
+	if c.Writer != nil {
+		return strings.TrimSpace(c.Writer.Header().Get("X-Request-Id"))
+	}
+	return ""
 }
 
 func buildSecurityAuditRequest(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, stage string) securityaudit.Request {

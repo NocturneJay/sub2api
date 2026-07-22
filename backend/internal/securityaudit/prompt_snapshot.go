@@ -29,14 +29,9 @@ type promptSegment struct {
 }
 
 func ExtractPromptSnapshot(req Request) (PromptSnapshot, error) {
-	var document any
-	if err := json.Unmarshal(req.Body, &document); err != nil {
-		return PromptSnapshot{}, errors.New("prompt audit request JSON is invalid")
-	}
-	extracted := extractProtocolSegments(req.Protocol, document)
-	segments := normalizeSegmentsLatestUserFirst(extracted)
-	if len(segments) == 0 {
-		return PromptSnapshot{}, ErrNoPromptText
+	segments, err := extractNormalizedPromptSegments(req)
+	if err != nil {
+		return PromptSnapshot{}, err
 	}
 	scanText, metadataText := buildPrioritizedScanText(segments)
 	digest := sha256.Sum256([]byte(metadataText))
@@ -54,6 +49,30 @@ func ExtractPromptSnapshot(req Request) (PromptSnapshot, error) {
 		PromptLength: utf8.RuneCountInString(metadataText), MessageCount: len(segments), Stage: stage,
 		ScanText: scanText,
 	}, nil
+}
+
+// ExtractPromptExcerpt returns a bounded, redacted excerpt of the prioritized
+// prompt segment. The latest user segment is prioritized when present; requests
+// without a user segment fall back to the last eligible client-controlled text.
+func ExtractPromptExcerpt(req Request, maxRunes int) (string, error) {
+	segments, err := extractNormalizedPromptSegments(req)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(RedactPreview(segments[0], maxRunes)), nil
+}
+
+func extractNormalizedPromptSegments(req Request) ([]string, error) {
+	var document any
+	if err := json.Unmarshal(req.Body, &document); err != nil {
+		return nil, errors.New("prompt audit request JSON is invalid")
+	}
+	extracted := extractProtocolSegments(req.Protocol, document)
+	segments := normalizeSegmentsLatestUserFirst(extracted)
+	if len(segments) == 0 {
+		return nil, ErrNoPromptText
+	}
+	return segments, nil
 }
 
 // DefaultPromptPreviewMaxRunes caps how much sanitized prompt text may be

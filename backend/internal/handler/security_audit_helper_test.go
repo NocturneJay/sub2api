@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,42 @@ func TestCachesSecurityAuditCompletionSkipsWebSocketStages(t *testing.T) {
 	require.True(t, cachesSecurityAuditCompletion(""))
 	require.False(t, cachesSecurityAuditCompletion("first_turn"))
 	require.False(t, cachesSecurityAuditCompletion("subsequent_turn"))
+}
+
+func TestRunSecurityAuditCapturesCyberPolicyEvidenceAndStableRequestID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	requestContext := context.WithValue(context.Background(), ctxkey.RequestID, "request-real-123")
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(requestContext)
+	c.Header("X-Request-Id", "00000000000000000000000000000000")
+
+	body := []byte(`{"messages":[{"role":"system","content":"system history"},{"role":"user","content":"latest user request password=supersecret123"}]}`)
+	decision := runSecurityAudit(c, nil, nil, nil, nil, middleware2.AuthSubject{UserID: 7},
+		"openai_chat_completions", "gpt-test", body, "http")
+	require.Nil(t, decision)
+
+	evidence := getCyberPolicyAuditEvidence(c)
+	require.Contains(t, evidence.InputExcerpt, "latest user request")
+	require.NotContains(t, evidence.InputExcerpt, "system history")
+	require.NotContains(t, evidence.InputExcerpt, "supersecret123")
+	require.Equal(t, "request-real-123", cyberPolicyRequestID(c))
+
+	clearCyberPolicyTurnState(c)
+	require.Empty(t, getCyberPolicyAuditEvidence(c).InputExcerpt)
+}
+
+func TestRunSecurityAuditClearsStaleCyberPolicyEvidenceWhenPromptIsMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set(cyberPolicyAuditEvidenceContextKey, cyberPolicyAuditEvidence{InputExcerpt: "stale turn"})
+
+	decision := runSecurityAudit(c, nil, nil, nil, nil, middleware2.AuthSubject{UserID: 7},
+		"openai_responses", "gpt-test", []byte(`{"type":"conversation.item.create"}`), "subsequent_turn")
+	require.Nil(t, decision)
+	require.Empty(t, getCyberPolicyAuditEvidence(c).InputExcerpt)
 }
 
 func TestRunSecurityAuditDoesNotSkipSubsequentWebSocketTurns(t *testing.T) {

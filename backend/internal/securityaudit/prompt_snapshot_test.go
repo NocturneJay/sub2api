@@ -37,6 +37,25 @@ func TestExtractPromptSnapshotProtocols(t *testing.T) {
 	}
 }
 
+func TestExtractPromptExcerptUsesLatestUserTextAndRedactsSecrets(t *testing.T) {
+	body := `{"messages":[` +
+		`{"role":"system","content":"system policy must not be stored"},` +
+		`{"role":"user","content":"old user request"},` +
+		`{"role":"assistant","content":"assistant history"},` +
+		`{"role":"user","content":"inspect the latest request for user@example.com with Bearer abcdefghijklmnop and password=supersecret123"}` +
+		`]}`
+
+	excerpt, err := ExtractPromptExcerpt(Request{Protocol: "openai_chat_completions", Body: []byte(body)}, 512)
+	require.NoError(t, err)
+	require.Contains(t, excerpt, "inspect the latest request")
+	require.NotContains(t, excerpt, "system policy")
+	require.NotContains(t, excerpt, "old user request")
+	require.NotContains(t, excerpt, "assistant history")
+	require.NotContains(t, excerpt, "user@example.com")
+	require.NotContains(t, excerpt, "abcdefghijklmnop")
+	require.NotContains(t, excerpt, "supersecret123")
+}
+
 func TestSnapshotRedactsCanariesAndPreservesHashOfScanText(t *testing.T) {
 	body := `{"messages":[{"role":"user","content":"PROMPT_CANARY_ABC123 email@example.com +86 138 0013 8000 Bearer AUTH_CANARY_XYZ sk-secretvalue123 password=supersecret123"}]}`
 	snapshot, err := ExtractPromptSnapshot(Request{Protocol: "openai_chat_completions", Body: []byte(body)})

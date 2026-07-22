@@ -106,6 +106,8 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 	)
 
 	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		RequestID:       "request-real-123",
+		InputExcerpt:    "latest user request password=supersecret123",
 		UserID:          1,
 		UserEmail:       "u@x.com",
 		Model:           "gpt-5",
@@ -120,6 +122,9 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 	log := logs[0]
 
 	require.Equal(t, "cyber_policy", log.Action)
+	require.Equal(t, "request-real-123", log.RequestID)
+	require.Contains(t, log.InputExcerpt, "latest user request")
+	require.NotContains(t, log.InputExcerpt, "supersecret123")
 	require.True(t, log.Flagged)
 	require.Equal(t, "cyber_policy", log.HighestCategory)
 	require.Contains(t, log.Error, "flagged")
