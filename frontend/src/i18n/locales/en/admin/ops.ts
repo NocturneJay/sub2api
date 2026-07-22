@@ -135,6 +135,7 @@ export default {
       healthHelp: 'Overall system health score based on SLA, error rate, and resource usage',
       healthyStatus: 'Healthy',
       riskyStatus: 'At Risk',
+      dangerStatus: 'Danger',
       idleStatus: 'Idle',
       timeRange: {
         '5m': 'Last 5 minutes',

@@ -455,6 +455,16 @@ const healthScoreClass = computed(() => {
   return 'text-red-500'
 })
 
+// Status label mirrors the ring color tiers: >=90 healthy, >=60 risky, <60 danger.
+const healthStatusLabel = computed(() => {
+  if (isSystemIdle.value) return t('admin.ops.idleStatus')
+  const score = healthScoreValue.value
+  if (score == null) return t('admin.ops.riskyStatus')
+  if (score >= 90) return t('admin.ops.healthyStatus')
+  if (score >= 60) return t('admin.ops.riskyStatus')
+  return t('admin.ops.dangerStatus')
+})
+
 const circleSize = computed(() => props.fullscreen ? 140 : 100)
 const strokeWidth = computed(() => props.fullscreen ? 10 : 8)
 const radius = computed(() => (circleSize.value - strokeWidth.value) / 2)
@@ -1098,13 +1108,7 @@ function handleToolbarRefresh() {
                 <HelpTooltip :content="t('admin.ops.healthHelp')" />
               </div>
               <div class="mt-1 text-xs font-bold" :class="healthScoreClass">
-                {{
-                  isSystemIdle
-                    ? t('admin.ops.idleStatus')
-                    : typeof overview.health_score === 'number' && overview.health_score >= 90
-                      ? t('admin.ops.healthyStatus')
-                      : t('admin.ops.riskyStatus')
-                }}
+                {{ healthStatusLabel }}
               </div>
             </div>
           </div>

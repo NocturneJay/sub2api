@@ -135,6 +135,7 @@ export default {
       healthHelp: '基于 SLA、错误率和资源使用情况的系统整体健康评分',
       healthyStatus: '健康',
       riskyStatus: '风险',
+      dangerStatus: '危险',
       idleStatus: '待机',
       timeRange: {
         '5m': '近5分钟',

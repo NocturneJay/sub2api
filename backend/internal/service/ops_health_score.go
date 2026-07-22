@@ -48,16 +48,16 @@ func computeBusinessHealth(overview *OpsDashboardOverview) float64 {
 		}
 	}
 
-	// TTFT score: 3s → 100, 10s → 0 (linear)
-	// Uses P95 instead of P99: with low traffic the P99 tail is decided by a
-	// handful of slow requests (long-thinking models, proxied accounts), which
-	// would permanently cap the overall score.
+	// TTFT score: 8s → 100, 15s → 0 (linear)
+	// Uses P99 with a deliberately high window: LLM first-token latency is
+	// naturally seconds-long (long-thinking models, proxied accounts), so the
+	// full-marks ceiling sits at 8s and only tail latency beyond 15s zeroes it.
 	ttftScore := 100.0
-	if overview.TTFT.P95 != nil {
-		p95 := float64(*overview.TTFT.P95)
-		if p95 > 3000 {
-			if p95 <= 10000 {
-				ttftScore = (10000 - p95) / 7000 * 100
+	if overview.TTFT.P99 != nil {
+		p99 := float64(*overview.TTFT.P99)
+		if p99 > 8000 {
+			if p99 <= 15000 {
+				ttftScore = (15000 - p99) / 7000 * 100
 			} else {
 				ttftScore = 0
 			}
