@@ -22,12 +22,8 @@ const i18n = createI18n({
           quota: "Quota",
           rate: "Rate",
           peakRate: "Peak Rate",
-          pricedByRoute: "Priced by route",
-          routePricing: "Model route rates",
-          routeCount: "{count} routes",
-          routeOverride: "Route override",
-          targetGroupRate: "Target group",
-          endpoint: "Endpoint",
+          pricedByRoute: "Priced by request model group",
+          routePricing: "Group rates",
           noCompositeRoutes: "No available model routes configured",
           unlimited: "Unlimited",
         },
@@ -95,8 +91,8 @@ describe("SubscriptionPlanCard", () => {
     expect(mountPlanCard("openai", { currency: "" }).text()).toContain("$10");
   });
 
-  it("shows effective target-group route rates for composite plans", () => {
-    const text = mountPlanCard("composite", {
+  it("shows each effective target-group rate once for composite plans", () => {
+    const wrapper = mountPlanCard("composite", {
       rate_multiplier: 9,
       peak_rate_enabled: true,
       peak_start: "09:00",
@@ -113,14 +109,78 @@ describe("SubscriptionPlanCard", () => {
           rate_multiplier: 1.25,
           rate_source: "target_group",
         },
+        {
+          public_model: "codex",
+          match_type: "prefix",
+          endpoint: "any",
+          target_group_id: 42,
+          target_group_name: "OpenAI standard",
+          target_platform: "openai",
+          rate_multiplier: 1.25,
+          rate_source: "route",
+        },
+        {
+          public_model: "claude",
+          match_type: "prefix",
+          endpoint: "messages",
+          target_group_id: 43,
+          target_group_name: "Claude Max",
+          target_platform: "anthropic",
+          rate_multiplier: 0.8,
+          rate_source: "route",
+        },
+        {
+          public_model: "deepseek",
+          match_type: "prefix",
+          endpoint: "any",
+          target_group_id: 44,
+          target_group_name: "DeepSeek/Kimi/GLM",
+          target_platform: "openai",
+          rate_multiplier: 0.45,
+          rate_source: "route",
+        },
+        {
+          public_model: "kimi",
+          match_type: "prefix",
+          endpoint: "any",
+          target_group_id: 44,
+          target_group_name: "DeepSeek/Kimi/GLM",
+          target_platform: "openai",
+          rate_multiplier: 0.45,
+          rate_source: "route",
+        },
+        {
+          public_model: "glm",
+          match_type: "exact",
+          endpoint: "any",
+          target_group_id: 44,
+          target_group_name: "DeepSeek/Kimi/GLM",
+          target_platform: "openai",
+          rate_multiplier: 0.45,
+          rate_source: "target_group",
+        },
       ],
-    }).text();
+    });
+    const text = wrapper.text();
 
     expect(text).toContain("payment.planCard.pricedByRoute");
-    expect(text).toContain("openrouter/gpt-5");
+    expect(text).toContain("payment.planCard.routePricing");
     expect(text).toContain("OpenAI standard");
+    expect(text.match(/OpenAI standard/g)).toHaveLength(1);
+    expect(text).toContain("Claude Max");
+    expect(text.match(/DeepSeek\/Kimi\/GLM/g)).toHaveLength(1);
     expect(text).toContain("×1.25");
-    expect(text).toContain("payment.planCard.targetGroupRate");
+    expect(text).toContain("×0.8");
+    expect(text).toContain("×0.45");
+    expect(wrapper.findAll('[data-testid="composite-group-pricing-row"]')).toHaveLength(3);
+    expect(text).not.toContain("openrouter/gpt-5");
+    expect(text).not.toContain("codex");
+    expect(text).not.toContain("claude");
+    expect(text).not.toContain("deepseek");
+    expect(text).not.toContain("kimi");
+    expect(text).not.toContain("glm");
+    expect(text).not.toContain("payment.planCard.routeOverride");
+    expect(text).not.toContain("payment.planCard.targetGroupRate");
     expect(text).not.toContain("×9");
     expect(text).not.toContain("payment.planCard.peakRate");
   });

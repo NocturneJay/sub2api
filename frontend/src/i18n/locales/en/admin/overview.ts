@@ -774,7 +774,7 @@ export default {
       searchGroups: 'Search groups...',
       createGroup: 'Create Group',
       editGroup: 'Edit Group',
-      compositePricingLabel: 'Route pricing',
+      compositePricingLabel: 'Priced by request model group',
       deleteGroup: 'Delete Group',
       duplicate: 'Duplicate',
       duplicating: 'Duplicating',

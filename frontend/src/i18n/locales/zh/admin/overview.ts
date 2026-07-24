@@ -771,7 +771,7 @@ export default {
       searchGroups: '搜索分组...',
       createGroup: '创建分组',
       editGroup: '编辑分组',
-      compositePricingLabel: '按路由计费',
+      compositePricingLabel: '按请求模型分组计费',
       deleteGroup: '删除分组',
       duplicate: '复制',
       duplicating: '复制中',
