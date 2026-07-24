@@ -3679,10 +3679,18 @@
                     <td class="px-3 py-2">
                       <div class="flex items-center gap-1.5 text-gray-900 dark:text-white">
                         <PlatformIcon :platform="route.target_platform" size="xs" />
-                        <span>{{ formatCompositePlatform(route.target_platform) }}</span>
+                        <span v-if="route.target_group_id">{{
+                          compositeTargetGroupName(route.target_group_id)
+                        }}</span>
+                        <span v-else>{{ formatCompositePlatform(route.target_platform) }}</span>
                       </div>
                       <div class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">
                         {{ route.upstream_model || route.public_model }}
+                        <span
+                          v-if="route.target_group_id && route.rate_multiplier != null"
+                        >
+                          · ×{{ route.rate_multiplier }}
+                        </span>
                       </div>
                     </td>
                     <td class="px-3 py-2">
@@ -3778,11 +3786,11 @@
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.targetPlatform")
+                  t("admin.groups.compositeRoutes.targetType")
                 }}</label>
                 <Select
-                  v-model="compositeRouteForm.target_platform"
-                  :options="compositeRoutePlatformOptions"
+                  v-model="compositeRouteForm.target_type"
+                  :options="compositeRouteTargetTypeOptions"
                 />
               </div>
               <div>
@@ -3795,6 +3803,54 @@
                   min="1"
                   step="1"
                   class="input"
+                />
+              </div>
+            </div>
+
+            <div
+              v-if="compositeRouteForm.target_type === 'platform'"
+              class="grid grid-cols-1 gap-3"
+            >
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.compositeRoutes.targetPlatform")
+                }}</label>
+                <Select
+                  v-model="compositeRouteForm.target_platform"
+                  :options="compositeRoutePlatformOptions"
+                />
+              </div>
+            </div>
+
+            <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.compositeRoutes.targetGroup")
+                }}</label>
+                <Select
+                  v-model="compositeRouteForm.target_group_id"
+                  :options="compositeTargetGroupOptions"
+                  :placeholder="
+                    t('admin.groups.compositeRoutes.targetGroupPlaceholder')
+                  "
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.compositeRoutes.targetGroupHint") }}
+                </p>
+              </div>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.compositeRoutes.rateMultiplierOverride")
+                }}</label>
+                <input
+                  v-model.number="compositeRouteForm.rate_multiplier"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="input"
+                  :placeholder="
+                    t('admin.groups.compositeRoutes.rateMultiplierPlaceholder')
+                  "
                 />
               </div>
             </div>
@@ -4237,6 +4293,36 @@ const compositeRoutePlatformOptions = computed(() => [
   { value: "grok", label: "Grok" },
 ]);
 
+const compositeRouteTargetTypeOptions = computed(() => [
+  {
+    value: "platform",
+    label: t("admin.groups.compositeRoutes.targetTypePlatform"),
+  },
+  {
+    value: "group",
+    label: t("admin.groups.compositeRoutes.targetTypeGroup"),
+  },
+]);
+
+// 可委托的子分组：具体平台（非 composite）、启用中，且排除当前组合分组自身。
+const compositeTargetGroupOptions = computed(() => {
+  const currentId = compositeRoutesGroup.value?.id;
+  return compositeTargetGroups.value
+    .filter(
+      (g) =>
+        g.platform !== "composite" &&
+        g.status === "active" &&
+        g.id !== currentId,
+    )
+    .map((g) => ({ value: g.id, label: g.name }));
+});
+
+const compositeTargetGroupName = (id?: number | null): string => {
+  if (id == null) return "";
+  const g = compositeTargetGroups.value.find((x) => x.id === id);
+  return g ? g.name : `#${id}`;
+};
+
 const compositeRouteEndpointOptions = computed(() => [
   { value: "any", label: t("admin.groups.compositeRoutes.endpoints.any") },
   {
@@ -4445,10 +4531,14 @@ const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
+type CompositeRouteTargetType = "platform" | "group";
 type CompositeRouteFormState = {
   public_model: string;
   match_type: CompositeRouteMatchType;
+  target_type: CompositeRouteTargetType;
   target_platform: ConcreteGroupPlatform;
+  target_group_id: number | null;
+  rate_multiplier: number | null;
   upstream_model: string;
   endpoint: CompositeRouteEndpoint;
   priority: number;
@@ -4459,6 +4549,7 @@ type CompositeRouteFormState = {
 const showCompositeRoutesModal = ref(false);
 const compositeRoutesGroup = ref<AdminGroup | null>(null);
 const compositeRoutes = ref<CompositeModelRoute[]>([]);
+const compositeTargetGroups = ref<AdminGroup[]>([]);
 const compositeRoutesLoading = ref(false);
 const compositeRouteSaving = ref(false);
 const compositeRouteEditingId = ref<number | null>(null);
@@ -4469,7 +4560,10 @@ const compositePreviewDecision = ref<CompositeRouteDecision | null>(null);
 const compositeRouteForm = reactive<CompositeRouteFormState>({
   public_model: "",
   match_type: "exact",
+  target_type: "platform",
   target_platform: "openai",
+  target_group_id: null,
+  rate_multiplier: null,
   upstream_model: "",
   endpoint: "any",
   priority: 100,
@@ -5718,7 +5812,10 @@ const resetCompositeRouteForm = () => {
   compositeRouteEditingId.value = null;
   compositeRouteForm.public_model = "";
   compositeRouteForm.match_type = "exact";
+  compositeRouteForm.target_type = "platform";
   compositeRouteForm.target_platform = "openai";
+  compositeRouteForm.target_group_id = null;
+  compositeRouteForm.rate_multiplier = null;
   compositeRouteForm.upstream_model = "";
   compositeRouteForm.endpoint = "any";
   compositeRouteForm.priority = 100;
@@ -5726,16 +5823,29 @@ const resetCompositeRouteForm = () => {
   compositeRouteForm.notes = "";
 };
 
-const toCompositeRouteInput = (): CompositeModelRouteInput => ({
-  public_model: compositeRouteForm.public_model.trim(),
-  match_type: compositeRouteForm.match_type,
-  target_platform: compositeRouteForm.target_platform,
-  upstream_model: compositeRouteForm.upstream_model.trim(),
-  endpoint: compositeRouteForm.endpoint,
-  priority: Number(compositeRouteForm.priority) || 100,
-  enabled: compositeRouteForm.enabled,
-  notes: compositeRouteForm.notes.trim(),
-});
+const toCompositeRouteInput = (): CompositeModelRouteInput => {
+  const payload: CompositeModelRouteInput = {
+    public_model: compositeRouteForm.public_model.trim(),
+    match_type: compositeRouteForm.match_type,
+    upstream_model: compositeRouteForm.upstream_model.trim(),
+    endpoint: compositeRouteForm.endpoint,
+    priority: Number(compositeRouteForm.priority) || 100,
+    enabled: compositeRouteForm.enabled,
+    notes: compositeRouteForm.notes.trim(),
+  };
+  if (compositeRouteForm.target_type === "group") {
+    // 委托到子分组：只发 target_group_id（+ 可选倍率覆盖），平台由后端从子分组推导。
+    payload.target_group_id = compositeRouteForm.target_group_id;
+    payload.rate_multiplier =
+      compositeRouteForm.rate_multiplier != null &&
+      Number(compositeRouteForm.rate_multiplier) > 0
+        ? Number(compositeRouteForm.rate_multiplier)
+        : null;
+  } else {
+    payload.target_platform = compositeRouteForm.target_platform;
+  }
+  return payload;
+};
 
 const loadCompositeRoutes = async () => {
   if (!compositeRoutesGroup.value) return;
@@ -5760,6 +5870,23 @@ const loadCompositeRoutes = async () => {
   }
 };
 
+const loadCompositeTargetGroups = async () => {
+  try {
+    // Keep inactive groups for existing-route labels, but expose only active
+    // concrete groups in compositeTargetGroupOptions.
+    compositeTargetGroups.value =
+      await adminAPI.groups.getAllIncludingInactive();
+  } catch (error: any) {
+    compositeTargetGroups.value = [];
+    appStore.showError(
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        t("admin.groups.failedToLoad"),
+    );
+    console.error("Error loading composite target groups:", error);
+  }
+};
+
 const handleCompositeRoutes = async (group: AdminGroup) => {
   compositeRoutesGroup.value = group;
   compositePreviewModel.value = "";
@@ -5767,13 +5894,14 @@ const handleCompositeRoutes = async (group: AdminGroup) => {
   compositePreviewDecision.value = null;
   resetCompositeRouteForm();
   showCompositeRoutesModal.value = true;
-  await loadCompositeRoutes();
+  await Promise.all([loadCompositeRoutes(), loadCompositeTargetGroups()]);
 };
 
 const closeCompositeRoutesModal = () => {
   showCompositeRoutesModal.value = false;
   compositeRoutesGroup.value = null;
   compositeRoutes.value = [];
+  compositeTargetGroups.value = [];
   compositePreviewDecision.value = null;
   resetCompositeRouteForm();
 };
@@ -5782,7 +5910,16 @@ const editCompositeRoute = (route: CompositeModelRoute) => {
   compositeRouteEditingId.value = route.id;
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;
+  const isGroupTarget =
+    route.target_group_id != null && route.target_group_id > 0;
+  compositeRouteForm.target_type = isGroupTarget ? "group" : "platform";
   compositeRouteForm.target_platform = route.target_platform;
+  compositeRouteForm.target_group_id = isGroupTarget
+    ? route.target_group_id ?? null
+    : null;
+  compositeRouteForm.rate_multiplier = isGroupTarget
+    ? route.rate_multiplier ?? null
+    : null;
   compositeRouteForm.upstream_model = route.upstream_model;
   compositeRouteForm.endpoint = route.endpoint;
   compositeRouteForm.priority = route.priority || 100;
@@ -5794,6 +5931,13 @@ const saveCompositeRoute = async () => {
   if (!compositeRoutesGroup.value) return;
   if (!compositeRouteForm.public_model.trim()) {
     appStore.showError(t("admin.groups.compositeRoutes.publicModelRequired"));
+    return;
+  }
+  if (
+    compositeRouteForm.target_type === "group" &&
+    !compositeRouteForm.target_group_id
+  ) {
+    appStore.showError(t("admin.groups.compositeRoutes.targetGroupRequired"));
     return;
   }
   compositeRouteSaving.value = true;

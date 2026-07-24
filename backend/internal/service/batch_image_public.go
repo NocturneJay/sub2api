@@ -80,6 +80,12 @@ type BatchImageOwner struct {
 	GroupID  *int64
 }
 
+type batchImageGroupScope struct {
+	GroupID   *int64
+	Group     *Group
+	Delegated bool
+}
+
 type BatchImagePublicService struct {
 	Repo              BatchImageRepository
 	AccountRepo       BatchImageAccountSelectionRepository
@@ -204,9 +210,11 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	if err != nil {
 		return nil, err
 	}
-	// 与 ListModels 使用同一鉴权谓词（AllowBatchImageGeneration + Platform==Gemini），
-	// 避免两个入口校验口径不一致留下防御纵深缺口。
-	if err := s.ensureGroupAllowsBatchImage(ctx, owner.GroupID); err != nil {
+	// Resolve the scheduling/pricing group once. A composite route delegates
+	// provider selection and pricing to its concrete target while ownership and
+	// balance holds continue to use the original API key.
+	groupScope, err := s.resolveBatchImageGroupScope(ctx, owner.GroupID)
+	if err != nil {
 		return nil, err
 	}
 	requestHash := HashBatchImageSubmitRequest(normalized)
@@ -230,11 +238,11 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		}
 	}
 
-	provider, account, err := s.selectProviderAndAccount(ctx, owner, normalized.Provider, normalized.Model)
+	provider, account, err := s.selectProviderAndAccount(ctx, groupScope.GroupID, normalized.Provider, normalized.Model)
 	if err != nil {
 		return nil, err
 	}
-	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account)
+	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account, groupScope)
 	if err != nil {
 		return nil, err
 	}
@@ -619,7 +627,8 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 	if s.Pricing == nil {
 		return nil, ErrBatchImageSettlementPricingMissing
 	}
-	if err := s.ensureGroupAllowsBatchImage(ctx, owner.GroupID); err != nil {
+	groupScope, err := s.resolveBatchImageGroupScope(ctx, owner.GroupID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -629,7 +638,7 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 		if !ok || provider == nil {
 			continue
 		}
-		accounts, err := s.listCandidateAccounts(ctx, owner.GroupID, batchImageProviderPlatform(providerName))
+		accounts, err := s.listCandidateAccounts(ctx, groupScope.GroupID, batchImageProviderPlatform(providerName))
 		if err != nil {
 			return nil, err
 		}
@@ -931,14 +940,14 @@ func maxBatchImageReferenceImagesForModel(model string) int {
 	return 0
 }
 
-func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, owner BatchImageOwner, requestedProvider, model string) (BatchImageProvider, *Account, error) {
+func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, groupID *int64, requestedProvider, model string) (BatchImageProvider, *Account, error) {
 	providers := batchImageProviderSelectionOrder(requestedProvider)
 	for _, providerName := range providers {
 		provider, ok := s.ProviderRegistry.Get(providerName)
 		if !ok || provider == nil {
 			continue
 		}
-		accounts, err := s.listCandidateAccounts(ctx, owner.GroupID, batchImageProviderPlatform(providerName))
+		accounts, err := s.listCandidateAccounts(ctx, groupID, batchImageProviderPlatform(providerName))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -974,48 +983,51 @@ func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, gro
 	return s.AccountRepo.ListSchedulableByPlatform(ctx, platform)
 }
 
-func (s *BatchImagePublicService) ensureGroupAllowsBatchImage(ctx context.Context, groupID *int64) error {
+func (s *BatchImagePublicService) resolveBatchImageGroupScope(ctx context.Context, ownerGroupID *int64) (batchImageGroupScope, error) {
+	groupID := ownerGroupID
+	delegatedGroupID, delegated := ResolvedPricingGroupIDFromContext(ctx)
+	if delegated {
+		groupID = &delegatedGroupID
+	}
 	if groupID == nil || *groupID <= 0 {
-		return nil
+		return batchImageGroupScope{}, nil
 	}
 	if s.GroupRepo == nil {
-		return ErrBatchImageSettlementPricingMissing
+		return batchImageGroupScope{}, ErrBatchImageSettlementPricingMissing
 	}
 	group, err := s.GroupRepo.GetByIDLite(ctx, *groupID)
 	if err != nil || group == nil {
-		return ErrBatchImageSettlementPricingMissing
+		return batchImageGroupScope{}, ErrBatchImageSettlementPricingMissing
 	}
-	if !group.AllowBatchImageGeneration {
-		return ErrBatchImageGroupDisabled
+	if delegated {
+		resolvedPlatform, platformOK := ResolvedTargetPlatformFromContext(ctx)
+		if !group.IsActive() || !platformOK || resolvedPlatform != group.Platform {
+			return batchImageGroupScope{}, ErrBatchImageGroupDisabled
+		}
 	}
-	if group.Platform != PlatformGemini {
-		return ErrBatchImageGroupDisabled
+	if group.Platform != PlatformGemini || !group.AllowBatchImageGeneration {
+		return batchImageGroupScope{}, ErrBatchImageGroupDisabled
 	}
-	return nil
+	id := *groupID
+	return batchImageGroupScope{GroupID: &id, Group: group, Delegated: delegated}, nil
 }
 
-func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account) (*BatchImagePricingSnapshot, error) {
+func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account, groupScope batchImageGroupScope) (*BatchImagePricingSnapshot, error) {
 	unit := -1.0
 	groupMultiplier := 1.0
 	discountMultiplier := defaultBatchImageDiscountMultiplier
 	holdMultiplier := defaultBatchImageHoldMultiplier
-	if owner.GroupID != nil && *owner.GroupID > 0 {
-		if s.GroupRepo == nil {
-			return nil, ErrBatchImageSettlementPricingMissing
-		}
-		group, err := s.GroupRepo.GetByIDLite(ctx, *owner.GroupID)
-		if err != nil || group == nil {
-			return nil, ErrBatchImageSettlementPricingMissing
-		}
-		if !group.AllowBatchImageGeneration {
-			return nil, ErrBatchImageGroupDisabled
-		}
+	if group := groupScope.Group; group != nil {
 		groupDefaultMultiplier := group.RateMultiplier
 		if groupDefaultMultiplier < 0 {
 			groupDefaultMultiplier = 0
 		}
 		effectiveGroupMultiplier := groupDefaultMultiplier
-		if s.UserGroupRateRepo != nil {
+		if groupScope.Delegated {
+			if routeMultiplier, ok := ResolvedRateMultiplierFromContext(ctx); ok {
+				effectiveGroupMultiplier = routeMultiplier
+			}
+		} else if s.UserGroupRateRepo != nil {
 			userRate, rateErr := s.UserGroupRateRepo.GetByUserAndGroup(ctx, owner.UserID, group.ID)
 			if rateErr != nil {
 				return nil, ErrBatchImageSettlementPricingMissing

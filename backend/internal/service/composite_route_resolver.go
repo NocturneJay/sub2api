@@ -38,12 +38,16 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 			if upstreamModel == "" {
 				upstreamModel = model
 			}
+			// 委托到子分组的路由：TargetPlatform 由上层（gateway/admin）用子分组平台填充；
+			// 这里只携带 TargetGroupID 与倍率覆盖。平台模式路由保持原样。
 			return CompositeRouteDecision{
 				Matched:        true,
 				Source:         CompositeRouteSourceExplicit,
 				GroupID:        groupID,
 				PublicModel:    model,
 				TargetPlatform: route.TargetPlatform,
+				TargetGroupID:  route.TargetGroupID,
+				RateMultiplier: route.RateMultiplier,
 				UpstreamModel:  upstreamModel,
 				Endpoint:       endpoint,
 				Route:          &route,

@@ -870,6 +870,7 @@ func (s *GatewayService) BindStickySession(ctx context.Context, groupID *int64, 
 	if sessionHash == "" || accountID <= 0 || s.cache == nil {
 		return nil
 	}
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	return s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, accountID, stickySessionTTL)
 }
 
@@ -879,6 +880,7 @@ func (s *GatewayService) GetCachedSessionAccountID(ctx context.Context, groupID 
 	if sessionHash == "" || s.cache == nil {
 		return 0, nil
 	}
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	accountID, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
 	if err != nil {
 		return 0, err
@@ -888,18 +890,20 @@ func (s *GatewayService) GetCachedSessionAccountID(ctx context.Context, groupID 
 
 // FindGeminiSession 查找 Gemini 会话（基于内容摘要链的 Fallback 匹配）
 // 返回最长匹配的会话信息（uuid, accountID）
-func (s *GatewayService) FindGeminiSession(_ context.Context, groupID int64, prefixHash, digestChain string) (uuid string, accountID int64, matchedChain string, found bool) {
+func (s *GatewayService) FindGeminiSession(ctx context.Context, groupID int64, prefixHash, digestChain string) (uuid string, accountID int64, matchedChain string, found bool) {
 	if digestChain == "" || s.digestStore == nil {
 		return "", 0, "", false
 	}
+	groupID = derefGroupID(effectiveCompositeTargetGroupID(ctx, &groupID))
 	return s.digestStore.Find(groupID, prefixHash, digestChain)
 }
 
 // SaveGeminiSession 保存 Gemini 会话。oldDigestChain 为 Find 返回的 matchedChain，用于删旧 key。
-func (s *GatewayService) SaveGeminiSession(_ context.Context, groupID int64, prefixHash, digestChain, uuid string, accountID int64, oldDigestChain string) error {
+func (s *GatewayService) SaveGeminiSession(ctx context.Context, groupID int64, prefixHash, digestChain, uuid string, accountID int64, oldDigestChain string) error {
 	if digestChain == "" || s.digestStore == nil {
 		return nil
 	}
+	groupID = derefGroupID(effectiveCompositeTargetGroupID(ctx, &groupID))
 	s.digestStore.Save(groupID, prefixHash, digestChain, uuid, accountID, oldDigestChain)
 	return nil
 }

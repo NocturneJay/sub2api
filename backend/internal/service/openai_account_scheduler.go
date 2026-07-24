@@ -2053,6 +2053,13 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	decision := OpenAIAccountScheduleDecision{}
+	_, delegatedGroupID, err := s.resolveOpenAIDelegatedSchedulingGroup(ctx, platform)
+	if err != nil {
+		return nil, decision, err
+	}
+	if delegatedGroupID != nil {
+		groupID = delegatedGroupID
+	}
 	scheduler := s.getOpenAIAccountScheduler(ctx)
 	if scheduler == nil {
 		decision.Layer = openAIAccountScheduleLayerLoadBalance

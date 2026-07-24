@@ -46,6 +46,8 @@ func (r *compositeModelRouteRepository) Create(ctx context.Context, route *servi
 		SetPublicModel(route.PublicModel).
 		SetMatchType(route.MatchType).
 		SetTargetPlatform(route.TargetPlatform).
+		SetNillableTargetGroupID(route.TargetGroupID).
+		SetNillableRateMultiplier(route.RateMultiplier).
 		SetUpstreamModel(route.UpstreamModel).
 		SetEndpoint(route.Endpoint).
 		SetPriority(route.Priority).
@@ -63,7 +65,7 @@ func (r *compositeModelRouteRepository) Update(ctx context.Context, route *servi
 	if route == nil {
 		return service.ErrCompositeRouteNotFound
 	}
-	updated, err := clientFromContext(ctx, r.client).CompositeModelRoute.UpdateOneID(route.ID).
+	builder := clientFromContext(ctx, r.client).CompositeModelRoute.UpdateOneID(route.ID).
 		SetPublicModel(route.PublicModel).
 		SetMatchType(route.MatchType).
 		SetTargetPlatform(route.TargetPlatform).
@@ -71,8 +73,19 @@ func (r *compositeModelRouteRepository) Update(ctx context.Context, route *servi
 		SetEndpoint(route.Endpoint).
 		SetPriority(route.Priority).
 		SetEnabled(route.Enabled).
-		SetNotes(route.Notes).
-		Save(ctx)
+		SetNotes(route.Notes)
+	// 委托字段可被清除：nil 时显式 Clear，保证平台模式 <-> 分组模式切换能落库。
+	if route.TargetGroupID != nil {
+		builder = builder.SetTargetGroupID(*route.TargetGroupID)
+	} else {
+		builder = builder.ClearTargetGroupID()
+	}
+	if route.RateMultiplier != nil {
+		builder = builder.SetRateMultiplier(*route.RateMultiplier)
+	} else {
+		builder = builder.ClearRateMultiplier()
+	}
+	updated, err := builder.Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrCompositeRouteNotFound, service.ErrCompositeRouteExists)
 	}
@@ -102,6 +115,8 @@ func compositeModelRouteEntityToService(row *dbent.CompositeModelRoute) *service
 		PublicModel:    row.PublicModel,
 		MatchType:      row.MatchType,
 		TargetPlatform: row.TargetPlatform,
+		TargetGroupID:  row.TargetGroupID,
+		RateMultiplier: row.RateMultiplier,
 		UpstreamModel:  row.UpstreamModel,
 		Endpoint:       row.Endpoint,
 		Priority:       row.Priority,

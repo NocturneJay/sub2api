@@ -80,8 +80,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
-		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, apiKey.Group.MaxReasoningEffort, apiKey.Group.ReasoningEffortMappings); changed {
+	requestGroup, err := h.resolveCompositeRequestGroup(c.Request.Context(), apiKey)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Composite target group is unavailable")
+		return
+	}
+	if requestGroup != nil && requestGroup.Platform == service.PlatformOpenAI {
+		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings); changed {
 			body = cappedBody
 		}
 	}

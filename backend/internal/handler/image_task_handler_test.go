@@ -106,6 +106,71 @@ func TestAsyncImageHandlerSubmitAndPoll(t *testing.T) {
 	require.Contains(t, pollWriter.Body.String(), "https://example.test/image.png")
 }
 
+func TestAsyncImageHandlerCompositeDelegationPreservesResolvedRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
+	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
+	type executionSnapshot struct {
+		platform       string
+		targetPlatform string
+		groupID        int64
+		multiplier     float64
+	}
+	executed := make(chan executionSnapshot, 1)
+	h := &AsyncImageHandler{tasks: tasks}
+	h.execute = func(platform string, c *gin.Context) {
+		targetPlatform, _ := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+		groupID, _ := service.ResolvedPricingGroupIDFromContext(c.Request.Context())
+		multiplier, _ := service.ResolvedRateMultiplierFromContext(c.Request.Context())
+		executed <- executionSnapshot{
+			platform:       platform,
+			targetPlatform: targetPlatform,
+			groupID:        groupID,
+			multiplier:     multiplier,
+		}
+		c.JSON(http.StatusOK, gin.H{"data": []gin.H{{"url": "https://example.test/delegated.png"}}})
+	}
+
+	compositeGroupID := int64(7)
+	targetGroupID := int64(42)
+	routeMultiplier := 1.75
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+			ID:      9,
+			UserID:  7,
+			GroupID: &compositeGroupID,
+			Group: &service.Group{
+				ID: compositeGroupID, Platform: service.PlatformComposite, AllowImageGeneration: true,
+			},
+		})
+		c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), service.CompositeRouteDecision{
+			Matched:        true,
+			TargetPlatform: service.PlatformOpenAI,
+			TargetGroupID:  &targetGroupID,
+			RateMultiplier: &routeMultiplier,
+		}))
+		c.Next()
+	})
+	router.POST("/v1/images/generations/async", h.Submit)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations/async", strings.NewReader(`{"model":"gpt-image-1","prompt":"cat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	select {
+	case snapshot := <-executed:
+		require.Equal(t, service.PlatformOpenAI, snapshot.platform)
+		require.Equal(t, service.PlatformOpenAI, snapshot.targetPlatform)
+		require.Equal(t, targetGroupID, snapshot.groupID)
+		require.InDelta(t, routeMultiplier, snapshot.multiplier, 1e-12)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delegated async image execution")
+	}
+}
+
 // When object storage is not configured the feature is fully disabled: the
 // endpoints must return 404 without creating a task or writing to Redis.
 func TestAsyncImageHandlerDisabledReturns404(t *testing.T) {

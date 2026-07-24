@@ -29,6 +29,10 @@ const (
 	FieldMatchType = "match_type"
 	// FieldTargetPlatform holds the string denoting the target_platform field in the database.
 	FieldTargetPlatform = "target_platform"
+	// FieldTargetGroupID holds the string denoting the target_group_id field in the database.
+	FieldTargetGroupID = "target_group_id"
+	// FieldRateMultiplier holds the string denoting the rate_multiplier field in the database.
+	FieldRateMultiplier = "rate_multiplier"
 	// FieldUpstreamModel holds the string denoting the upstream_model field in the database.
 	FieldUpstreamModel = "upstream_model"
 	// FieldEndpoint holds the string denoting the endpoint field in the database.
@@ -62,6 +66,8 @@ var Columns = []string{
 	FieldPublicModel,
 	FieldMatchType,
 	FieldTargetPlatform,
+	FieldTargetGroupID,
+	FieldRateMultiplier,
 	FieldUpstreamModel,
 	FieldEndpoint,
 	FieldPriority,
@@ -158,6 +164,16 @@ func ByMatchType(opts ...sql.OrderTermOption) OrderOption {
 // ByTargetPlatform orders the results by the target_platform field.
 func ByTargetPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTargetPlatform, opts...).ToFunc()
+}
+
+// ByTargetGroupID orders the results by the target_group_id field.
+func ByTargetGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTargetGroupID, opts...).ToFunc()
+}
+
+// ByRateMultiplier orders the results by the rate_multiplier field.
+func ByRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRateMultiplier, opts...).ToFunc()
 }
 
 // ByUpstreamModel orders the results by the upstream_model field.

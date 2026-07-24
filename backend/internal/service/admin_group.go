@@ -117,6 +117,10 @@ func (s *adminServiceImpl) CreateCompositeRoute(ctx context.Context, groupID int
 	if s.compositeRouteRepo == nil {
 		return nil, fmt.Errorf("composite route repository is not configured")
 	}
+	input, err := s.prepareCompositeRouteTarget(ctx, groupID, input)
+	if err != nil {
+		return nil, err
+	}
 	route, err := compositeRouteFromInput(groupID, input)
 	if err != nil {
 		return nil, err
@@ -138,6 +142,10 @@ func (s *adminServiceImpl) UpdateCompositeRoute(ctx context.Context, groupID, ro
 		return nil, err
 	} else if !ok {
 		return nil, ErrCompositeRouteNotFound
+	}
+	input, err := s.prepareCompositeRouteTarget(ctx, groupID, input)
+	if err != nil {
+		return nil, err
 	}
 	route, err := compositeRouteFromInput(groupID, input)
 	if err != nil {
@@ -209,6 +217,8 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 	if input.PublicModel == "" {
 		return nil, fmt.Errorf("public_model is required")
 	}
+	// 两种目标二选一：委托到子分组（target_group_id）或直连平台（target_platform）。
+	// 分组模式下 TargetPlatform 由 prepareCompositeRouteTarget 用子分组平台预填，此处仍要求其为具体平台。
 	if !isConcreteRequestPlatform(input.TargetPlatform) {
 		return nil, fmt.Errorf("target_platform must be a concrete provider")
 	}
@@ -220,12 +230,45 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 		PublicModel:    input.PublicModel,
 		MatchType:      input.MatchType,
 		TargetPlatform: input.TargetPlatform,
+		TargetGroupID:  input.TargetGroupID,
+		RateMultiplier: input.RateMultiplier,
 		UpstreamModel:  input.UpstreamModel,
 		Endpoint:       input.Endpoint,
 		Priority:       input.Priority,
 		Enabled:        input.Enabled,
 		Notes:          input.Notes,
 	}, nil
+}
+
+// prepareCompositeRouteTarget 校验"委托到子分组"路由并用子分组平台预填 TargetPlatform。
+// 分组模式：target_group_id 必须指向存在、启用、具体平台（非 composite）、非组合分组自身的子分组，
+// 并据此把 TargetPlatform 设为子分组平台（供运行期兜底与 usage 展示）。
+// 平台模式（未设 target_group_id）：原样返回，由 compositeRouteFromInput 校验 target_platform。
+func (s *adminServiceImpl) prepareCompositeRouteTarget(ctx context.Context, compositeGroupID int64, input CompositeRouteInput) (CompositeRouteInput, error) {
+	input = normalizeCompositeRouteInput(input)
+	if input.TargetGroupID == nil {
+		return input, nil
+	}
+	targetID := *input.TargetGroupID
+	if targetID == compositeGroupID {
+		return input, fmt.Errorf("cannot set the composite group itself as target group")
+	}
+	target, err := s.groupRepo.GetByIDLite(ctx, targetID)
+	if err != nil {
+		return input, fmt.Errorf("target group not found: %w", err)
+	}
+	if target == nil {
+		return input, fmt.Errorf("target group not found")
+	}
+	if !isConcreteRequestPlatform(target.Platform) {
+		return input, fmt.Errorf("target group must be a concrete-platform group (not composite)")
+	}
+	if target.Status != StatusActive {
+		return input, fmt.Errorf("target group must be active")
+	}
+	// 用子分组平台预填，使存储的 target_platform 始终等于子分组真实平台。
+	input.TargetPlatform = target.Platform
+	return input, nil
 }
 
 func defaultModelsListCandidateIDs(platform string) []string {

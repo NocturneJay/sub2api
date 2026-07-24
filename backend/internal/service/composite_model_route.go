@@ -38,6 +38,12 @@ type CompositeModelRoute struct {
 	PublicModel    string    `json:"public_model"`
 	MatchType      string    `json:"match_type"`
 	TargetPlatform string    `json:"target_platform"`
+	// TargetGroupID 非空表示该路由"委托到子分组"：请求由该子分组的账号池调度，
+	// 并按该子分组定价计费；配额/限额/扣费仍记在 composite（通用）分组头上。
+	// 与 TargetPlatform 二选一。
+	TargetGroupID *int64 `json:"target_group_id,omitempty"`
+	// RateMultiplier 为委托路由的每路由倍率覆盖；nil 表示沿用子分组自身倍率。
+	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
 	UpstreamModel  string    `json:"upstream_model"`
 	Endpoint       string    `json:"endpoint"`
 	Priority       int       `json:"priority"`
@@ -58,6 +64,10 @@ type CompositeRouteDecision struct {
 	GroupID        int64                `json:"group_id"`
 	PublicModel    string               `json:"public_model"`
 	TargetPlatform string               `json:"target_platform"`
+	// TargetGroupID 非空表示命中"委托到子分组"路由；调度改用该子分组的账号池，
+	// 计费改用该子分组定价（RateMultiplier 为生效倍率覆盖，nil 表示沿用子分组倍率）。
+	TargetGroupID  *int64               `json:"target_group_id,omitempty"`
+	RateMultiplier *float64             `json:"rate_multiplier,omitempty"`
 	UpstreamModel  string               `json:"upstream_model"`
 	Endpoint       string               `json:"endpoint"`
 	Route          *CompositeModelRoute `json:"route,omitempty"`
@@ -68,6 +78,8 @@ type CompositeRouteInput struct {
 	PublicModel    string
 	MatchType      string
 	TargetPlatform string
+	TargetGroupID  *int64
+	RateMultiplier *float64
 	UpstreamModel  string
 	Endpoint       string
 	Priority       int
@@ -120,6 +132,15 @@ func normalizeCompositeRouteInput(input CompositeRouteInput) CompositeRouteInput
 	input.Endpoint = normalizeCompositeRouteEndpoint(input.Endpoint)
 	if input.UpstreamModel == "" {
 		input.UpstreamModel = input.PublicModel
+	}
+	// 委托到子分组：非正数视为未设置；倍率覆盖非正数（<=0）视为未设置，沿用子分组倍率。
+	if input.TargetGroupID != nil && *input.TargetGroupID <= 0 {
+		input.TargetGroupID = nil
+	}
+	if input.TargetGroupID == nil {
+		input.RateMultiplier = nil
+	} else if input.RateMultiplier != nil && *input.RateMultiplier <= 0 {
+		input.RateMultiplier = nil
 	}
 	input.Notes = strings.TrimSpace(input.Notes)
 	return input

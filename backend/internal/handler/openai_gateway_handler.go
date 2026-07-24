@@ -29,6 +29,7 @@ import (
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
 	gatewayService             *service.OpenAIGatewayService
+	compositeResolver          *service.CompositeRouteResolver
 	billingCacheService        *service.BillingCacheService
 	apiKeyService              *service.APIKeyService
 	usageRecordWorkerPool      *service.UsageRecordWorkerPool
@@ -53,11 +54,11 @@ func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bo
 	return result.SucceededForScheduling()
 }
 
-func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
-	if apiKey == nil || apiKey.Group == nil {
+func resolveOpenAIMessagesDispatchMappedModel(group *service.Group, requestedModel string) string {
+	if group == nil {
 		return ""
 	}
-	return strings.TrimSpace(apiKey.Group.ResolveMessagesDispatchModel(requestedModel))
+	return strings.TrimSpace(group.ResolveMessagesDispatchModel(requestedModel))
 }
 
 type openAIModelBodyReplaceFunc func([]byte, string) []byte
@@ -105,6 +106,18 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
+	// Usage tasks run on a fresh background context. Preserve the scalar
+	// composite-delegation pricing snapshot without retaining the request body or
+	// the full parent context.
+	if pricingGroupID, ok := parent.Value(ctxkey.ResolvedPricingGroupID).(int64); ok && pricingGroupID > 0 {
+		base = context.WithValue(base, ctxkey.ResolvedPricingGroupID, pricingGroupID)
+	}
+	if targetPlatform, ok := parent.Value(ctxkey.ResolvedTargetPlatform).(string); ok && strings.TrimSpace(targetPlatform) != "" {
+		base = context.WithValue(base, ctxkey.ResolvedTargetPlatform, strings.TrimSpace(targetPlatform))
+	}
+	if rateMultiplier, ok := parent.Value(ctxkey.ResolvedRateMultiplier).(float64); ok && rateMultiplier > 0 {
+		base = context.WithValue(base, ctxkey.ResolvedRateMultiplier, rateMultiplier)
+	}
 	return base
 }
 
@@ -137,14 +150,14 @@ func openAIResponsesRequiredCapability(imageIntent bool, platform string) servic
 	return service.OpenAIEndpointCapabilityChatCompletions
 }
 
-func allowOpenAICompatibleMessagesDispatch(apiKey *service.APIKey) bool {
-	if apiKey == nil || apiKey.Group == nil {
+func allowOpenAICompatibleMessagesDispatch(group *service.Group) bool {
+	if group == nil {
 		return true
 	}
-	if apiKey.Group.Platform == service.PlatformGrok {
+	if group.Platform == service.PlatformGrok {
 		return true
 	}
-	return apiKey.Group.AllowMessagesDispatch
+	return group.AllowMessagesDispatch
 }
 
 func openAICompatibleTextTargetAllowed(c *gin.Context, apiKey *service.APIKey, model string) bool {
@@ -184,6 +197,56 @@ func NewOpenAIGatewayHandler(
 		maxAccountSwitches:       maxAccountSwitches,
 		cfg:                      cfg,
 	}
+}
+
+// SetCompositeRouteResolver wires the request router's composite resolver into
+// the WebSocket handler. HTTP requests are resolved by middleware, but a
+// WebSocket model is only available after the upgrade in the first message.
+func (h *OpenAIGatewayHandler) SetCompositeRouteResolver(resolver *service.CompositeRouteResolver) {
+	if h != nil {
+		h.compositeResolver = resolver
+	}
+}
+
+func (h *OpenAIGatewayHandler) resolveCompositeRequestGroup(ctx context.Context, apiKey *service.APIKey) (*service.Group, error) {
+	if h == nil || h.gatewayService == nil {
+		if apiKey == nil {
+			return nil, nil
+		}
+		return apiKey.Group, nil
+	}
+	return h.gatewayService.ResolveCompositeRequestGroup(ctx, apiKey)
+}
+
+func (h *OpenAIGatewayHandler) resolveCompositeWebSocketRoute(c *gin.Context, apiKey *service.APIKey, payload []byte, model string) ([]byte, string, error) {
+	model = strings.TrimSpace(model)
+	if c == nil || c.Request == nil || apiKey == nil || apiKey.Group == nil || apiKey.Group.Platform != service.PlatformComposite {
+		return payload, model, nil
+	}
+
+	groupID := apiKey.Group.ID
+	if groupID <= 0 && apiKey.GroupID != nil {
+		groupID = *apiKey.GroupID
+	}
+	if h != nil && h.compositeResolver != nil && groupID > 0 {
+		decision, err := h.compositeResolver.Resolve(c.Request.Context(), groupID, model, service.CompositeRouteEndpointResponses)
+		if err != nil {
+			return nil, "", fmt.Errorf("resolve composite websocket route: %w", err)
+		}
+		if decision.Matched {
+			c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+			if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model {
+				payload = service.ReplaceModelInBody(payload, upstreamModel)
+				model = upstreamModel
+			}
+			return payload, model, nil
+		}
+	}
+
+	// Detector fallback preserves the pre-existing behavior for composite routes
+	// that do not have an explicit model rule.
+	ensureCompositeTargetPlatform(c, apiKey, model)
+	return payload, model, nil
 }
 
 // Responses handles OpenAI Responses API endpoint
@@ -268,8 +331,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
-		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, apiKey.Group.MaxReasoningEffort, apiKey.Group.ReasoningEffortMappings); changed {
+	requestGroup, err := h.resolveCompositeRequestGroup(c.Request.Context(), apiKey)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Composite target group is unavailable")
+		return
+	}
+	if requestGroup != nil && requestGroup.Platform == service.PlatformOpenAI {
+		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings); changed {
 			body = cappedBody
 		}
 	}
@@ -840,7 +908,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	)
 
 	// 检查分组是否允许 /v1/messages 调度
-	if !allowOpenAICompatibleMessagesDispatch(apiKey) {
+	requestGroup, err := h.resolveCompositeRequestGroup(c.Request.Context(), apiKey)
+	if err != nil {
+		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Composite target group is unavailable")
+		return
+	}
+	if !allowOpenAICompatibleMessagesDispatch(requestGroup) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -882,7 +955,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
-	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(requestGroup, reqModel)
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
@@ -1496,7 +1569,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
 		return
 	}
-	ensureCompositeTargetPlatform(c, apiKey, reqModel)
+	firstMessage, reqModel, err = h.resolveCompositeWebSocketRoute(c, apiKey, firstMessage, reqModel)
+	if err != nil {
+		reqLog.Warn("openai.websocket_composite_route_resolve_failed", zap.Error(err))
+		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to resolve composite model route")
+		return
+	}
 	ctx = c.Request.Context()
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
 		platform, ok := service.ResolvedTargetPlatformFromContext(ctx)
@@ -1504,6 +1582,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "Responses WebSocket API only supports OpenAI-compatible models for composite groups")
 			return
 		}
+	}
+	requestGroup, err := h.resolveCompositeRequestGroup(ctx, apiKey)
+	if err != nil {
+		reqLog.Warn("openai.websocket_composite_target_group_unavailable", zap.Error(err))
+		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "composite target group is unavailable")
+		return
 	}
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(firstMessage, "previous_response_id").String())
 	previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
@@ -1762,9 +1846,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 		maxReasoningEffort := ""
 		var reasoningEffortMappings []service.ReasoningEffortMapping
-		if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
-			maxReasoningEffort = apiKey.Group.MaxReasoningEffort
-			reasoningEffortMappings = apiKey.Group.ReasoningEffortMappings
+		if requestGroup != nil && requestGroup.Platform == service.PlatformOpenAI {
+			maxReasoningEffort = requestGroup.MaxReasoningEffort
+			reasoningEffortMappings = requestGroup.ReasoningEffortMappings
 		}
 		var requestPayloadHash string
 		hooks := &service.OpenAIWSIngressHooks{

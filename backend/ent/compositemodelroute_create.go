@@ -105,6 +105,34 @@ func (_c *CompositeModelRouteCreate) SetNillableTargetPlatform(v *string) *Compo
 	return _c
 }
 
+// SetTargetGroupID sets the "target_group_id" field.
+func (_c *CompositeModelRouteCreate) SetTargetGroupID(v int64) *CompositeModelRouteCreate {
+	_c.mutation.SetTargetGroupID(v)
+	return _c
+}
+
+// SetNillableTargetGroupID sets the "target_group_id" field if the given value is not nil.
+func (_c *CompositeModelRouteCreate) SetNillableTargetGroupID(v *int64) *CompositeModelRouteCreate {
+	if v != nil {
+		_c.SetTargetGroupID(*v)
+	}
+	return _c
+}
+
+// SetRateMultiplier sets the "rate_multiplier" field.
+func (_c *CompositeModelRouteCreate) SetRateMultiplier(v float64) *CompositeModelRouteCreate {
+	_c.mutation.SetRateMultiplier(v)
+	return _c
+}
+
+// SetNillableRateMultiplier sets the "rate_multiplier" field if the given value is not nil.
+func (_c *CompositeModelRouteCreate) SetNillableRateMultiplier(v *float64) *CompositeModelRouteCreate {
+	if v != nil {
+		_c.SetRateMultiplier(*v)
+	}
+	return _c
+}
+
 // SetUpstreamModel sets the "upstream_model" field.
 func (_c *CompositeModelRouteCreate) SetUpstreamModel(v string) *CompositeModelRouteCreate {
 	_c.mutation.SetUpstreamModel(v)
@@ -369,6 +397,14 @@ func (_c *CompositeModelRouteCreate) createSpec() (*CompositeModelRoute, *sqlgra
 		_spec.SetField(compositemodelroute.FieldTargetPlatform, field.TypeString, value)
 		_node.TargetPlatform = value
 	}
+	if value, ok := _c.mutation.TargetGroupID(); ok {
+		_spec.SetField(compositemodelroute.FieldTargetGroupID, field.TypeInt64, value)
+		_node.TargetGroupID = &value
+	}
+	if value, ok := _c.mutation.RateMultiplier(); ok {
+		_spec.SetField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64, value)
+		_node.RateMultiplier = &value
+	}
 	if value, ok := _c.mutation.UpstreamModel(); ok {
 		_spec.SetField(compositemodelroute.FieldUpstreamModel, field.TypeString, value)
 		_node.UpstreamModel = value
@@ -533,6 +569,54 @@ func (u *CompositeModelRouteUpsert) SetTargetPlatform(v string) *CompositeModelR
 // UpdateTargetPlatform sets the "target_platform" field to the value that was provided on create.
 func (u *CompositeModelRouteUpsert) UpdateTargetPlatform() *CompositeModelRouteUpsert {
 	u.SetExcluded(compositemodelroute.FieldTargetPlatform)
+	return u
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (u *CompositeModelRouteUpsert) SetTargetGroupID(v int64) *CompositeModelRouteUpsert {
+	u.Set(compositemodelroute.FieldTargetGroupID, v)
+	return u
+}
+
+// UpdateTargetGroupID sets the "target_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsert) UpdateTargetGroupID() *CompositeModelRouteUpsert {
+	u.SetExcluded(compositemodelroute.FieldTargetGroupID)
+	return u
+}
+
+// AddTargetGroupID adds v to the "target_group_id" field.
+func (u *CompositeModelRouteUpsert) AddTargetGroupID(v int64) *CompositeModelRouteUpsert {
+	u.Add(compositemodelroute.FieldTargetGroupID, v)
+	return u
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (u *CompositeModelRouteUpsert) ClearTargetGroupID() *CompositeModelRouteUpsert {
+	u.SetNull(compositemodelroute.FieldTargetGroupID)
+	return u
+}
+
+// SetRateMultiplier sets the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsert) SetRateMultiplier(v float64) *CompositeModelRouteUpsert {
+	u.Set(compositemodelroute.FieldRateMultiplier, v)
+	return u
+}
+
+// UpdateRateMultiplier sets the "rate_multiplier" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsert) UpdateRateMultiplier() *CompositeModelRouteUpsert {
+	u.SetExcluded(compositemodelroute.FieldRateMultiplier)
+	return u
+}
+
+// AddRateMultiplier adds v to the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsert) AddRateMultiplier(v float64) *CompositeModelRouteUpsert {
+	u.Add(compositemodelroute.FieldRateMultiplier, v)
+	return u
+}
+
+// ClearRateMultiplier clears the value of the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsert) ClearRateMultiplier() *CompositeModelRouteUpsert {
+	u.SetNull(compositemodelroute.FieldRateMultiplier)
 	return u
 }
 
@@ -741,6 +825,62 @@ func (u *CompositeModelRouteUpsertOne) SetTargetPlatform(v string) *CompositeMod
 func (u *CompositeModelRouteUpsertOne) UpdateTargetPlatform() *CompositeModelRouteUpsertOne {
 	return u.Update(func(s *CompositeModelRouteUpsert) {
 		s.UpdateTargetPlatform()
+	})
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (u *CompositeModelRouteUpsertOne) SetTargetGroupID(v int64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetTargetGroupID(v)
+	})
+}
+
+// AddTargetGroupID adds v to the "target_group_id" field.
+func (u *CompositeModelRouteUpsertOne) AddTargetGroupID(v int64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.AddTargetGroupID(v)
+	})
+}
+
+// UpdateTargetGroupID sets the "target_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertOne) UpdateTargetGroupID() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateTargetGroupID()
+	})
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (u *CompositeModelRouteUpsertOne) ClearTargetGroupID() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearTargetGroupID()
+	})
+}
+
+// SetRateMultiplier sets the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsertOne) SetRateMultiplier(v float64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetRateMultiplier(v)
+	})
+}
+
+// AddRateMultiplier adds v to the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsertOne) AddRateMultiplier(v float64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.AddRateMultiplier(v)
+	})
+}
+
+// UpdateRateMultiplier sets the "rate_multiplier" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertOne) UpdateRateMultiplier() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateRateMultiplier()
+	})
+}
+
+// ClearRateMultiplier clears the value of the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsertOne) ClearRateMultiplier() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearRateMultiplier()
 	})
 }
 
@@ -1127,6 +1267,62 @@ func (u *CompositeModelRouteUpsertBulk) SetTargetPlatform(v string) *CompositeMo
 func (u *CompositeModelRouteUpsertBulk) UpdateTargetPlatform() *CompositeModelRouteUpsertBulk {
 	return u.Update(func(s *CompositeModelRouteUpsert) {
 		s.UpdateTargetPlatform()
+	})
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) SetTargetGroupID(v int64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetTargetGroupID(v)
+	})
+}
+
+// AddTargetGroupID adds v to the "target_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) AddTargetGroupID(v int64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.AddTargetGroupID(v)
+	})
+}
+
+// UpdateTargetGroupID sets the "target_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertBulk) UpdateTargetGroupID() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateTargetGroupID()
+	})
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) ClearTargetGroupID() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearTargetGroupID()
+	})
+}
+
+// SetRateMultiplier sets the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsertBulk) SetRateMultiplier(v float64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetRateMultiplier(v)
+	})
+}
+
+// AddRateMultiplier adds v to the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsertBulk) AddRateMultiplier(v float64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.AddRateMultiplier(v)
+	})
+}
+
+// UpdateRateMultiplier sets the "rate_multiplier" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertBulk) UpdateRateMultiplier() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateRateMultiplier()
+	})
+}
+
+// ClearRateMultiplier clears the value of the "rate_multiplier" field.
+func (u *CompositeModelRouteUpsertBulk) ClearRateMultiplier() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearRateMultiplier()
 	})
 }
 

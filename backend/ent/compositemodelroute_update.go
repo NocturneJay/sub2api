@@ -111,6 +111,60 @@ func (_u *CompositeModelRouteUpdate) SetNillableTargetPlatform(v *string) *Compo
 	return _u
 }
 
+// SetTargetGroupID sets the "target_group_id" field.
+func (_u *CompositeModelRouteUpdate) SetTargetGroupID(v int64) *CompositeModelRouteUpdate {
+	_u.mutation.ResetTargetGroupID()
+	_u.mutation.SetTargetGroupID(v)
+	return _u
+}
+
+// SetNillableTargetGroupID sets the "target_group_id" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdate) SetNillableTargetGroupID(v *int64) *CompositeModelRouteUpdate {
+	if v != nil {
+		_u.SetTargetGroupID(*v)
+	}
+	return _u
+}
+
+// AddTargetGroupID adds value to the "target_group_id" field.
+func (_u *CompositeModelRouteUpdate) AddTargetGroupID(v int64) *CompositeModelRouteUpdate {
+	_u.mutation.AddTargetGroupID(v)
+	return _u
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (_u *CompositeModelRouteUpdate) ClearTargetGroupID() *CompositeModelRouteUpdate {
+	_u.mutation.ClearTargetGroupID()
+	return _u
+}
+
+// SetRateMultiplier sets the "rate_multiplier" field.
+func (_u *CompositeModelRouteUpdate) SetRateMultiplier(v float64) *CompositeModelRouteUpdate {
+	_u.mutation.ResetRateMultiplier()
+	_u.mutation.SetRateMultiplier(v)
+	return _u
+}
+
+// SetNillableRateMultiplier sets the "rate_multiplier" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdate) SetNillableRateMultiplier(v *float64) *CompositeModelRouteUpdate {
+	if v != nil {
+		_u.SetRateMultiplier(*v)
+	}
+	return _u
+}
+
+// AddRateMultiplier adds value to the "rate_multiplier" field.
+func (_u *CompositeModelRouteUpdate) AddRateMultiplier(v float64) *CompositeModelRouteUpdate {
+	_u.mutation.AddRateMultiplier(v)
+	return _u
+}
+
+// ClearRateMultiplier clears the value of the "rate_multiplier" field.
+func (_u *CompositeModelRouteUpdate) ClearRateMultiplier() *CompositeModelRouteUpdate {
+	_u.mutation.ClearRateMultiplier()
+	return _u
+}
+
 // SetUpstreamModel sets the "upstream_model" field.
 func (_u *CompositeModelRouteUpdate) SetUpstreamModel(v string) *CompositeModelRouteUpdate {
 	_u.mutation.SetUpstreamModel(v)
@@ -315,6 +369,24 @@ func (_u *CompositeModelRouteUpdate) sqlSave(ctx context.Context) (_node int, er
 	if value, ok := _u.mutation.TargetPlatform(); ok {
 		_spec.SetField(compositemodelroute.FieldTargetPlatform, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.TargetGroupID(); ok {
+		_spec.SetField(compositemodelroute.FieldTargetGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTargetGroupID(); ok {
+		_spec.AddField(compositemodelroute.FieldTargetGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.TargetGroupIDCleared() {
+		_spec.ClearField(compositemodelroute.FieldTargetGroupID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RateMultiplier(); ok {
+		_spec.SetField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
+		_spec.AddField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.RateMultiplierCleared() {
+		_spec.ClearField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64)
+	}
 	if value, ok := _u.mutation.UpstreamModel(); ok {
 		_spec.SetField(compositemodelroute.FieldUpstreamModel, field.TypeString, value)
 	}
@@ -464,6 +536,60 @@ func (_u *CompositeModelRouteUpdateOne) SetNillableTargetPlatform(v *string) *Co
 	if v != nil {
 		_u.SetTargetPlatform(*v)
 	}
+	return _u
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) SetTargetGroupID(v int64) *CompositeModelRouteUpdateOne {
+	_u.mutation.ResetTargetGroupID()
+	_u.mutation.SetTargetGroupID(v)
+	return _u
+}
+
+// SetNillableTargetGroupID sets the "target_group_id" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdateOne) SetNillableTargetGroupID(v *int64) *CompositeModelRouteUpdateOne {
+	if v != nil {
+		_u.SetTargetGroupID(*v)
+	}
+	return _u
+}
+
+// AddTargetGroupID adds value to the "target_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) AddTargetGroupID(v int64) *CompositeModelRouteUpdateOne {
+	_u.mutation.AddTargetGroupID(v)
+	return _u
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) ClearTargetGroupID() *CompositeModelRouteUpdateOne {
+	_u.mutation.ClearTargetGroupID()
+	return _u
+}
+
+// SetRateMultiplier sets the "rate_multiplier" field.
+func (_u *CompositeModelRouteUpdateOne) SetRateMultiplier(v float64) *CompositeModelRouteUpdateOne {
+	_u.mutation.ResetRateMultiplier()
+	_u.mutation.SetRateMultiplier(v)
+	return _u
+}
+
+// SetNillableRateMultiplier sets the "rate_multiplier" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdateOne) SetNillableRateMultiplier(v *float64) *CompositeModelRouteUpdateOne {
+	if v != nil {
+		_u.SetRateMultiplier(*v)
+	}
+	return _u
+}
+
+// AddRateMultiplier adds value to the "rate_multiplier" field.
+func (_u *CompositeModelRouteUpdateOne) AddRateMultiplier(v float64) *CompositeModelRouteUpdateOne {
+	_u.mutation.AddRateMultiplier(v)
+	return _u
+}
+
+// ClearRateMultiplier clears the value of the "rate_multiplier" field.
+func (_u *CompositeModelRouteUpdateOne) ClearRateMultiplier() *CompositeModelRouteUpdateOne {
+	_u.mutation.ClearRateMultiplier()
 	return _u
 }
 
@@ -700,6 +826,24 @@ func (_u *CompositeModelRouteUpdateOne) sqlSave(ctx context.Context) (_node *Com
 	}
 	if value, ok := _u.mutation.TargetPlatform(); ok {
 		_spec.SetField(compositemodelroute.FieldTargetPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TargetGroupID(); ok {
+		_spec.SetField(compositemodelroute.FieldTargetGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTargetGroupID(); ok {
+		_spec.AddField(compositemodelroute.FieldTargetGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.TargetGroupIDCleared() {
+		_spec.ClearField(compositemodelroute.FieldTargetGroupID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RateMultiplier(); ok {
+		_spec.SetField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
+		_spec.AddField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.RateMultiplierCleared() {
+		_spec.ClearField(compositemodelroute.FieldRateMultiplier, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.UpstreamModel(); ok {
 		_spec.SetField(compositemodelroute.FieldUpstreamModel, field.TypeString, value)

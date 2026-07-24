@@ -386,6 +386,7 @@ var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /r
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
 	accountRepo           AccountRepository
+	groupRepo             GroupRepository
 	usageLogRepo          UsageLogRepository
 	usageBillingRepo      UsageBillingRepository
 	userRepo              UserRepository
@@ -503,6 +504,9 @@ func NewOpenAIGatewayService(
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 		openaiModelTransient:  newOpenAIAccountModelTransientState(openAIModelTransientDefaultMax),
 	}
+	if channelService != nil {
+		svc.groupRepo = channelService.groupRepo
+	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)
 	}
@@ -513,11 +517,29 @@ func NewOpenAIGatewayService(
 	return svc
 }
 
+// ResolveCompositeRequestGroup returns the concrete delegated group whose
+// platform-specific request policies should apply. Accounting and quota checks
+// continue using the original API key group.
+func (s *OpenAIGatewayService) ResolveCompositeRequestGroup(ctx context.Context, apiKey *APIKey) (*Group, error) {
+	target, _, err := resolveCompositeDelegatedGroup(ctx, s.groupRepo)
+	if err != nil {
+		return nil, err
+	}
+	if target != nil {
+		return target, nil
+	}
+	if apiKey == nil {
+		return nil, nil
+	}
+	return apiKey.Group, nil
+}
+
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）
 func (s *OpenAIGatewayService) ResolveChannelMapping(ctx context.Context, groupID int64, model string) ChannelMappingResult {
 	if s.channelService == nil {
 		return ChannelMappingResult{MappedModel: model}
 	}
+	groupID = derefGroupID(effectiveCompositeTargetGroupID(ctx, &groupID))
 	return s.channelService.ResolveChannelMapping(ctx, groupID, model)
 }
 
@@ -526,6 +548,7 @@ func (s *OpenAIGatewayService) IsModelRestricted(ctx context.Context, groupID in
 	if s.channelService == nil {
 		return false
 	}
+	groupID = derefGroupID(effectiveCompositeTargetGroupID(ctx, &groupID))
 	return s.channelService.IsModelRestricted(ctx, groupID, model)
 }
 
@@ -535,6 +558,7 @@ func (s *OpenAIGatewayService) ResolveChannelMappingAndRestrict(ctx context.Cont
 	if s.channelService == nil {
 		return ChannelMappingResult{MappedModel: model}, false
 	}
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	return s.channelService.ResolveChannelMappingAndRestrict(ctx, groupID, model)
 }
 
@@ -543,9 +567,10 @@ func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.C
 		return *override
 	}
 	if s != nil && s.channelService != nil && apiKey != nil && apiKey.GroupID != nil {
-		ch, err := s.channelService.GetChannelForGroup(ctx, *apiKey.GroupID)
+		groupID := effectiveCompositeTargetGroupID(ctx, apiKey.GroupID)
+		ch, err := s.channelService.GetChannelForGroup(ctx, *groupID)
 		if err != nil {
-			slog.Warn("failed to resolve codex image generation bridge channel override", "group_id", *apiKey.GroupID, "error", err)
+			slog.Warn("failed to resolve codex image generation bridge channel override", "group_id", *groupID, "error", err)
 		} else if override := ch.CodexImageGenerationBridgeOverride(PlatformOpenAI); override != nil {
 			return *override
 		}

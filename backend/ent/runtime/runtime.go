@@ -916,23 +916,23 @@ func init() {
 	// compositemodelroute.TargetPlatformValidator is a validator for the "target_platform" field. It is called by the builders before save.
 	compositemodelroute.TargetPlatformValidator = compositemodelrouteDescTargetPlatform.Validators[0].(func(string) error)
 	// compositemodelrouteDescUpstreamModel is the schema descriptor for upstream_model field.
-	compositemodelrouteDescUpstreamModel := compositemodelrouteFields[4].Descriptor()
+	compositemodelrouteDescUpstreamModel := compositemodelrouteFields[6].Descriptor()
 	// compositemodelroute.DefaultUpstreamModel holds the default value on creation for the upstream_model field.
 	compositemodelroute.DefaultUpstreamModel = compositemodelrouteDescUpstreamModel.Default.(string)
 	// compositemodelroute.UpstreamModelValidator is a validator for the "upstream_model" field. It is called by the builders before save.
 	compositemodelroute.UpstreamModelValidator = compositemodelrouteDescUpstreamModel.Validators[0].(func(string) error)
 	// compositemodelrouteDescEndpoint is the schema descriptor for endpoint field.
-	compositemodelrouteDescEndpoint := compositemodelrouteFields[5].Descriptor()
+	compositemodelrouteDescEndpoint := compositemodelrouteFields[7].Descriptor()
 	// compositemodelroute.DefaultEndpoint holds the default value on creation for the endpoint field.
 	compositemodelroute.DefaultEndpoint = compositemodelrouteDescEndpoint.Default.(string)
 	// compositemodelroute.EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
 	compositemodelroute.EndpointValidator = compositemodelrouteDescEndpoint.Validators[0].(func(string) error)
 	// compositemodelrouteDescPriority is the schema descriptor for priority field.
-	compositemodelrouteDescPriority := compositemodelrouteFields[6].Descriptor()
+	compositemodelrouteDescPriority := compositemodelrouteFields[8].Descriptor()
 	// compositemodelroute.DefaultPriority holds the default value on creation for the priority field.
 	compositemodelroute.DefaultPriority = compositemodelrouteDescPriority.Default.(int)
 	// compositemodelrouteDescEnabled is the schema descriptor for enabled field.
-	compositemodelrouteDescEnabled := compositemodelrouteFields[7].Descriptor()
+	compositemodelrouteDescEnabled := compositemodelrouteFields[9].Descriptor()
 	// compositemodelroute.DefaultEnabled holds the default value on creation for the enabled field.
 	compositemodelroute.DefaultEnabled = compositemodelrouteDescEnabled.Default.(bool)
 	errorpassthroughruleMixin := schema.ErrorPassthroughRule{}.Mixin()

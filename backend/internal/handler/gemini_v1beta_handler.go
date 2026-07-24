@@ -264,10 +264,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	if sessionKey != "" {
 		sessionBoundAccountID, _ = h.gatewayService.GetCachedSessionAccountID(c.Request.Context(), apiKey.GroupID, sessionKey)
 		if sessionBoundAccountID > 0 {
-			prefetchedGroupID := int64(0)
-			if apiKey.GroupID != nil {
-				prefetchedGroupID = *apiKey.GroupID
-			}
+			prefetchedGroupID := resolvedSchedulingGroupID(c.Request.Context(), apiKey.GroupID)
 			ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, prefetchedGroupID, h.metadataBridgeEnabled())
 			c.Request = c.Request.WithContext(ctx)
 		}
@@ -467,7 +464,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		if fs.SwitchCount > 0 {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 		}
-		sessionGroupID := derefGroupID(apiKey.GroupID)
+		sessionGroupID := resolvedSchedulingGroupID(c.Request.Context(), apiKey.GroupID)
 		if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 			result, err = h.antigravityGatewayService.ForwardGemini(
 				requestCtx,
@@ -769,4 +766,11 @@ func derefGroupID(groupID *int64) int64 {
 		return 0
 	}
 	return *groupID
+}
+
+func resolvedSchedulingGroupID(ctx context.Context, groupID *int64) int64 {
+	if delegatedID, ok := service.ResolvedPricingGroupIDFromContext(ctx); ok {
+		return delegatedID
+	}
+	return derefGroupID(groupID)
 }

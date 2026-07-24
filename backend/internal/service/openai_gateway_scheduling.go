@@ -165,6 +165,7 @@ func (s *OpenAIGatewayService) BindStickySession(ctx context.Context, groupID *i
 	if sessionHash == "" || accountID <= 0 {
 		return nil
 	}
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	ttl := openaiStickySessionTTL
 	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.StickySessionTTLSeconds > 0 {
 		ttl = time.Duration(s.cfg.Gateway.OpenAIWS.StickySessionTTLSeconds) * time.Second
@@ -185,6 +186,13 @@ func (s *OpenAIGatewayService) SelectAccountForModel(ctx context.Context, groupI
 // SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
 // SelectAccountForModelWithExclusions 选择支持指定模型的账号，同时排除指定的账号。
 func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+	_, delegatedGroupID, err := s.resolveOpenAIDelegatedSchedulingGroup(ctx, PlatformOpenAI)
+	if err != nil {
+		return nil, err
+	}
+	if delegatedGroupID != nil {
+		groupID = delegatedGroupID
+	}
 	return s.selectAccountForModelWithExclusions(s.withOpenAIQuotaAutoPauseContext(ctx), groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, 0, "", false)
 }
 
@@ -845,6 +853,13 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 
 func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (*AccountSelectionResult, error) {
 	platform = normalizeOpenAICompatiblePlatform(platform)
+	_, delegatedGroupID, err := s.resolveOpenAIDelegatedSchedulingGroup(ctx, platform)
+	if err != nil {
+		return nil, err
+	}
+	if delegatedGroupID != nil {
+		groupID = delegatedGroupID
+	}
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
@@ -1187,6 +1202,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		return nil, ErrNoAvailableCompactAccounts
 	}
 	return nil, ErrNoAvailableAccounts
+}
+
+func (s *OpenAIGatewayService) resolveOpenAIDelegatedSchedulingGroup(ctx context.Context, platform string) (*Group, *int64, error) {
+	target, targetID, err := resolveCompositeDelegatedGroup(ctx, s.groupRepo)
+	if err != nil || target == nil {
+		return target, targetID, err
+	}
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	if target.Platform != platform {
+		return nil, nil, fmt.Errorf("%w (composite target group %d platform %s does not match %s dispatch)", ErrNoAvailableAccounts, target.ID, target.Platform, platform)
+	}
+	return target, targetID, nil
 }
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {

@@ -90,6 +90,16 @@ func TargetPlatform(v string) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldEQ(FieldTargetPlatform, v))
 }
 
+// TargetGroupID applies equality check predicate on the "target_group_id" field. It's identical to TargetGroupIDEQ.
+func TargetGroupID(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldTargetGroupID, v))
+}
+
+// RateMultiplier applies equality check predicate on the "rate_multiplier" field. It's identical to RateMultiplierEQ.
+func RateMultiplier(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldRateMultiplier, v))
+}
+
 // UpstreamModel applies equality check predicate on the "upstream_model" field. It's identical to UpstreamModelEQ.
 func UpstreamModel(v string) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldEQ(FieldUpstreamModel, v))
@@ -458,6 +468,106 @@ func TargetPlatformEqualFold(v string) predicate.CompositeModelRoute {
 // TargetPlatformContainsFold applies the ContainsFold predicate on the "target_platform" field.
 func TargetPlatformContainsFold(v string) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldContainsFold(FieldTargetPlatform, v))
+}
+
+// TargetGroupIDEQ applies the EQ predicate on the "target_group_id" field.
+func TargetGroupIDEQ(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDNEQ applies the NEQ predicate on the "target_group_id" field.
+func TargetGroupIDNEQ(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNEQ(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDIn applies the In predicate on the "target_group_id" field.
+func TargetGroupIDIn(vs ...int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIn(FieldTargetGroupID, vs...))
+}
+
+// TargetGroupIDNotIn applies the NotIn predicate on the "target_group_id" field.
+func TargetGroupIDNotIn(vs ...int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotIn(FieldTargetGroupID, vs...))
+}
+
+// TargetGroupIDGT applies the GT predicate on the "target_group_id" field.
+func TargetGroupIDGT(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldGT(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDGTE applies the GTE predicate on the "target_group_id" field.
+func TargetGroupIDGTE(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldGTE(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDLT applies the LT predicate on the "target_group_id" field.
+func TargetGroupIDLT(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldLT(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDLTE applies the LTE predicate on the "target_group_id" field.
+func TargetGroupIDLTE(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldLTE(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDIsNil applies the IsNil predicate on the "target_group_id" field.
+func TargetGroupIDIsNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIsNull(FieldTargetGroupID))
+}
+
+// TargetGroupIDNotNil applies the NotNil predicate on the "target_group_id" field.
+func TargetGroupIDNotNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotNull(FieldTargetGroupID))
+}
+
+// RateMultiplierEQ applies the EQ predicate on the "rate_multiplier" field.
+func RateMultiplierEQ(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldRateMultiplier, v))
+}
+
+// RateMultiplierNEQ applies the NEQ predicate on the "rate_multiplier" field.
+func RateMultiplierNEQ(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNEQ(FieldRateMultiplier, v))
+}
+
+// RateMultiplierIn applies the In predicate on the "rate_multiplier" field.
+func RateMultiplierIn(vs ...float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIn(FieldRateMultiplier, vs...))
+}
+
+// RateMultiplierNotIn applies the NotIn predicate on the "rate_multiplier" field.
+func RateMultiplierNotIn(vs ...float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotIn(FieldRateMultiplier, vs...))
+}
+
+// RateMultiplierGT applies the GT predicate on the "rate_multiplier" field.
+func RateMultiplierGT(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldGT(FieldRateMultiplier, v))
+}
+
+// RateMultiplierGTE applies the GTE predicate on the "rate_multiplier" field.
+func RateMultiplierGTE(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldGTE(FieldRateMultiplier, v))
+}
+
+// RateMultiplierLT applies the LT predicate on the "rate_multiplier" field.
+func RateMultiplierLT(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldLT(FieldRateMultiplier, v))
+}
+
+// RateMultiplierLTE applies the LTE predicate on the "rate_multiplier" field.
+func RateMultiplierLTE(v float64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldLTE(FieldRateMultiplier, v))
+}
+
+// RateMultiplierIsNil applies the IsNil predicate on the "rate_multiplier" field.
+func RateMultiplierIsNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIsNull(FieldRateMultiplier))
+}
+
+// RateMultiplierNotNil applies the NotNil predicate on the "rate_multiplier" field.
+func RateMultiplierNotNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotNull(FieldRateMultiplier))
 }
 
 // UpstreamModelEQ applies the EQ predicate on the "upstream_model" field.

@@ -20,6 +20,15 @@ const (
 	// CompositeRouteSource 标识 composite 解析结果来自显式路由还是内置模型探测。
 	CompositeRouteSource Key = "ctx_composite_route_source"
 
+	// ResolvedPricingGroupID 是 composite 分组按"委托到子分组"路由解析出的定价分组 ID。
+	// 仅在计费时用于渠道定价查表与倍率解析（成本按该子分组定价计算）；配额/限额/
+	// 扣费仍记在 apiKey.Group（通用分组）头上。为空表示无委托，走通用分组定价。
+	ResolvedPricingGroupID Key = "ctx_resolved_pricing_group_id"
+
+	// ResolvedRateMultiplier 是"委托到子分组"路由上配置的每路由倍率覆盖（可选）。
+	// 存在时优先于子分组自身倍率；不存在时沿用子分组倍率。
+	ResolvedRateMultiplier Key = "ctx_resolved_rate_multiplier"
+
 	// RequestID 为服务端生成/透传的请求 ID。
 	RequestID Key = "ctx_request_id"
 

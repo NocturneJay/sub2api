@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 
@@ -9,6 +10,32 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type handlerCompositeRouteRepoStub struct {
+	routes []service.CompositeModelRoute
+}
+
+func (s handlerCompositeRouteRepoStub) ListByGroup(_ context.Context, groupID int64, includeDisabled bool) ([]service.CompositeModelRoute, error) {
+	routes := make([]service.CompositeModelRoute, 0, len(s.routes))
+	for _, route := range s.routes {
+		if route.GroupID == groupID && (includeDisabled || route.Enabled) {
+			routes = append(routes, route)
+		}
+	}
+	return routes, nil
+}
+
+func (handlerCompositeRouteRepoStub) Create(context.Context, *service.CompositeModelRoute) error {
+	return nil
+}
+
+func (handlerCompositeRouteRepoStub) Update(context.Context, *service.CompositeModelRoute) error {
+	return nil
+}
+
+func (handlerCompositeRouteRepoStub) Delete(context.Context, int64) error { return nil }
+
+func (handlerCompositeRouteRepoStub) DeleteByGroup(context.Context, int64) error { return nil }
 
 func TestCompositeTargetPlatformAllowedResolvesKnownAllowedModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -97,4 +124,39 @@ func TestClientRequestedModelUsesCompositePublicModel(t *testing.T) {
 	require.Equal(t, "public-alias", fields.OriginalModel)
 	require.Equal(t, "public-alias", fields.ChannelMappedModel)
 	require.Equal(t, "public-alias\u2192gpt-5", fields.ModelMappingChain)
+}
+
+func TestResolveCompositeWebSocketRouteUsesExplicitDelegatedGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/v1/responses", nil)
+	targetGroupID := int64(42)
+	rateMultiplier := 1.75
+	resolver := service.NewCompositeRouteResolver(handlerCompositeRouteRepoStub{routes: []service.CompositeModelRoute{
+		{
+			ID: 1, GroupID: 7, PublicModel: "public-grok", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformGrok, TargetGroupID: &targetGroupID, RateMultiplier: &rateMultiplier,
+			UpstreamModel: "grok-4.3", Endpoint: service.CompositeRouteEndpointResponses,
+			Priority: 100, Enabled: true,
+		},
+	}})
+	h := &OpenAIGatewayHandler{compositeResolver: resolver}
+	compositeGroupID := int64(7)
+	apiKey := &service.APIKey{
+		GroupID: &compositeGroupID,
+		Group:   &service.Group{ID: compositeGroupID, Platform: service.PlatformComposite},
+	}
+	payload := []byte(`{"type":"response.create","model":"public-grok","input":"hi"}`)
+
+	rewritten, model, err := h.resolveCompositeWebSocketRoute(c, apiKey, payload, "public-grok")
+
+	require.NoError(t, err)
+	require.Equal(t, "grok-4.3", model)
+	require.JSONEq(t, `{"type":"response.create","model":"grok-4.3","input":"hi"}`, string(rewritten))
+	resolvedGroupID, ok := service.ResolvedPricingGroupIDFromContext(c.Request.Context())
+	require.True(t, ok)
+	require.Equal(t, targetGroupID, resolvedGroupID)
+	resolvedMultiplier, ok := service.ResolvedRateMultiplierFromContext(c.Request.Context())
+	require.True(t, ok)
+	require.Equal(t, rateMultiplier, resolvedMultiplier)
 }

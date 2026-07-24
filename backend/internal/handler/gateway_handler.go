@@ -247,8 +247,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	// 设置请求所属分组 ID（用于渠道级功能判断，如 WebSearch 模拟）
+	// 渠道级功能跟随委托目标分组；余额、订阅与限额仍由 apiKey.Group 负责。
 	parsedReq.GroupID = apiKey.GroupID
+	if delegatedGroupID, ok := service.ResolvedPricingGroupIDFromContext(c.Request.Context()); ok {
+		parsedReq.GroupID = &delegatedGroupID
+	}
 
 	// 计算粘性会话hash
 	parsedReq.SessionContext = &service.SessionContext{
@@ -288,10 +291,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			zap.Int64("bound_account_id", sessionBoundAccountID),
 		)
 		if sessionBoundAccountID > 0 {
-			prefetchedGroupID := int64(0)
-			if apiKey.GroupID != nil {
-				prefetchedGroupID = *apiKey.GroupID
-			}
+			prefetchedGroupID := resolvedSchedulingGroupID(c.Request.Context(), apiKey.GroupID)
 			ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, prefetchedGroupID, h.metadataBridgeEnabled())
 			c.Request = c.Request.WithContext(ctx)
 		}
@@ -446,7 +446,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					reqStream,
 					body,
 					hasBoundSession,
-					service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
+					service.WithForwardGeminiSession(resolvedSchedulingGroupID(c.Request.Context(), apiKey.GroupID), sessionKey),
 				)
 			} else {
 				result, err = h.geminiCompatService.Forward(requestCtx, c, account, body)

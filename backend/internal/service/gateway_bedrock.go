@@ -45,6 +45,7 @@ func (s *GatewayService) isBedrockCCCompatEnabled(ctx context.Context, account *
 	if groupID == nil || s.channelService == nil {
 		return false
 	}
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	ch, err := s.channelService.GetChannelForGroup(ctx, *groupID)
 	if err != nil || ch == nil {
 		return false

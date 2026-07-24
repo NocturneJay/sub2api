@@ -78,7 +78,12 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	if apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
+	requestGroup, err := h.resolveCompositeRequestGroup(c.Request.Context(), apiKey)
+	if err != nil {
+		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Composite target group is unavailable")
+		return
+	}
+	if !allowOpenAICompatibleMessagesDispatch(requestGroup) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -122,7 +127,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
-	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(requestGroup, reqModel)
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", parsedReq.Stream))
 
 	setOpsRequestContext(c, reqModel, false)

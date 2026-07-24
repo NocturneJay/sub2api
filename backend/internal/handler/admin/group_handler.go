@@ -199,14 +199,18 @@ type UpdateGroupRequest struct {
 }
 
 type CompositeRouteRequest struct {
-	PublicModel    string `json:"public_model" binding:"required"`
-	MatchType      string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
-	TargetPlatform string `json:"target_platform" binding:"required,oneof=anthropic openai gemini antigravity grok"`
-	UpstreamModel  string `json:"upstream_model"`
-	Endpoint       string `json:"endpoint" binding:"omitempty,oneof=any messages count_tokens responses chat_completions embeddings images gemini"`
-	Priority       int    `json:"priority"`
-	Enabled        *bool  `json:"enabled"`
-	Notes          string `json:"notes"`
+	PublicModel string `json:"public_model" binding:"required"`
+	MatchType   string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
+	// TargetPlatform 与 TargetGroupID 二选一：设了 target_group_id 即"委托到子分组"，
+	// 平台由子分组推导，此时 target_platform 可省略。
+	TargetPlatform string   `json:"target_platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok"`
+	TargetGroupID  *int64   `json:"target_group_id" binding:"omitempty"`
+	RateMultiplier *float64 `json:"rate_multiplier" binding:"omitempty"`
+	UpstreamModel  string   `json:"upstream_model"`
+	Endpoint       string   `json:"endpoint" binding:"omitempty,oneof=any messages count_tokens responses chat_completions embeddings images gemini"`
+	Priority       int      `json:"priority"`
+	Enabled        *bool    `json:"enabled"`
+	Notes          string   `json:"notes"`
 }
 
 type CompositeRoutePreviewRequest struct {
@@ -358,6 +362,8 @@ func compositeRouteRequestToInput(req CompositeRouteRequest, defaultEnabled bool
 		PublicModel:    req.PublicModel,
 		MatchType:      req.MatchType,
 		TargetPlatform: req.TargetPlatform,
+		TargetGroupID:  req.TargetGroupID,
+		RateMultiplier: req.RateMultiplier,
 		UpstreamModel:  req.UpstreamModel,
 		Endpoint:       req.Endpoint,
 		Priority:       req.Priority,

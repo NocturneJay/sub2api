@@ -613,6 +613,10 @@ export interface CompositeModelRoute {
   public_model: string
   match_type: CompositeRouteMatchType
   target_platform: Exclude<GroupPlatform, 'composite'>
+  // 委托到子分组：非空表示请求转发到该子分组并按其定价计费；与 target_platform 二选一。
+  target_group_id?: number | null
+  // 委托路由的倍率覆盖；空表示沿用子分组自身倍率。
+  rate_multiplier?: number | null
   upstream_model: string
   endpoint: CompositeRouteEndpoint
   priority: number
@@ -625,7 +629,9 @@ export interface CompositeModelRoute {
 export interface CompositeModelRouteInput {
   public_model: string
   match_type: CompositeRouteMatchType
-  target_platform: Exclude<GroupPlatform, 'composite'>
+  target_platform?: Exclude<GroupPlatform, 'composite'>
+  target_group_id?: number | null
+  rate_multiplier?: number | null
   upstream_model?: string
   endpoint: CompositeRouteEndpoint
   priority?: number
@@ -644,6 +650,8 @@ export interface CompositeRouteDecision {
   group_id: number
   public_model: string
   target_platform: Exclude<GroupPlatform, 'composite'> | ''
+  target_group_id?: number | null
+  rate_multiplier?: number | null
   upstream_model: string
   endpoint: CompositeRouteEndpoint
   route?: CompositeModelRoute

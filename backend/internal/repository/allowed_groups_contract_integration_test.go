@@ -145,3 +145,44 @@ func TestGroupRepository_DeleteCascade_PreservesApiKeyGroupID(t *testing.T) {
 	require.Equal(t, targetGroup.ID, *keyAfter.GroupID)
 	require.Nil(t, keyAfter.Group)
 }
+
+func TestGroupRepository_DeleteCascade_DisablesCompositeDelegationTarget(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	entClient := tx.Client()
+
+	targetGroup, err := entClient.Group.Create().
+		SetName(uniqueTestValue(t, "delegation-target")).
+		SetStatus(service.StatusActive).
+		SetPlatform(service.PlatformOpenAI).
+		Save(ctx)
+	require.NoError(t, err)
+	compositeGroup, err := entClient.Group.Create().
+		SetName(uniqueTestValue(t, "delegation-owner")).
+		SetStatus(service.StatusActive).
+		SetPlatform(service.PlatformComposite).
+		Save(ctx)
+	require.NoError(t, err)
+
+	route, err := entClient.CompositeModelRoute.Create().
+		SetGroupID(compositeGroup.ID).
+		SetPublicModel("gpt-public").
+		SetTargetPlatform(service.PlatformOpenAI).
+		SetTargetGroupID(targetGroup.ID).
+		SetRateMultiplier(1.5).
+		Save(ctx)
+	require.NoError(t, err)
+
+	groupRepo := newGroupRepositoryWithSQL(entClient, tx)
+	_, err = groupRepo.DeleteCascade(ctx, targetGroup.ID)
+	require.NoError(t, err)
+
+	routeAfter, err := entClient.CompositeModelRoute.Get(ctx, route.ID)
+	require.NoError(t, err)
+	require.NotNil(t, routeAfter.TargetGroupID)
+	require.Equal(t, targetGroup.ID, *routeAfter.TargetGroupID)
+	require.NotNil(t, routeAfter.RateMultiplier)
+	require.InDelta(t, 1.5, *routeAfter.RateMultiplier, 1e-12)
+	require.Equal(t, service.PlatformOpenAI, routeAfter.TargetPlatform)
+	require.False(t, routeAfter.Enabled)
+}

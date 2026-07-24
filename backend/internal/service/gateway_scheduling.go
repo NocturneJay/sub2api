@@ -59,6 +59,15 @@ func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context
 			platform = decision.TargetPlatform
 			requestedModel = decision.UpstreamModel
 			ctx = WithCompositeRouteDecision(ctx, decision)
+			// 委托到子分组：账号从子分组自己的池子里选（计费仍走 apiKey.Group）。
+			dg, did, err := s.delegatedSchedulingGroup(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if dg != nil {
+				ctx = s.withGroupContext(ctx, dg)
+				groupID = did
+			}
 		}
 	} else {
 		// 无分组时只使用原生 anthropic 平台
@@ -116,6 +125,17 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		return nil, err
 	}
 	ctx = s.withGroupContext(ctx, group)
+	// Resolve delegation before channel restrictions and sticky-session lookup so
+	// every scheduling layer consistently keys on the delegated sub-group.
+	delegatedGroup, delegatedGroupID, err := s.delegatedSchedulingGroup(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if delegatedGroup != nil {
+		group = delegatedGroup
+		groupID = delegatedGroupID
+		ctx = s.withGroupContext(ctx, delegatedGroup)
+	}
 
 	// Claude Code 限制可能已将 groupID 解析为 fallback group，
 	// 渠道限制预检查必须使用解析后的分组。
@@ -946,6 +966,17 @@ func (s *GatewayService) resolvePlatform(ctx context.Context, groupID *int64, gr
 	return PlatformAnthropic, false, nil
 }
 
+// delegatedSchedulingGroup returns the sub-group a composite request should be
+// scheduled from (and its ID) when a composite route delegated to another group.
+// Account selection then draws from that sub-group's own pool (accounts, model
+// routing, sticky sessions), while billing stays anchored on apiKey.Group (the
+// composite group) and only pricing uses the sub-group. Returns (nil, nil) when
+// there is no delegation. Relies on the composite middleware having stored the
+// decision in ctx (same dependency as ResolvedTargetPlatformFromContext).
+func (s *GatewayService) delegatedSchedulingGroup(ctx context.Context) (*Group, *int64, error) {
+	return resolveCompositeDelegatedGroup(ctx, s.groupRepo)
+}
+
 func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string, hasForcePlatform bool) ([]Account, bool, error) {
 	if s.schedulerSnapshot != nil {
 		accounts, useMixed, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
@@ -1053,6 +1084,7 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 // 用于 Handler 层在首次请求时提前设置 SingleAccountRetry context，
 // 避免单账号分组收到 503 时错误地设置模型限流标记导致后续请求连续快速失败。
 func (s *GatewayService) IsSingleAntigravityAccountGroup(ctx context.Context, groupID *int64) bool {
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	accounts, _, err := s.listSchedulableAccounts(ctx, groupID, PlatformAntigravity, true)
 	if err != nil {
 		return false

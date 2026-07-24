@@ -129,6 +129,65 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.InDelta(t, 0.1608, *job.HoldAmount, 1e-12)
 	})
 
+	t.Run("composite delegation uses target group pool and target pricing", func(t *testing.T) {
+		svc, repo, _, _, _ := newTestBatchImagePublicService(true)
+		compositeGroupID := int64(7)
+		targetGroupID := int64(42)
+		targetImagePrice := 0.10
+		svc.GroupRepo = &publicBatchImageGroupRepo{groups: map[int64]*Group{
+			compositeGroupID: {
+				ID: compositeGroupID, Platform: PlatformComposite, Status: StatusActive,
+			},
+			targetGroupID: {
+				ID:                           targetGroupID,
+				Platform:                     PlatformGemini,
+				Status:                       StatusActive,
+				RateMultiplier:               2,
+				AllowImageGeneration:         true,
+				AllowBatchImageGeneration:    true,
+				ImagePrice1K:                 &targetImagePrice,
+				BatchImageDiscountMultiplier: 0.8,
+				BatchImageHoldMultiplier:     0.9,
+			},
+		}}
+		ignoredUserRate := 9.0
+		svc.UserGroupRateRepo = &publicBatchImageUserGroupRateRepo{rates: map[int64]*float64{
+			targetGroupID: &ignoredUserRate,
+		}}
+		routeMultiplier := 1.5
+		ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+			Matched:        true,
+			TargetPlatform: PlatformGemini,
+			TargetGroupID:  &targetGroupID,
+			RateMultiplier: &routeMultiplier,
+		})
+
+		got, err := svc.Submit(ctx, BatchImageOwner{
+			UserID: 11, APIKeyID: 22, GroupID: &compositeGroupID,
+		}, validBatchImageSubmitRequest(), "")
+
+		require.NoError(t, err)
+		require.InDelta(t, 0.24, got.EstimatedCost, 1e-12)
+		accountRepo := svc.AccountRepo.(*publicBatchImageAccountRepo)
+		require.NotEmpty(t, accountRepo.groupIDs)
+		require.NotContains(t, accountRepo.groupIDs, compositeGroupID)
+		for _, groupID := range accountRepo.groupIDs {
+			require.Equal(t, targetGroupID, groupID)
+		}
+		job := repo.jobs[got.ID]
+		require.NotNil(t, job.APIKeyID)
+		require.Equal(t, int64(22), *job.APIKeyID)
+		require.InDelta(t, targetImagePrice, job.BaseUnitPrice, 1e-12)
+		require.InDelta(t, routeMultiplier, job.GroupRateMultiplier, 1e-12)
+		require.InDelta(t, 0.8, job.BatchDiscountMultiplier, 1e-12)
+		require.InDelta(t, 0.9, job.HoldMultiplier, 1e-12)
+		require.InDelta(t, 0.12, job.BillableUnitPrice, 1e-12)
+		require.InDelta(t, 0.135, job.HoldUnitPrice, 1e-12)
+		billing := svc.BillingRepo.(*fakeBatchImageBillingRepo)
+		require.Len(t, billing.reserves, 1)
+		require.Equal(t, int64(22), billing.reserves[0].APIKeyID)
+	})
+
 	t.Run("pricing missing rejects before provider submit", func(t *testing.T) {
 		svc, repo, queue, gemini, _ := newTestBatchImagePublicService(true)
 		svc.Pricing = &fakeBatchImagePricingResolver{err: ErrBatchImageSettlementPricingMissing}
@@ -815,6 +874,7 @@ func requireBatchImagePublicJSONHasNoInternals(t *testing.T, body string) {
 
 type publicBatchImageAccountRepo struct {
 	accounts []Account
+	groupIDs []int64
 }
 
 func (r *publicBatchImageAccountRepo) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -836,7 +896,8 @@ func (r *publicBatchImageAccountRepo) ListSchedulableByPlatform(_ context.Contex
 	return out, nil
 }
 
-func (r *publicBatchImageAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, _ int64, platform string) ([]Account, error) {
+func (r *publicBatchImageAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error) {
+	r.groupIDs = append(r.groupIDs, groupID)
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 

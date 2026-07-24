@@ -30,8 +30,12 @@ type CompositeModelRoute struct {
 	PublicModel string `json:"public_model,omitempty"`
 	// exact or prefix.
 	MatchType string `json:"match_type,omitempty"`
-	// Concrete provider platform.
+	// Concrete provider platform. Ignored when target_group_id is set (derived from the sub-group).
 	TargetPlatform string `json:"target_platform,omitempty"`
+	// Sub-group to delegate to. When set, the request is scheduled from that group's accounts and priced by that group. Mutually exclusive with target_platform. Plain FK field (no edge) so many routes may point at one group.
+	TargetGroupID *int64 `json:"target_group_id,omitempty"`
+	// Per-route rate multiplier override for group-target routes; nil inherits the sub-group's multiplier.
+	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
 	// Provider model identifier; empty means public_model.
 	UpstreamModel string `json:"upstream_model,omitempty"`
 	// Endpoint scope such as any, messages, responses, chat_completions.
@@ -75,7 +79,9 @@ func (*CompositeModelRoute) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case compositemodelroute.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case compositemodelroute.FieldID, compositemodelroute.FieldGroupID, compositemodelroute.FieldPriority:
+		case compositemodelroute.FieldRateMultiplier:
+			values[i] = new(sql.NullFloat64)
+		case compositemodelroute.FieldID, compositemodelroute.FieldGroupID, compositemodelroute.FieldTargetGroupID, compositemodelroute.FieldPriority:
 			values[i] = new(sql.NullInt64)
 		case compositemodelroute.FieldPublicModel, compositemodelroute.FieldMatchType, compositemodelroute.FieldTargetPlatform, compositemodelroute.FieldUpstreamModel, compositemodelroute.FieldEndpoint, compositemodelroute.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -144,6 +150,20 @@ func (_m *CompositeModelRoute) assignValues(columns []string, values []any) erro
 				return fmt.Errorf("unexpected type %T for field target_platform", values[i])
 			} else if value.Valid {
 				_m.TargetPlatform = value.String
+			}
+		case compositemodelroute.FieldTargetGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field target_group_id", values[i])
+			} else if value.Valid {
+				_m.TargetGroupID = new(int64)
+				*_m.TargetGroupID = value.Int64
+			}
+		case compositemodelroute.FieldRateMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field rate_multiplier", values[i])
+			} else if value.Valid {
+				_m.RateMultiplier = new(float64)
+				*_m.RateMultiplier = value.Float64
 			}
 		case compositemodelroute.FieldUpstreamModel:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -239,6 +259,16 @@ func (_m *CompositeModelRoute) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("target_platform=")
 	builder.WriteString(_m.TargetPlatform)
+	builder.WriteString(", ")
+	if v := _m.TargetGroupID; v != nil {
+		builder.WriteString("target_group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.RateMultiplier; v != nil {
+		builder.WriteString("rate_multiplier=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("upstream_model=")
 	builder.WriteString(_m.UpstreamModel)

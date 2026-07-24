@@ -857,6 +857,7 @@ func (s *GatewayService) ResolveChannelMapping(ctx context.Context, groupID int6
 	if s.channelService == nil {
 		return ChannelMappingResult{MappedModel: model}
 	}
+	groupID = derefGroupID(effectiveCompositeTargetGroupID(ctx, &groupID))
 	return s.channelService.ResolveChannelMapping(ctx, groupID, model)
 }
 
@@ -870,6 +871,7 @@ func (s *GatewayService) IsModelRestricted(ctx context.Context, groupID int64, m
 	if s.channelService == nil {
 		return false
 	}
+	groupID = derefGroupID(effectiveCompositeTargetGroupID(ctx, &groupID))
 	return s.channelService.IsModelRestricted(ctx, groupID, model)
 }
 
@@ -879,6 +881,7 @@ func (s *GatewayService) ResolveChannelMappingAndRestrict(ctx context.Context, g
 	if s.channelService == nil {
 		return ChannelMappingResult{MappedModel: model}, false
 	}
+	groupID = effectiveCompositeTargetGroupID(ctx, groupID)
 	return s.channelService.ResolveChannelMappingAndRestrict(ctx, groupID, model)
 }
 

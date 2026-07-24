@@ -24,6 +24,29 @@ func newUsageRecordTestPool(t *testing.T) *service.UsageRecordWorkerPool {
 	return pool
 }
 
+func TestUsageRecordContextPreservesCompositeDelegationPricing(t *testing.T) {
+	targetGroupID := int64(42)
+	rateMultiplier := 1.75
+	parent := service.WithCompositeRouteDecision(context.Background(), service.CompositeRouteDecision{
+		Matched:        true,
+		TargetPlatform: service.PlatformOpenAI,
+		TargetGroupID:  &targetGroupID,
+		RateMultiplier: &rateMultiplier,
+	})
+
+	got := usageRecordContext(parent, context.Background())
+
+	resolvedGroupID, ok := service.ResolvedPricingGroupIDFromContext(got)
+	require.True(t, ok)
+	require.Equal(t, targetGroupID, resolvedGroupID)
+	resolvedPlatform, ok := service.ResolvedTargetPlatformFromContext(got)
+	require.True(t, ok)
+	require.Equal(t, service.PlatformOpenAI, resolvedPlatform)
+	resolvedMultiplier, ok := service.ResolvedRateMultiplierFromContext(got)
+	require.True(t, ok)
+	require.Equal(t, rateMultiplier, resolvedMultiplier)
+}
+
 func TestGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 	pool := newUsageRecordTestPool(t)
 	h := &GatewayHandler{usageRecordWorkerPool: pool}

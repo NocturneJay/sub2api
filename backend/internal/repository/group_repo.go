@@ -355,14 +355,8 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 }
 
 func (r *groupRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.client.Group.Delete().Where(group.IDEQ(id)).Exec(ctx)
-	if err != nil {
-		return translatePersistenceError(err, service.ErrGroupNotFound, nil)
-	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &id, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group delete failed: group=%d err=%v", id, err)
-	}
-	return nil
+	_, err := r.DeleteCascade(ctx, id)
+	return err
 }
 
 func (r *groupRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Group, *pagination.PaginationResult, error) {
@@ -835,12 +829,18 @@ func (r *groupRepository) DeleteCascade(ctx context.Context, id int64) ([]int64,
 		return nil, err
 	}
 
-	// 4. Soft-delete composite model routes owned by this group.
+	// 4. Fail closed for delegations that target this group. Clearing target_group_id
+	// would silently turn a group-scoped route into a platform-wide route.
+	if _, err := exec.ExecContext(ctx, "UPDATE composite_model_routes SET enabled = FALSE, updated_at = NOW() WHERE target_group_id = $1 AND deleted_at IS NULL AND enabled = TRUE", id); err != nil {
+		return nil, err
+	}
+
+	// 5. Soft-delete composite model routes owned by this group.
 	if _, err := exec.ExecContext(ctx, "UPDATE composite_model_routes SET deleted_at = NOW() WHERE group_id = $1 AND deleted_at IS NULL", id); err != nil {
 		return nil, err
 	}
 
-	// 5. Soft-delete group itself.
+	// 6. Soft-delete group itself.
 	if _, err := txClient.Group.Delete().Where(group.IDEQ(id)).Exec(ctx); err != nil {
 		return nil, err
 	}

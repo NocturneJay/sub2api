@@ -45,7 +45,16 @@ func (CompositeModelRoute) Fields() []ent.Field {
 		field.String("target_platform").
 			MaxLen(50).
 			Default(domain.PlatformOpenAI).
-			Comment("Concrete provider platform."),
+			Comment("Concrete provider platform. Ignored when target_group_id is set (derived from the sub-group)."),
+		field.Int64("target_group_id").
+			Optional().
+			Nillable().
+			Comment("Sub-group to delegate to. When set, the request is scheduled from that group's accounts and priced by that group. Mutually exclusive with target_platform. Plain FK field (no edge) so many routes may point at one group."),
+		field.Float("rate_multiplier").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Optional().
+			Nillable().
+			Comment("Per-route rate multiplier override for group-target routes; nil inherits the sub-group's multiplier."),
 		field.String("upstream_model").
 			MaxLen(200).
 			Default("").
@@ -81,6 +90,7 @@ func (CompositeModelRoute) Indexes() []ent.Index {
 		index.Fields("group_id", "enabled"),
 		index.Fields("group_id", "endpoint"),
 		index.Fields("group_id", "target_platform"),
+		index.Fields("target_group_id"),
 		index.Fields("deleted_at"),
 		index.Fields("priority"),
 	}

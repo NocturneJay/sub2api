@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -45,7 +46,108 @@ func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDeci
 	if source := strings.TrimSpace(decision.Source); source != "" {
 		ctx = context.WithValue(ctx, ctxkey.CompositeRouteSource, source)
 	}
+	// 委托到子分组：记录定价/调度分组与倍率覆盖，供计费与重试链路复用。
+	if decision.TargetGroupID != nil && *decision.TargetGroupID > 0 {
+		ctx = context.WithValue(ctx, ctxkey.ResolvedPricingGroupID, *decision.TargetGroupID)
+		if decision.RateMultiplier != nil && *decision.RateMultiplier > 0 {
+			ctx = context.WithValue(ctx, ctxkey.ResolvedRateMultiplier, *decision.RateMultiplier)
+		}
+	}
 	return ctx
+}
+
+// WithResolvedPricingGroupID stores the sub-group whose pricing should apply to a
+// request delegated through a composite group. Only billing (rate multiplier and
+// channel pricing lookup) consumes it; quota/limits/balance stay on apiKey.Group.
+func WithResolvedPricingGroupID(ctx context.Context, groupID int64) context.Context {
+	if ctx == nil || groupID <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.ResolvedPricingGroupID, groupID)
+}
+
+// ResolvedPricingGroupIDFromContext returns the sub-group chosen to price a
+// composite-delegated request, if one was resolved.
+func ResolvedPricingGroupIDFromContext(ctx context.Context) (int64, bool) {
+	if ctx == nil {
+		return 0, false
+	}
+	id, ok := ctx.Value(ctxkey.ResolvedPricingGroupID).(int64)
+	if !ok || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+// ResolvedRateMultiplierFromContext returns the per-route rate multiplier override
+// for a composite-delegated request, if one was configured.
+func ResolvedRateMultiplierFromContext(ctx context.Context) (float64, bool) {
+	if ctx == nil {
+		return 0, false
+	}
+	m, ok := ctx.Value(ctxkey.ResolvedRateMultiplier).(float64)
+	if !ok || m <= 0 {
+		return 0, false
+	}
+	return m, true
+}
+
+// effectiveCompositeTargetGroupID returns the delegated sub-group ID for
+// request-scoped group operations. Non-delegated requests keep the caller's
+// original group ID.
+func effectiveCompositeTargetGroupID(ctx context.Context, groupID *int64) *int64 {
+	if id, ok := ResolvedPricingGroupIDFromContext(ctx); ok {
+		resolvedID := id
+		return &resolvedID
+	}
+	return groupID
+}
+
+// resolveCompositeDelegatedGroup validates the persisted delegation again at
+// request time. This keeps scheduling and pricing on one concrete, active group
+// even if an administrator changes or disables the target after the route was
+// saved.
+func resolveCompositeDelegatedGroup(ctx context.Context, repo GroupRepository) (*Group, *int64, error) {
+	targetID, ok := ResolvedPricingGroupIDFromContext(ctx)
+	if !ok {
+		return nil, nil, nil
+	}
+	if repo == nil {
+		return nil, nil, fmt.Errorf("%w (composite target group repository unavailable)", ErrNoAvailableAccounts)
+	}
+	target, err := repo.GetByIDLite(ctx, targetID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w (composite target group %d unavailable: %v)", ErrNoAvailableAccounts, targetID, err)
+	}
+	if target == nil || !target.IsActive() || !isConcreteRequestPlatform(target.Platform) {
+		return nil, nil, fmt.Errorf("%w (composite target group %d is not active and concrete)", ErrNoAvailableAccounts, targetID)
+	}
+	if resolvedPlatform, platformOK := ResolvedTargetPlatformFromContext(ctx); platformOK && resolvedPlatform != target.Platform {
+		return nil, nil, fmt.Errorf("%w (composite target group %d platform changed from %s to %s)", ErrNoAvailableAccounts, targetID, resolvedPlatform, target.Platform)
+	}
+	id := targetID
+	return target, &id, nil
+}
+
+// compositeDelegatedPricingAPIKey returns a shallow API key snapshot whose
+// Group points at the delegated pricing group. Callers must continue using the
+// original API key for subscription, balance, limits, quota and usage-log
+// ownership.
+func compositeDelegatedPricingAPIKey(ctx context.Context, apiKey *APIKey, repo GroupRepository) (*APIKey, bool, error) {
+	target, targetID, err := resolveCompositeDelegatedGroup(ctx, repo)
+	if err != nil {
+		return nil, false, err
+	}
+	if target == nil {
+		return apiKey, false, nil
+	}
+	if apiKey == nil {
+		return nil, false, fmt.Errorf("composite delegated pricing requires an API key")
+	}
+	clone := *apiKey
+	clone.GroupID = targetID
+	clone.Group = target
+	return &clone, true, nil
 }
 
 func ResolvedUpstreamModelFromContext(ctx context.Context) (string, bool) {
@@ -160,7 +262,7 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 		if resolvedSource, sourceOK := CompositeRouteSourceFromContext(ctx); sourceOK {
 			source = resolvedSource
 		}
-		return CompositeRouteDecision{
+		decision := CompositeRouteDecision{
 			Matched:        true,
 			Source:         source,
 			GroupID:        group.ID,
@@ -168,13 +270,53 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 			TargetPlatform: platform,
 			UpstreamModel:  upstreamModel,
 			Endpoint:       normalizeCompositeRouteEndpoint(endpoint),
-		}, true, nil
+		}
+		// 恢复"委托到子分组"信息（重试链路复用首次解析结果），保证调度仍落在子分组账号池。
+		if pricingGroupID, pgOK := ResolvedPricingGroupIDFromContext(ctx); pgOK {
+			pg := pricingGroupID
+			decision.TargetGroupID = &pg
+			if m, mOK := ResolvedRateMultiplierFromContext(ctx); mOK {
+				mm := m
+				decision.RateMultiplier = &mm
+			}
+		}
+		return decision, true, nil
 	}
 	decision, err := s.compositeResolver.Resolve(ctx, group.ID, requestedModel, endpoint)
 	if err != nil {
 		return decision, false, err
 	}
+	if !decision.Matched {
+		return decision, false, nil
+	}
+	// 委托到子分组：用子分组平台填充 TargetPlatform，并校验子分组合法（存在、具体平台、非自身/非 composite）。
+	if decision.TargetGroupID != nil {
+		if err := s.applyCompositeTargetGroup(ctx, group, &decision); err != nil {
+			return decision, false, err
+		}
+	}
 	return decision, decision.Matched, nil
+}
+
+// applyCompositeTargetGroup 解析"委托到子分组"路由的目标子分组，用其平台填充
+// decision.TargetPlatform，并拒绝非法目标（自身、composite、非具体平台）。
+func (s *GatewayService) applyCompositeTargetGroup(ctx context.Context, composite *Group, decision *CompositeRouteDecision) error {
+	if decision == nil || decision.TargetGroupID == nil {
+		return nil
+	}
+	targetID := *decision.TargetGroupID
+	if targetID <= 0 || (composite != nil && targetID == composite.ID) {
+		return fmt.Errorf("%w supporting model: %s (composite target group %d invalid)", ErrNoAvailableAccounts, decision.PublicModel, targetID)
+	}
+	target, err := s.resolveGroupByID(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	if target == nil || !target.IsActive() || !isConcreteRequestPlatform(target.Platform) {
+		return fmt.Errorf("%w supporting model: %s (composite target group %d is not active and concrete)", ErrNoAvailableAccounts, decision.PublicModel, targetID)
+	}
+	decision.TargetPlatform = target.Platform
+	return nil
 }
 
 func isConcreteRequestPlatform(platform string) bool {

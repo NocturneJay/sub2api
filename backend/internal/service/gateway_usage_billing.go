@@ -651,6 +651,10 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	account := input.Account
 	subscription := input.Subscription
 	ApplyForwardImageBillingResolution(result)
+	pricingAPIKey, delegatedPricing, err := compositeDelegatedPricingAPIKey(ctx, apiKey, s.groupRepo)
+	if err != nil {
+		return err
+	}
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
 	// 用于粘性会话切换时的特殊计费处理
@@ -678,9 +682,22 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		groupDefault := apiKey.Group.RateMultiplier
 		multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
 	}
+	// 委托到子分组（composite 路由 target_group）：token 倍率改用子分组——路由级覆盖优先，
+	// 其次子分组自身倍率。仅倍率与下方的模型价/渠道价改走子分组；配额/限额/扣费仍记在
+	// apiKey.Group（组合分组）。高峰因子仍按组合分组，在下一行叠加。
+	if delegatedPricing {
+		multiplier = pricingAPIKey.Group.RateMultiplier
+		if routeMultiplier, ok := ResolvedRateMultiplierFromContext(ctx); ok {
+			multiplier = routeMultiplier
+		}
+	}
 	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
 	// 不并入上面的 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
-	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
+	baseMultiplier := multiplier
+	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, timezone.Now())
+	if delegatedPricing {
+		imageMultiplier = resolveImageRateMultiplier(pricingAPIKey, baseMultiplier)
+	}
 
 	// 确定计费模型
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
@@ -696,11 +713,11 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 家族模糊匹配错计（如 Opus 流量按 Sonnet 兜底价）。除非管理员为别名显式配置了
 	// 渠道定价（OpenRouter 式自定价），composite 请求一律按实际转发的具体模型计费。
 	if apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
-		billingModel = s.compositeBillableModel(ctx, apiKey, billingModel, concreteBillingModel)
+		billingModel = s.compositeBillableModel(ctx, pricingAPIKey, billingModel, concreteBillingModel)
 	}
 	// 通用兜底（与 OpenAI 路径的 usageBillingModelCandidates 语义对齐）：
 	// 选定模型查不到任何价格时回退到实际转发的具体模型。已定价流量不受影响。
-	billingModel = s.billableModelWithFallback(ctx, apiKey, billingModel, result.UpstreamModel, result.Model)
+	billingModel = s.billableModelWithFallback(ctx, pricingAPIKey, billingModel, result.UpstreamModel, result.Model)
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
 	requestedModel := result.Model
@@ -709,7 +726,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 
 	// 计算费用
-	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
+	cost := s.calculateRecordUsageCost(ctx, result, pricingAPIKey, billingModel, multiplier, imageMultiplier, opts)
 
 	// 判断计费方式：订阅模式 vs 余额模式
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
@@ -725,8 +742,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
+		pricingGroupID := billingPricingGroupID(ctx, pricingAPIKey)
 		applyAccountStatsCost(ctx, usageLog, s.channelService, s.billingService,
-			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
+			account.ID, pricingGroupID, result.UpstreamModel, result.Model,
 			// Anthropic's input_tokens excludes cache_read and cache_creation (billed separately);
 			// OpenAI gateway uses actualInputTokens which also excludes cache_read for the same reason.
 			UsageTokens{
@@ -851,13 +869,26 @@ func (s *GatewayService) hasResolvableTokenPricing(ctx context.Context, model st
 	return err == nil
 }
 
+// billingPricingGroupID 返回计费查表（渠道定价 + 统一计费的分组维度）使用的分组 ID：
+// 委托到子分组时用子分组，否则用 apiKey.Group。仅影响定价维度；配额/限额/扣费仍走
+// apiKey.Group（组合分组）。
+func billingPricingGroupID(ctx context.Context, apiKey *APIKey) int64 {
+	if id, ok := ResolvedPricingGroupIDFromContext(ctx); ok {
+		return id
+	}
+	if apiKey != nil && apiKey.Group != nil {
+		return apiKey.Group.ID
+	}
+	return 0
+}
+
 // resolveChannelPricing 检查指定模型是否存在渠道级别定价。
 // 返回非 nil 的 ResolvedPricing 表示有渠道定价，nil 表示走默认定价路径。
 func (s *GatewayService) resolveChannelPricing(ctx context.Context, billingModel string, apiKey *APIKey) *ResolvedPricing {
 	if s.resolver == nil || apiKey.Group == nil {
 		return nil
 	}
-	gid := apiKey.Group.ID
+	gid := billingPricingGroupID(ctx, apiKey)
 	resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid})
 	if resolved.Source == PricingSourceChannel {
 		return resolved
@@ -884,7 +915,7 @@ func (s *GatewayService) calculateImageCost(
 			OutputTokens:      result.Usage.OutputTokens,
 			ImageOutputTokens: result.Usage.ImageOutputTokens,
 		}
-		gid := apiKey.Group.ID
+		gid := billingPricingGroupID(ctx, apiKey)
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
@@ -930,7 +961,7 @@ func (s *GatewayService) calculateTokenCost(
 
 	// 优先尝试渠道定价 → CalculateCostUnified
 	if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
-		gid := apiKey.Group.ID
+		gid := billingPricingGroupID(ctx, apiKey)
 		cost, err = s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
