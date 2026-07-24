@@ -1,0 +1,556 @@
+/* AICat custom purchase plan card themes. */
+/* ============================================================
+   订阅卡皮肤 v2(2026-07-18 重构)
+   —— 旧版按"第几张卡"(:nth-child)上色,加套餐/调顺序就会错位;
+      v2 改为按卡片自带的 data-plan-price 属性定位,与顺序无关。
+   —— 依赖前端补丁(custom/aicat-production 分支):
+      SubscriptionPlanCard.vue 根节点输出
+      data-plan-name / data-plan-price / data-plan-platform;
+      补丁未部署时皮肤不生效(卡片回官方默认样式,不会错色)。
+   —— 档位分配(改档位 = 整文件查找替换下面的选择器):
+      钻石卡 [data-plan-name*="Ultra"][data-plan-platform="composite"]
+                                            → Ultra Composite 月卡
+      金卡 [data-plan-price="450"]        → GPT PRO 满配 + Claude Max20x 周M
+      银卡 [data-plan-price="115"]/"175"  → PRO Lite + Claude 周L
+      其余套餐保持官方默认(绿/橙顶条)。
+   —— 注意:套餐改价后要同步改这里的数字;若将来两个同价套餐
+      需要区分,可叠加 [data-plan-platform="anthropic"] 或
+      [data-plan-name*="关键字"] 细分。
+   —— ⚠️ 流光动画元素(卡底/顶条/按钮)的 background/background-size
+      一律不能加 !important:!important 作者声明优先级高于
+      @keyframes 动画,加了流光就被钉死成静态(v1 的隐性 bug)。
+      改用双写属性选择器([x][x])抬到 (0,2,0) 压 Tailwind 的
+      dark: 变体,平局时靠"主题拼在文件末尾"后写的赢。
+   ============================================================ */
+@keyframes aicat-plan-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 全部订阅卡:统一浮起投影(不分档位,无错位风险) */
+.mx-auto.max-w-4xl.space-y-6 .grid.grid-cols-1.gap-5 > .group.relative.flex.flex-col {
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
+}
+
+/* ================= 默认绿卡降调(OpenAI 入门档) =================
+   官方默认绿太抢眼,压过银卡;整体调成淡薄荷绿。
+   ⚠️ 本段必须排在银卡/金卡段之前:115/450 也是 OpenAI 卡,
+   靠后面的档位皮肤同名属性"后写的赢"来覆盖本段。 */
+[data-plan-platform="openai"][data-plan-platform] > div:first-child {
+  background: linear-gradient(90deg, #d1fae5 0%, #a7f3d0 45%, #6ee7b7 100%);
+}
+
+[data-plan-platform="openai"] .text-2xl.font-extrabold {
+  color: #047857 !important;
+}
+
+[data-plan-platform="openai"] svg {
+  color: #34d399 !important;
+}
+
+[data-plan-platform="openai"][data-plan-platform] button.w-full {
+  background: linear-gradient(120deg, #ecfdf5 0%, #d1fae5 55%, #a7f3d0 100%);
+  color: #047857 !important;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.30);
+}
+
+/* ---------- 皮肤卡公共骨架:内容压在光泽层之上 ---------- */
+[data-plan-price="450"],
+[data-plan-price="115"],
+[data-plan-price="175"],
+[data-plan-name*="Ultra"][data-plan-platform="composite"] {
+  isolation: isolate;
+}
+
+[data-plan-price="450"] > *,
+[data-plan-price="115"] > *,
+[data-plan-price="175"] > *,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] > * {
+  position: relative;
+  z-index: 1;
+}
+
+[data-plan-price="450"]::before,
+[data-plan-price="115"]::before,
+[data-plan-price="175"]::before,
+[data-plan-name*="Ultra"][data-plan-platform="composite"]::before,
+[data-plan-name*="Ultra"][data-plan-platform="composite"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ================= 钻石卡(黑曜晶体 + 金彩棱镜) ================= */
+@keyframes aicat-luxe-surface {
+  0% {
+    background-position: 0% 30%, 100% 70%, 50% 0%, 0% 50%, 0% 50%;
+  }
+  50% {
+    background-position: 100% 70%, 0% 30%, 50% 100%, 100% 50%, 100% 50%;
+  }
+  100% {
+    background-position: 0% 30%, 100% 70%, 50% 0%, 0% 50%, 0% 50%;
+  }
+}
+
+@keyframes aicat-diamond-sweep {
+  0%, 14% {
+    transform: translateX(-250%) skewX(-18deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.95;
+  }
+  58% {
+    transform: translateX(470%) skewX(-18deg);
+    opacity: 0.42;
+  }
+  70%, 100% {
+    transform: translateX(470%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes aicat-crown-fire {
+  0%, 100% {
+    filter:
+      drop-shadow(0 0 5px rgba(255, 225, 151, 0.72))
+      drop-shadow(0 0 13px rgba(125, 211, 252, 0.28));
+  }
+  50% {
+    filter:
+      drop-shadow(0 0 10px rgba(255, 244, 197, 0.98))
+      drop-shadow(0 0 24px rgba(192, 132, 252, 0.48));
+  }
+}
+
+@keyframes aicat-glint {
+  0%, 72%, 100% {
+    transform: scale(0.35) rotate(45deg);
+    opacity: 0;
+  }
+  80% {
+    transform: scale(1.15) rotate(45deg);
+    opacity: 1;
+  }
+  88% {
+    transform: scale(0.65) rotate(45deg);
+    opacity: 0.38;
+  }
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"][data-plan-platform] {
+  border: 3px solid transparent !important;
+  background:
+    linear-gradient(58deg, transparent 0% 34%, rgba(91, 108, 171, 0.16) 34.4% 35%, transparent 35.4% 70%, rgba(245, 205, 111, 0.12) 70.4% 71%, transparent 71.4% 100%) padding-box,
+    linear-gradient(122deg, transparent 0% 27%, rgba(168, 85, 247, 0.13) 27.4% 28%, transparent 28.4% 66%, rgba(34, 211, 238, 0.12) 66.4% 67%, transparent 67.4% 100%) padding-box,
+    radial-gradient(circle at 50% 5%, rgba(255, 221, 133, 0.18), transparent 26%) padding-box,
+    linear-gradient(135deg, #05050b 0%, #111225 34%, #080810 58%, #171022 78%, #06060d 100%) padding-box,
+    linear-gradient(108deg, #7a4b08 0%, #ffd978 12%, #fff3c4 21%, #62e7ff 34%, #9772ff 46%, #ff65cc 56%, #ffe08c 69%, #fff8d6 79%, #52dcff 90%, #8f5e14 100%) border-box;
+  background-size: 190% 190%, 210% 210%, 100% 100%, 260% 260%, 320% 320%;
+  color: #f7eed9 !important;
+  box-shadow:
+    0 28px 68px rgba(5, 4, 12, 0.48),
+    0 0 22px rgba(245, 190, 66, 0.34),
+    0 0 42px rgba(99, 102, 241, 0.18),
+    inset 0 0 0 1px rgba(255, 238, 185, 0.42),
+    inset 0 0 38px rgba(96, 73, 160, 0.18);
+  animation: aicat-luxe-surface 12s ease-in-out infinite;
+}
+
+/* 内层切面暗纹 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"]::before {
+  background:
+    linear-gradient(26deg, transparent 0% 44%, rgba(255, 214, 121, 0.08) 44.4% 45%, transparent 45.4% 100%),
+    linear-gradient(154deg, transparent 0% 62%, rgba(102, 221, 255, 0.08) 62.4% 63%, transparent 63.4% 100%),
+    linear-gradient(90deg, rgba(255, 215, 128, 0.08), transparent 16% 84%, rgba(147, 108, 255, 0.09));
+}
+
+/* 横向高亮扫过整张卡 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"]::after {
+  inset: -16% auto -16% -52%;
+  width: 34%;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 225, 145, 0.16) 22%, rgba(255, 250, 226, 0.66) 47%, rgba(114, 230, 255, 0.34) 60%, transparent);
+  mix-blend-mode: screen;
+  animation: aicat-diamond-sweep 5.9s ease-in-out infinite;
+}
+
+/* 顶部冠形主钻；组件中默认隐藏，只有 Ultra 皮肤显示 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown {
+  display: block !important;
+  position: absolute !important;
+  top: 5px;
+  left: 50%;
+  z-index: 4 !important;
+  width: 112px;
+  height: 56px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: aicat-crown-fire 3.8s ease-in-out infinite;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__gem,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__wing,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__tip {
+  position: absolute;
+  display: block;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__gem {
+  top: 0;
+  left: 50%;
+  width: 43px;
+  height: 54px;
+  transform: translateX(-50%);
+  clip-path: polygon(50% 0%, 90% 34%, 70% 79%, 50% 100%, 30% 79%, 10% 34%);
+  background:
+    linear-gradient(122deg, transparent 0% 43%, rgba(255, 255, 255, 0.92) 44% 48%, transparent 49%),
+    linear-gradient(58deg, transparent 0% 47%, rgba(255, 220, 133, 0.78) 48% 52%, transparent 53%),
+    conic-gradient(from 20deg, #fff7d5, #f5bd49, #6ee7ff, #a78bfa, #ffdf7c, #fff7d5);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__wing {
+  top: 21px;
+  width: 47px;
+  height: 31px;
+  background: linear-gradient(135deg, #fff3bd, #f6bd45 35%, #70ddff 62%, #8b5cf6);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__wing--left {
+  left: 5px;
+  clip-path: polygon(0% 18%, 100% 0%, 78% 100%, 43% 52%);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__wing--right {
+  right: 5px;
+  clip-path: polygon(0% 0%, 100% 18%, 57% 52%, 22% 100%);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__tip {
+  top: 16px;
+  width: 23px;
+  height: 29px;
+  background: linear-gradient(135deg, #fff6d4, #ffd36a 42%, #be77ff 72%, #54e1ff);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__tip--left {
+  left: 0;
+  clip-path: polygon(0% 0%, 100% 38%, 48% 100%);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown__tip--right {
+  right: 0;
+  clip-path: polygon(100% 0%, 52% 100%, 0% 38%);
+}
+
+/* 四个星芒高光 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints {
+  display: block !important;
+  position: absolute !important;
+  inset: 0;
+  z-index: 3 !important;
+  pointer-events: none;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints span {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  transform: rotate(45deg);
+  background:
+    linear-gradient(90deg, transparent 43%, #fff4bf 44% 56%, transparent 57%),
+    linear-gradient(0deg, transparent 43%, #fff4bf 44% 56%, transparent 57%);
+  filter: drop-shadow(0 0 6px rgba(255, 211, 105, 0.92));
+  animation: aicat-glint 4.6s ease-in-out infinite;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints span:nth-child(1) {
+  top: 18px;
+  left: 18px;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints span:nth-child(2) {
+  top: 31px;
+  right: 21px;
+  animation-delay: 1.2s;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints span:nth-child(3) {
+  top: 48%;
+  left: 2px;
+  animation-delay: 2.3s;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints span:nth-child(4) {
+  right: 8px;
+  bottom: 5px;
+  animation-delay: 3.4s;
+}
+
+/* 顶条与内容避让冠形主钻 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"][data-plan-platform] > div:first-child {
+  background: linear-gradient(90deg, #7c4a07 0%, #ffd86f 14%, #fff7d5 27%, #63e6ff 41%, #9b71ff 54%, #ff6ed1 64%, #ffe48f 78%, #fff8d9 88%, #83540d 100%);
+  background-size: 300% 100%;
+  box-shadow: 0 2px 12px rgba(255, 210, 101, 0.54);
+  animation: aicat-plan-flow 6.4s linear infinite;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] > .flex.flex-1 {
+  padding-top: 3.75rem !important;
+}
+
+/* 标题与价格做金属烫金，正文保持暗底高对比 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"] h3,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .text-2xl.font-extrabold {
+  background: linear-gradient(110deg, #c8891d, #ffe69a 30%, #fff8dc 48%, #f5c451 67%, #a86410);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 5px rgba(255, 205, 90, 0.26));
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .text-gray-400,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .text-gray-500 {
+  color: #b9ad99 !important;
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .text-gray-600,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .text-gray-700,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .text-gray-800 {
+  color: #f1e7d1 !important;
+}
+
+/* 额度与可用分组区域：黑晶内胆 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .rounded-lg.bg-gray-50 {
+  background:
+    linear-gradient(135deg, rgba(7, 8, 18, 0.88), rgba(22, 17, 33, 0.82)) !important;
+  border: 1px solid rgba(248, 202, 96, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 190, 0.14),
+    inset 0 0 22px rgba(114, 86, 181, 0.13),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .border-gray-200 {
+  border-color: rgba(247, 205, 112, 0.20) !important;
+}
+
+/* 图标、平台徽章与折扣角标 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"] svg {
+  color: #f2cc72 !important;
+  filter: drop-shadow(0 0 5px rgba(255, 213, 117, 0.24));
+}
+
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .rounded-full,
+[data-plan-name*="Ultra"][data-plan-platform="composite"] .line-through + span {
+  background: linear-gradient(135deg, rgba(27, 21, 37, 0.94), rgba(62, 43, 78, 0.88)) !important;
+  border: 1px solid rgba(247, 204, 106, 0.52);
+  color: #ffe5a1 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 207, 0.16),
+    0 0 12px rgba(129, 93, 216, 0.18);
+}
+
+/* 按钮：鎏金与彩钻折射连续流动 */
+[data-plan-name*="Ultra"][data-plan-platform="composite"][data-plan-platform] button.w-full {
+  background: linear-gradient(112deg, #6f4205 0%, #f4bd43 15%, #fff0af 30%, #8a65f5 43%, #56ddf7 54%, #ff7ac8 65%, #ffe08a 79%, #b57312 100%);
+  background-size: 320% 320%;
+  border: 1px solid rgba(255, 235, 170, 0.74);
+  color: #160d03 !important;
+  box-shadow:
+    0 14px 30px rgba(245, 184, 54, 0.26),
+    0 0 18px rgba(111, 195, 255, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.70);
+  animation: aicat-plan-flow 6.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-plan-name*="Ultra"][data-plan-platform="composite"],
+  [data-plan-name*="Ultra"][data-plan-platform="composite"]::after,
+  [data-plan-name*="Ultra"][data-plan-platform="composite"] > div:first-child,
+  [data-plan-name*="Ultra"][data-plan-platform="composite"] button.w-full,
+  [data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-crown,
+  [data-plan-name*="Ultra"][data-plan-platform="composite"] .aicat-plan-glints span {
+    animation: none;
+  }
+}
+
+/* ================= 银卡(铂银流光) ================= */
+[data-plan-price="115"][data-plan-price],
+[data-plan-price="175"][data-plan-price] {
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.99) 20%, rgba(221, 229, 239, 0.98) 42%, rgba(255, 255, 255, 0.99) 58%, rgba(203, 213, 225, 0.96) 80%, rgba(248, 250, 252, 0.99) 100%);
+  background-size: 260% 260%;
+  border-color: rgba(148, 163, 184, 0.78) !important;
+  animation: aicat-plan-flow 8s ease-in-out infinite;
+}
+
+[data-plan-price="115"]::before,
+[data-plan-price="175"]::before {
+  background:
+    radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.90), transparent 30%),
+    linear-gradient(112deg, transparent 0%, rgba(255, 255, 255, 0.85) 34%, rgba(226, 236, 248, 0.50) 48%, transparent 66%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 52%);
+}
+
+/* 顶条:拉丝银 */
+[data-plan-price="115"][data-plan-price] > div:first-child,
+[data-plan-price="175"][data-plan-price] > div:first-child {
+  background: linear-gradient(90deg, #f8fafc 0%, #e2e8f0 26%, #94a3b8 54%, #f1f5f9 78%, #64748b 100%);
+  background-size: 220% 220%;
+  animation: aicat-plan-flow 7s ease-in-out infinite;
+}
+
+/* 标题与价格 */
+[data-plan-price="115"] h3,
+[data-plan-price="175"] h3,
+[data-plan-price="115"] .text-2xl.font-extrabold,
+[data-plan-price="175"] .text-2xl.font-extrabold {
+  color: #334155 !important;
+}
+
+/* 正文文字压深,浅底两种模式都可读 */
+[data-plan-price="115"] .text-gray-400, [data-plan-price="175"] .text-gray-400,
+[data-plan-price="115"] .text-gray-500, [data-plan-price="175"] .text-gray-500 {
+  color: #64748b !important;
+}
+[data-plan-price="115"] .text-gray-600, [data-plan-price="175"] .text-gray-600,
+[data-plan-price="115"] .text-gray-700, [data-plan-price="175"] .text-gray-700 {
+  color: #475569 !important;
+}
+
+/* 额度信息面板 */
+[data-plan-price="115"] .rounded-lg.bg-gray-50,
+[data-plan-price="175"] .rounded-lg.bg-gray-50 {
+  background: rgba(255, 255, 255, 0.74) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+/* 勾选图标 */
+[data-plan-price="115"] svg,
+[data-plan-price="175"] svg {
+  color: #64748b !important;
+}
+
+/* 平台徽章 + 折扣角标 */
+[data-plan-price="115"] .rounded-full, [data-plan-price="175"] .rounded-full,
+[data-plan-price="115"] .line-through + span, [data-plan-price="175"] .line-through + span {
+  background: rgba(226, 232, 240, 0.80) !important;
+  color: #475569 !important;
+}
+
+/* 按钮:拉丝银 */
+[data-plan-price="115"][data-plan-price] button.w-full,
+[data-plan-price="175"][data-plan-price] button.w-full {
+  background: linear-gradient(120deg, #e2e8f0 0%, #f8fafc 26%, #94a3b8 55%, #eef2f7 78%, #475569 100%);
+  background-size: 260% 260%;
+  color: #1e293b !important;
+  box-shadow: 0 12px 24px rgba(71, 85, 105, 0.24);
+  animation: aicat-plan-flow 7s ease-in-out infinite;
+}
+
+/* ================= 金卡(香槟鎏金) ================= */
+[data-plan-price="450"][data-plan-price] {
+  background:
+    linear-gradient(135deg, rgba(255, 253, 245, 0.99) 0%, rgba(253, 230, 138, 0.75) 18%, rgba(255, 251, 235, 0.98) 36%, rgba(252, 211, 77, 0.62) 55%, rgba(255, 247, 214, 0.98) 72%, rgba(245, 158, 11, 0.38) 88%, rgba(255, 251, 235, 0.98) 100%);
+  background-size: 260% 260%;
+  border-color: rgba(217, 119, 6, 0.50) !important;
+  animation: aicat-plan-flow 9s ease-in-out infinite;
+}
+
+[data-plan-price="450"]::before {
+  background:
+    radial-gradient(circle at 78% 8%, rgba(255, 244, 204, 0.85), transparent 32%),
+    linear-gradient(118deg, transparent 0%, rgba(255, 255, 255, 0.68) 30%, rgba(255, 237, 176, 0.45) 45%, transparent 62%),
+    linear-gradient(180deg, rgba(255, 248, 220, 0.42), transparent 46%);
+}
+
+/* 顶条:鎏金 */
+[data-plan-price="450"][data-plan-price] > div:first-child {
+  background: linear-gradient(90deg, #fde68a 0%, #f59e0b 32%, #fff7d6 52%, #b45309 76%, #f59e0b 100%);
+  background-size: 220% 220%;
+  animation: aicat-plan-flow 8s ease-in-out infinite;
+}
+
+/* 标题与价格 */
+[data-plan-price="450"] h3,
+[data-plan-price="450"] .text-2xl.font-extrabold {
+  color: #b45309 !important;
+}
+
+/* 正文文字压深,浅底两种模式都可读 */
+[data-plan-price="450"] .text-gray-400,
+[data-plan-price="450"] .text-gray-500 {
+  color: #a16207 !important;
+}
+[data-plan-price="450"] .text-gray-600,
+[data-plan-price="450"] .text-gray-700 {
+  color: #78350f !important;
+}
+
+/* 额度信息面板 */
+[data-plan-price="450"] .rounded-lg.bg-gray-50 {
+  background: rgba(255, 251, 235, 0.76) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+/* 勾选图标 */
+[data-plan-price="450"] svg {
+  color: #d97706 !important;
+}
+
+/* 平台徽章 + 折扣角标 */
+[data-plan-price="450"] .rounded-full,
+[data-plan-price="450"] .line-through + span {
+  background: rgba(254, 243, 199, 0.85) !important;
+  color: #92400e !important;
+}
+
+/* 按钮:鎏金 */
+[data-plan-price="450"][data-plan-price] button.w-full {
+  background: linear-gradient(135deg, #b45309 0%, #f59e0b 28%, #fde68a 50%, #f59e0b 70%, #fcd34d 100%);
+  background-size: 240% 240%;
+  color: #451a03 !important;
+  box-shadow: 0 12px 24px rgba(180, 83, 9, 0.30);
+  animation: aicat-plan-flow 8s ease-in-out infinite;
+}
+
+/* ============================================================
+   AICat: 公告弹窗优化(2026-07-05,四轮微调)—— 整体比三轮再小一档
+   这些 max-w / max-h 任意值类只在公告组件里使用,可安全覆盖
+   ============================================================ */
+.max-w-\[780px\] { max-width: min(1200px, 96vw) !important; } /* 公告详情弹窗 */
+.max-w-\[680px\] { max-width: min(1080px, 96vw) !important; } /* 公告自动弹窗 */
+.max-w-\[620px\] { max-width: min(880px, 96vw) !important; } /* 公告列表弹窗 */
+.max-h-\[60vh\] { max-height: 70vh !important; } /* 详情正文区加高 */
+.max-h-\[50vh\] { max-height: 65vh !important; } /* 自动弹窗正文区加高 */
+
+/* 标题跟着加大,保持比正文大(该组合类只在公告弹窗使用) */
+h2.text-2xl.font-bold.leading-tight {
+  font-size: 26px !important;
+  line-height: 1.25 !important;
+}
+
+.markdown-body {
+  font-size: 21px !important;
+  line-height: 1.75 !important;
+}
+
+.markdown-body code {
+  font-size: 18px !important;
+}
+
+/* 公告里的代码块允许换行,不再挤出横向滚动条 */
+.markdown-body pre,
+.markdown-body pre code {
+  font-size: 18px !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+}
