@@ -485,6 +485,7 @@ export default {
       peakRate: '高峰倍率',
       pricedByRoute: '按请求模型分组计费',
       routePricing: '分组倍率',
+      availableGroups: '可用分组',
       noCompositeRoutes: '暂未配置可用的模型路由',
       dailyLimit: '日限额',
       weeklyLimit: '周限额',

@@ -13,6 +13,21 @@
     <!-- Colored top accent bar -->
     <div :class="['h-1.5', accentClass]" />
 
+    <!-- Optional hooks for externally supplied premium plan skins. -->
+    <div class="aicat-plan-crown hidden" aria-hidden="true">
+      <span class="aicat-plan-crown__wing aicat-plan-crown__wing--left" />
+      <span class="aicat-plan-crown__wing aicat-plan-crown__wing--right" />
+      <span class="aicat-plan-crown__gem" />
+      <span class="aicat-plan-crown__tip aicat-plan-crown__tip--left" />
+      <span class="aicat-plan-crown__tip aicat-plan-crown__tip--right" />
+    </div>
+    <div class="aicat-plan-glints hidden" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+    </div>
+
     <div class="flex flex-1 flex-col p-4">
       <!-- Header: full-width name row, then description, then price row -->
       <div class="mb-3">

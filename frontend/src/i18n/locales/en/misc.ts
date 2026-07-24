@@ -461,6 +461,7 @@ export default {
       peakRate: 'Peak Rate',
       pricedByRoute: 'Priced by request model group',
       routePricing: 'Group rates',
+      availableGroups: 'Available groups',
       noCompositeRoutes: 'No available model routes configured',
       dailyLimit: 'Daily',
       weeklyLimit: 'Weekly',

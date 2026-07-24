@@ -24,6 +24,7 @@ const i18n = createI18n({
           peakRate: "Peak Rate",
           pricedByRoute: "Priced by request model group",
           routePricing: "Group rates",
+          availableGroups: "Available groups",
           noCompositeRoutes: "No available model routes configured",
           unlimited: "Unlimited",
         },
@@ -164,7 +165,12 @@ describe("SubscriptionPlanCard", () => {
     const text = wrapper.text();
 
     expect(text).toContain("payment.planCard.pricedByRoute");
-    expect(text).toContain("payment.planCard.routePricing");
+    expect(text).toContain("payment.planCard.availableGroups");
+    expect(text).toContain("payment.planCard.rate");
+    expect(text).not.toContain("payment.planCard.routePricing");
+    expect(wrapper.get('[data-testid="composite-group-pricing-header"]').text()).toBe(
+      "payment.planCard.availableGroupspayment.planCard.rate",
+    );
     expect(text).toContain("OpenAI standard");
     expect(text.match(/OpenAI standard/g)).toHaveLength(1);
     expect(text).toContain("Claude Max");

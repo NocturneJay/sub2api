@@ -1,7 +1,11 @@
 <template>
   <div v-if="groupPricing.length > 0" class="space-y-1.5">
-    <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
-      {{ t('payment.planCard.routePricing') }}
+    <div
+      data-testid="composite-group-pricing-header"
+      class="flex items-center justify-between gap-3 text-xs font-medium text-gray-500 dark:text-gray-400"
+    >
+      <span>{{ t('payment.planCard.availableGroups') }}</span>
+      <span>{{ t('payment.planCard.rate') }}</span>
     </div>
     <div class="divide-y divide-gray-200 dark:divide-dark-600">
       <div
