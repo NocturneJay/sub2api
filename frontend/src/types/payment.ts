@@ -115,6 +115,7 @@ export interface CompositeRoutePricing {
   target_group_id: number
   target_group_name: string
   target_platform: string
+  target_group_rate_multiplier: number
   rate_multiplier: number
   rate_source: 'route' | 'target_group'
 }

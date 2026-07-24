@@ -19,8 +19,20 @@
           <PlatformIcon :platform="group.targetPlatform as GroupPlatform" size="xs" />
           <span class="truncate">{{ group.targetGroupName }}</span>
         </div>
-        <div class="shrink-0 font-semibold text-gray-800 dark:text-gray-100">
-          ×{{ formatRate(group.rateMultiplier) }}
+        <div class="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap">
+          <span
+            v-if="group.showOriginalRate"
+            data-testid="composite-group-original-rate"
+            class="text-[11px] font-medium text-gray-400 line-through decoration-1 dark:text-gray-500"
+          >
+            ×{{ formatRate(group.targetGroupRateMultiplier) }}
+          </span>
+          <span
+            data-testid="composite-group-current-rate"
+            class="font-semibold text-gray-800 dark:text-gray-100"
+          >
+            ×{{ formatRate(group.rateMultiplier) }}
+          </span>
         </div>
       </div>
     </div>
@@ -38,11 +50,13 @@ const props = defineProps<{ routes: CompositeRoutePricing[] }>()
 
 const { t } = useI18n()
 
+const formatRate = (rate: number) => Number(rate.toPrecision(10))
+
 const groupPricing = computed(() => {
   const seen = new Set<string>()
 
   return props.routes.flatMap((route) => {
-    const key = `${route.target_group_id}:${route.rate_multiplier}`
+    const key = `${route.target_group_id}:${route.target_group_rate_multiplier}:${route.rate_multiplier}`
     if (seen.has(key)) return []
 
     seen.add(key)
@@ -51,10 +65,11 @@ const groupPricing = computed(() => {
       targetGroupId: route.target_group_id,
       targetGroupName: route.target_group_name,
       targetPlatform: route.target_platform,
+      targetGroupRateMultiplier: route.target_group_rate_multiplier,
       rateMultiplier: route.rate_multiplier,
+      showOriginalRate:
+        formatRate(route.target_group_rate_multiplier) !== formatRate(route.rate_multiplier),
     }]
   })
 })
-
-const formatRate = (rate: number) => Number(rate.toPrecision(10))
 </script>

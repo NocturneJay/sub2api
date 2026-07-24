@@ -107,6 +107,7 @@ describe("SubscriptionPlanCard", () => {
           target_group_id: 42,
           target_group_name: "OpenAI standard",
           target_platform: "openai",
+          target_group_rate_multiplier: 2,
           rate_multiplier: 1.25,
           rate_source: "target_group",
         },
@@ -117,6 +118,7 @@ describe("SubscriptionPlanCard", () => {
           target_group_id: 42,
           target_group_name: "OpenAI standard",
           target_platform: "openai",
+          target_group_rate_multiplier: 2,
           rate_multiplier: 1.25,
           rate_source: "route",
         },
@@ -127,6 +129,7 @@ describe("SubscriptionPlanCard", () => {
           target_group_id: 43,
           target_group_name: "Claude Max",
           target_platform: "anthropic",
+          target_group_rate_multiplier: 0.8,
           rate_multiplier: 0.8,
           rate_source: "route",
         },
@@ -137,6 +140,7 @@ describe("SubscriptionPlanCard", () => {
           target_group_id: 44,
           target_group_name: "DeepSeek/Kimi/GLM",
           target_platform: "openai",
+          target_group_rate_multiplier: 0.5,
           rate_multiplier: 0.45,
           rate_source: "route",
         },
@@ -147,6 +151,7 @@ describe("SubscriptionPlanCard", () => {
           target_group_id: 44,
           target_group_name: "DeepSeek/Kimi/GLM",
           target_platform: "openai",
+          target_group_rate_multiplier: 0.5,
           rate_multiplier: 0.45,
           rate_source: "route",
         },
@@ -157,6 +162,7 @@ describe("SubscriptionPlanCard", () => {
           target_group_id: 44,
           target_group_name: "DeepSeek/Kimi/GLM",
           target_platform: "openai",
+          target_group_rate_multiplier: 0.5,
           rate_multiplier: 0.45,
           rate_source: "target_group",
         },
@@ -178,6 +184,13 @@ describe("SubscriptionPlanCard", () => {
     expect(text).toContain("×1.25");
     expect(text).toContain("×0.8");
     expect(text).toContain("×0.45");
+    expect(text).toContain("×2");
+    expect(text).toContain("×0.5");
+    expect(wrapper.findAll('[data-testid="composite-group-original-rate"]')).toHaveLength(2);
+    expect(wrapper.findAll('[data-testid="composite-group-current-rate"]')).toHaveLength(3);
+    expect(wrapper.get('[data-testid="composite-group-original-rate"]').classes()).toContain(
+      "line-through",
+    );
     expect(wrapper.findAll('[data-testid="composite-group-pricing-row"]')).toHaveLength(3);
     expect(text).not.toContain("openrouter/gpt-5");
     expect(text).not.toContain("codex");

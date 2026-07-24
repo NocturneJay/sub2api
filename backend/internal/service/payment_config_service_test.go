@@ -457,11 +457,17 @@ func TestGetGroupInfoMapIncludesEffectiveCompositeRoutePricing(t *testing.T) {
 		t.Fatalf("route pricing count = %d, want 2", len(info.CompositeRoutePricing))
 	}
 	inherited := info.CompositeRoutePricing[0]
-	if inherited.PublicModel != "openrouter/gpt-5" || inherited.RateMultiplier != 1.25 || inherited.RateSource != "target_group" {
+	if inherited.PublicModel != "openrouter/gpt-5" ||
+		inherited.TargetGroupRateMultiplier != 1.25 ||
+		inherited.RateMultiplier != 1.25 ||
+		inherited.RateSource != "target_group" {
 		t.Fatalf("unexpected inherited route pricing: %+v", inherited)
 	}
 	override := info.CompositeRoutePricing[1]
-	if override.PublicModel != "openrouter/o3" || override.RateMultiplier != 2.5 || override.RateSource != "route" {
+	if override.PublicModel != "openrouter/o3" ||
+		override.TargetGroupRateMultiplier != 1.25 ||
+		override.RateMultiplier != 2.5 ||
+		override.RateSource != "route" {
 		t.Fatalf("unexpected override route pricing: %+v", override)
 	}
 }

@@ -94,14 +94,15 @@ type PlanGroupInfo struct {
 // composite route. RateMultiplier is already resolved using route override
 // first and the concrete target group's default second.
 type CompositeRoutePricingInfo struct {
-	PublicModel     string  `json:"public_model"`
-	MatchType       string  `json:"match_type"`
-	Endpoint        string  `json:"endpoint"`
-	TargetGroupID   int64   `json:"target_group_id"`
-	TargetGroupName string  `json:"target_group_name"`
-	TargetPlatform  string  `json:"target_platform"`
-	RateMultiplier  float64 `json:"rate_multiplier"`
-	RateSource      string  `json:"rate_source"`
+	PublicModel               string  `json:"public_model"`
+	MatchType                 string  `json:"match_type"`
+	Endpoint                  string  `json:"endpoint"`
+	TargetGroupID             int64   `json:"target_group_id"`
+	TargetGroupName           string  `json:"target_group_name"`
+	TargetPlatform            string  `json:"target_platform"`
+	TargetGroupRateMultiplier float64 `json:"target_group_rate_multiplier"`
+	RateMultiplier            float64 `json:"rate_multiplier"`
+	RateSource                string  `json:"rate_source"`
 }
 
 // GetGroupInfoMap returns a map of group_id → PlanGroupInfo for the given plans.
@@ -213,14 +214,15 @@ func (s *PaymentConfigService) GetCompositeRoutePricing(ctx context.Context, com
 			source = "route"
 		}
 		result[route.GroupID] = append(result[route.GroupID], CompositeRoutePricingInfo{
-			PublicModel:     route.PublicModel,
-			MatchType:       route.MatchType,
-			Endpoint:        route.Endpoint,
-			TargetGroupID:   *route.TargetGroupID,
-			TargetGroupName: target.Name,
-			TargetPlatform:  target.Platform,
-			RateMultiplier:  rate,
-			RateSource:      source,
+			PublicModel:               route.PublicModel,
+			MatchType:                 route.MatchType,
+			Endpoint:                  route.Endpoint,
+			TargetGroupID:             *route.TargetGroupID,
+			TargetGroupName:           target.Name,
+			TargetPlatform:            target.Platform,
+			TargetGroupRateMultiplier: target.RateMultiplier,
+			RateMultiplier:            rate,
+			RateSource:                source,
 		})
 	}
 	return result
