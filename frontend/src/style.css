@@ -7,6 +7,21 @@
   pointer-events: none;
 }
 
+[data-plan-name*='Ultra'][data-plan-platform='composite']
+  .mb-3.grid.grid-cols-2
+  > div:first-child {
+  grid-column: 1 / -1;
+  gap: 0.75rem;
+}
+
+[data-plan-name*='Ultra'][data-plan-platform='composite']
+  .mb-3.grid.grid-cols-2
+  > div:first-child
+  > span:last-child {
+  white-space: nowrap;
+  text-align: right;
+}
+
 @layer base {
   * {
     @apply border-gray-200 dark:border-dark-700;
