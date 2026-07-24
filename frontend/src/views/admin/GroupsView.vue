@@ -249,10 +249,14 @@
             </div>
           </template>
 
-          <template #cell-rate_multiplier="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300"
-              >{{ value }}x</span
-            >
+          <template #cell-rate_multiplier="{ row, value }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">
+              {{
+                row.platform === "composite"
+                  ? t("admin.groups.compositePricingLabel")
+                  : `${value}x`
+              }}
+            </span>
           </template>
 
           <template #cell-is_exclusive="{ value }">
@@ -397,6 +401,7 @@
                 }}</span>
               </button>
               <button
+                v-if="row.platform !== 'composite'"
                 @click="handleRateMultipliers(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-purple-600 dark:hover:bg-dark-700 dark:hover:text-purple-400"
               >
@@ -494,7 +499,12 @@
           <p class="input-hint">{{ t("admin.groups.platformHint") }}</p>
         </div>
         <!-- 从分组复制账号 -->
-        <div v-if="copyAccountsGroupOptions.length > 0">
+        <div
+          v-if="
+            createForm.platform !== 'composite' &&
+            copyAccountsGroupOptions.length > 0
+          "
+        >
           <div class="mb-1.5 flex items-center gap-1">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t("admin.groups.copyAccounts.title") }}
@@ -582,7 +592,7 @@
           </select>
           <p class="input-hint">{{ t("admin.groups.copyAccounts.hint") }}</p>
         </div>
-        <div>
+        <div v-if="createForm.platform !== 'composite'">
           <label class="input-label">{{
             t("admin.groups.form.rateMultiplier")
           }}</label>
@@ -1106,7 +1116,13 @@
         </div>
 
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
-        <div v-if="createForm.subscription_type === 'subscription'" class="border-t pt-4">
+        <div
+          v-if="
+            createForm.subscription_type === 'subscription' &&
+            createForm.platform !== 'composite'
+          "
+          class="border-t pt-4"
+        >
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -2013,7 +2029,12 @@
           <p class="input-hint">{{ t("admin.groups.platformNotEditable") }}</p>
         </div>
         <!-- 从分组复制账号（编辑时） -->
-        <div v-if="copyAccountsGroupOptionsForEdit.length > 0">
+        <div
+          v-if="
+            editForm.platform !== 'composite' &&
+            copyAccountsGroupOptionsForEdit.length > 0
+          "
+        >
           <div class="mb-1.5 flex items-center gap-1">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t("admin.groups.copyAccounts.title") }}
@@ -2103,7 +2124,7 @@
             {{ t("admin.groups.copyAccounts.hintEdit") }}
           </p>
         </div>
-        <div>
+        <div v-if="editForm.platform !== 'composite'">
           <label class="input-label">{{
             t("admin.groups.form.rateMultiplier")
           }}</label>
@@ -2628,7 +2649,13 @@
         </div>
 
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
-        <div v-if="editForm.subscription_type === 'subscription'" class="border-t pt-4">
+        <div
+          v-if="
+            editForm.subscription_type === 'subscription' &&
+            editForm.platform !== 'composite'
+          "
+          class="border-t pt-4"
+        >
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -3682,10 +3709,19 @@
                         <span v-if="route.target_group_id">{{
                           compositeTargetGroupName(route.target_group_id)
                         }}</span>
-                        <span v-else>{{ formatCompositePlatform(route.target_platform) }}</span>
+                        <span v-else class="text-red-600 dark:text-red-400">
+                          {{ t("admin.groups.compositeRoutes.targetGroupRequired") }}
+                        </span>
                       </div>
                       <div class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">
-                        {{ route.upstream_model || route.public_model }}
+                        {{
+                          route.upstream_model ||
+                          (route.match_type === "prefix"
+                            ? t(
+                                "admin.groups.compositeRoutes.preserveRequestedModel",
+                              )
+                            : route.public_model)
+                        }}
                         <span
                           v-if="route.target_group_id && route.rate_multiplier != null"
                         >
@@ -3786,11 +3822,14 @@
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.targetType")
+                  t("admin.groups.compositeRoutes.targetGroup")
                 }}</label>
                 <Select
-                  v-model="compositeRouteForm.target_type"
-                  :options="compositeRouteTargetTypeOptions"
+                  v-model="compositeRouteForm.target_group_id"
+                  :options="compositeTargetGroupOptions"
+                  :placeholder="
+                    t('admin.groups.compositeRoutes.targetGroupPlaceholder')
+                  "
                 />
               </div>
               <div>
@@ -3807,37 +3846,7 @@
               </div>
             </div>
 
-            <div
-              v-if="compositeRouteForm.target_type === 'platform'"
-              class="grid grid-cols-1 gap-3"
-            >
-              <div>
-                <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.targetPlatform")
-                }}</label>
-                <Select
-                  v-model="compositeRouteForm.target_platform"
-                  :options="compositeRoutePlatformOptions"
-                />
-              </div>
-            </div>
-
-            <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.targetGroup")
-                }}</label>
-                <Select
-                  v-model="compositeRouteForm.target_group_id"
-                  :options="compositeTargetGroupOptions"
-                  :placeholder="
-                    t('admin.groups.compositeRoutes.targetGroupPlaceholder')
-                  "
-                />
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.groups.compositeRoutes.targetGroupHint") }}
-                </p>
-              </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="input-label">{{
                   t("admin.groups.compositeRoutes.rateMultiplierOverride")
@@ -3853,6 +3862,11 @@
                   "
                 />
               </div>
+              <div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.compositeRoutes.targetGroupHint") }}
+                </p>
+              </div>
             </div>
 
             <div>
@@ -3865,6 +3879,9 @@
                 class="input"
                 placeholder="gpt-5"
               />
+              <p class="input-hint">
+                {{ t("admin.groups.compositeRoutes.upstreamModelHint") }}
+              </p>
             </div>
 
             <div>
@@ -4285,25 +4302,6 @@ const platformFilterOptions = computed(() => [
   { value: "composite", label: "Composite" },
 ]);
 
-const compositeRoutePlatformOptions = computed(() => [
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "gemini", label: "Gemini" },
-  { value: "antigravity", label: "Antigravity" },
-  { value: "grok", label: "Grok" },
-]);
-
-const compositeRouteTargetTypeOptions = computed(() => [
-  {
-    value: "platform",
-    label: t("admin.groups.compositeRoutes.targetTypePlatform"),
-  },
-  {
-    value: "group",
-    label: t("admin.groups.compositeRoutes.targetTypeGroup"),
-  },
-]);
-
 // 可委托的子分组：具体平台（非 composite）、启用中，且排除当前组合分组自身。
 const compositeTargetGroupOptions = computed(() => {
   const currentId = compositeRoutesGroup.value?.id;
@@ -4530,13 +4528,9 @@ const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
 const sortableGroups = ref<AdminGroup[]>([]);
-type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
-type CompositeRouteTargetType = "platform" | "group";
 type CompositeRouteFormState = {
   public_model: string;
   match_type: CompositeRouteMatchType;
-  target_type: CompositeRouteTargetType;
-  target_platform: ConcreteGroupPlatform;
   target_group_id: number | null;
   rate_multiplier: number | null;
   upstream_model: string;
@@ -4560,8 +4554,6 @@ const compositePreviewDecision = ref<CompositeRouteDecision | null>(null);
 const compositeRouteForm = reactive<CompositeRouteFormState>({
   public_model: "",
   match_type: "exact",
-  target_type: "platform",
-  target_platform: "openai",
   target_group_id: null,
   rate_multiplier: null,
   upstream_model: "",
@@ -5802,9 +5794,6 @@ const formatCompositePlatform = (platform: string) => {
 
 const compositeRouteSourceLabel = (source: string) => {
   if (source === "route") return t("admin.groups.compositeRoutes.sources.route");
-  if (source === "detector") {
-    return t("admin.groups.compositeRoutes.sources.detector");
-  }
   return source || "—";
 };
 
@@ -5812,8 +5801,6 @@ const resetCompositeRouteForm = () => {
   compositeRouteEditingId.value = null;
   compositeRouteForm.public_model = "";
   compositeRouteForm.match_type = "exact";
-  compositeRouteForm.target_type = "platform";
-  compositeRouteForm.target_platform = "openai";
   compositeRouteForm.target_group_id = null;
   compositeRouteForm.rate_multiplier = null;
   compositeRouteForm.upstream_model = "";
@@ -5832,18 +5819,13 @@ const toCompositeRouteInput = (): CompositeModelRouteInput => {
     priority: Number(compositeRouteForm.priority) || 100,
     enabled: compositeRouteForm.enabled,
     notes: compositeRouteForm.notes.trim(),
-  };
-  if (compositeRouteForm.target_type === "group") {
-    // 委托到子分组：只发 target_group_id（+ 可选倍率覆盖），平台由后端从子分组推导。
-    payload.target_group_id = compositeRouteForm.target_group_id;
-    payload.rate_multiplier =
+    target_group_id: compositeRouteForm.target_group_id,
+    rate_multiplier:
       compositeRouteForm.rate_multiplier != null &&
       Number(compositeRouteForm.rate_multiplier) > 0
         ? Number(compositeRouteForm.rate_multiplier)
-        : null;
-  } else {
-    payload.target_platform = compositeRouteForm.target_platform;
-  }
+        : null,
+  };
   return payload;
 };
 
@@ -5910,16 +5892,8 @@ const editCompositeRoute = (route: CompositeModelRoute) => {
   compositeRouteEditingId.value = route.id;
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;
-  const isGroupTarget =
-    route.target_group_id != null && route.target_group_id > 0;
-  compositeRouteForm.target_type = isGroupTarget ? "group" : "platform";
-  compositeRouteForm.target_platform = route.target_platform;
-  compositeRouteForm.target_group_id = isGroupTarget
-    ? route.target_group_id ?? null
-    : null;
-  compositeRouteForm.rate_multiplier = isGroupTarget
-    ? route.rate_multiplier ?? null
-    : null;
+  compositeRouteForm.target_group_id = route.target_group_id ?? null;
+  compositeRouteForm.rate_multiplier = route.rate_multiplier ?? null;
   compositeRouteForm.upstream_model = route.upstream_model;
   compositeRouteForm.endpoint = route.endpoint;
   compositeRouteForm.priority = route.priority || 100;
@@ -5933,10 +5907,7 @@ const saveCompositeRoute = async () => {
     appStore.showError(t("admin.groups.compositeRoutes.publicModelRequired"));
     return;
   }
-  if (
-    compositeRouteForm.target_type === "group" &&
-    !compositeRouteForm.target_group_id
-  ) {
+  if (!compositeRouteForm.target_group_id) {
     appStore.showError(t("admin.groups.compositeRoutes.targetGroupRequired"));
     return;
   }

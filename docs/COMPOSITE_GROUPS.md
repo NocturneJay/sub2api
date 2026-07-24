@@ -1,28 +1,28 @@
 # Composite Groups
 
-Composite groups are an admin routing layer for API keys that should choose a
-concrete provider from the requested model instead of binding the key to a
-single provider group. They support both built-in model detection and an
-admin-configured model route registry for public model aliases.
+Composite groups are customer-facing routing, quota, subscription, and usage
+containers. They do not own an account pool or a default billing multiplier.
+Every billable model must match an enabled route that points to one active,
+concrete target group.
 
-## Supported Providers
+## Runtime Contract
 
-Composite groups can route to these concrete account platforms:
+For each Composite request:
 
-- Anthropic
-- Gemini
-- OpenAI
-- Antigravity
-- Grok
+1. Match the requested model and endpoint against an enabled route.
+2. Reject the request when no route matches.
+3. Schedule accounts only from the route's `target_group_id`.
+4. Price the request using the route multiplier override, or the target
+   group's multiplier when the override is empty.
+5. Keep quota, subscription usage, deductions, and usage-log ownership on the
+   Composite parent group.
 
-The selected concrete platform is used for account selection, user platform
-quota checks, post-usage billing, ops error platform attribution, channel
-mapping/pricing lookup, and platform usage reporting.
+There is no provider detector fallback and no Composite-group fallback
+multiplier. Composite-specific user multipliers are unsupported.
 
 ## Route Registry
 
-Admins can configure routes on a composite group from the group list's
-`Routes` action or through the admin API:
+Admins configure routes from the group list's `Routes` action or through:
 
 - `GET /api/v1/admin/groups/:id/composite-routes`
 - `POST /api/v1/admin/groups/:id/composite-routes`
@@ -30,96 +30,57 @@ Admins can configure routes on a composite group from the group list's
 - `DELETE /api/v1/admin/groups/:id/composite-routes/:route_id`
 - `POST /api/v1/admin/groups/:id/composite-routes/preview`
 
-Each route belongs to one composite group and contains:
+Each route contains:
 
-- `public_model`: model identifier the client sends.
+- `public_model`: exact model identifier or prefix accepted from clients.
 - `match_type`: `exact` or `prefix`.
-- `target_platform`: concrete provider platform.
-- `upstream_model`: model identifier sent upstream. If omitted, the public
-  model is reused.
+- `target_group_id`: required active concrete-provider group.
+- `target_platform`: denormalized from the target group for compatibility and
+  display; clients do not choose it independently.
+- `rate_multiplier`: optional route override; empty inherits the target group.
+- `upstream_model`: optional model rewrite. Empty preserves the requested
+  model. Exact routes normalize an empty value to `public_model`; prefix routes
+  should normally leave it empty.
 - `endpoint`: `any`, `messages`, `count_tokens`, `responses`,
   `chat_completions`, `embeddings`, `images`, or `gemini`.
 - `priority`: lower values win after match specificity.
-- `enabled`: disabled routes are ignored by runtime resolution but remain
-  visible to admins.
+- `enabled`: disabled routes remain visible to admins but never match.
 
-Resolution order is explicit route first, then built-in detection. When more
-than one explicit route matches, exact matches beat prefix matches,
-endpoint-specific routes beat `any`, longer prefixes beat shorter prefixes,
-then lower `priority`, then lower route id.
+Resolution prefers exact over prefix, endpoint-specific over `any`, longer
+prefixes over shorter prefixes, lower priority, then lower route ID.
 
-For JSON-body endpoints, the gateway rewrites the request `model` field to the
-route's `upstream_model` before dispatch. For Gemini native paths such as
-`/v1beta/models/{model}:generateContent`, the gateway resolves `{model}` and
-the handler forwards the resolved upstream model.
+The public `/v1/models` response is also route-bound. Exact routes expose their
+public alias. Prefix routes expose matching models available from their target
+group. Models without a route are not advertised.
 
-## Built-In Detection
+## Setup Example
 
-Composite routing detects common public model IDs and provider-prefixed IDs:
+To sell one subscription that supports OpenAI and Claude:
 
-- `claude-*` and `anthropic/claude-*` route to Anthropic.
-- `gemini-*` and `google/gemini-*` route to Gemini.
-- `gpt-*`, `o*`, `codex-*`, `text-embedding-*`, `dall-e-*`, and
-  `openai/*` route to OpenAI.
-- `grok-*` and `xai/grok-*` route to Grok.
+1. Keep separate active OpenAI and Anthropic groups with their own account
+   pools and base multipliers.
+2. Create a `composite` group with subscription type `subscription`.
+3. Add `gpt` as a prefix route to the OpenAI group, leaving
+   `upstream_model` empty.
+4. Add `claude` as a prefix route to the Anthropic group, leaving
+   `upstream_model` empty.
+5. Set an optional multiplier on either route only when it should override the
+   target group's multiplier.
+6. Bind the subscription plan to the Composite group.
 
-Unknown or ambiguous model names fail closed with a client error instead of
-guessing a provider.
-
-## Admin Workflows
-
-- Admins can create a group with platform `composite`.
-- Admins can add, edit, delete, and preview composite model routes.
-- Composite groups can copy accounts from concrete provider groups.
-- Concrete provider accounts can be assigned directly to composite groups from
-  account create/edit and bulk account workflows.
-- Subscription payment plans can bind to a composite group when that group's
-  `subscription_type` is `subscription`. The plan grants access to the
-  composite group; each request is still billed and quota-checked against the
-  resolved concrete provider platform.
-- Channel configuration exposes composite groups in concrete provider sections.
-  The channel `group_ids` payload is still flat; provider-specific model
-  mapping and pricing remain keyed by concrete platform.
-
-## Bucket 2 Setup: OpenAI + Claude + Gemini + Grok
-
-Use one composite subscription group when one customer-facing plan should expose
-model aliases across OpenAI, Claude, Gemini, and Grok without issuing separate
-keys per provider.
-
-1. Create concrete provider groups for the upstream account pools, for example
-   `OpenAI Paid`, `Claude Paid`, `Gemini Paid`, and `Grok Paid`.
-2. Create a `composite` group with `subscription_type` set to `subscription`.
-3. Assign provider accounts directly to the composite group, or copy accounts
-   from the concrete provider groups during group creation.
-4. Add explicit routes for public aliases that should not rely on built-in
-   model detection:
-
-   | Public model | Endpoint | Target platform | Upstream model |
-   | --- | --- | --- | --- |
-   | `all/gpt-5` | `responses` | `openai` | `gpt-5` |
-   | `all/claude-sonnet` | `messages` | `anthropic` | `claude-sonnet-4-6` |
-   | `all/gemini-pro` | `gemini` | `gemini` | `gemini-2.5-pro` |
-   | `all/grok` | `responses` | `grok` | `grok-4.3` |
-
-5. Configure channel pricing and model mapping under the concrete platforms
-   named in each route. Composite routing does not create pricing records.
-6. Create a subscription payment plan for the composite group.
-
-The same composite group can also rely on built-in detection for standard model
-names such as `gpt-*`, `claude-*`, `gemini-*`, and `grok-*`. Explicit routes are
-recommended for bundled plan aliases because they make endpoint, provider, and
-upstream model attribution reviewable in the admin UI.
+The Composite group itself should have no directly assigned or copied
+accounts. Account availability and provider-specific pricing policy come from
+each route's target group.
 
 ## Limits
 
-Composite routes choose a concrete provider and upstream model; they do not
-create synthetic model metadata, pricing, or upstream capability records by
-themselves. Keep channel pricing/model mapping configured for the concrete
-provider platforms that the routes target.
+Composite routes do not create model metadata, channel prices, or provider
+capabilities. Keep those configured on the concrete target groups and their
+accounts.
 
-This PR intentionally does not implement:
+Composite routing does not provide:
 
-- AUTO smart-routing among multiple providers for the same abstract task.
-- Direct API-key binding to several existing groups without a composite group.
-- Protocol-agnostic provider decoupling or a LiteLLM-style adapter rewrite.
+- Automatic provider selection for an abstract task.
+- Detector-based fallback for unconfigured models.
+- Nested Composite targets.
+- A default multiplier that applies when no route matches.

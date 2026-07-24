@@ -74,6 +74,15 @@
             </span>
           </div>
         </div>
+        <div v-if="platform === 'composite'" class="col-span-2 border-t border-gray-200 pt-2 dark:border-dark-600">
+          <CompositeRoutePricingList
+            v-if="compositeRoutePricing.length > 0"
+            :routes="compositeRoutePricing"
+          />
+          <p v-else class="text-xs font-medium text-red-600 dark:text-red-400">
+            {{ t('payment.planCard.noCompositeRoutes') }}
+          </p>
+        </div>
       </div>
 
       <!-- Features list (compact) -->
@@ -109,6 +118,7 @@ import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { planValiditySuffix } from './validity'
 import { currencySymbol } from '@/components/payment/currency'
+import CompositeRoutePricingList from './CompositeRoutePricingList.vue'
 import {
   platformAccentBarClass,
   platformBadgeLightClass,
@@ -146,14 +156,18 @@ const discountText = computed(() => {
 })
 
 const rateDisplay = computed(() => {
+  if (platform.value === 'composite') {
+    return t('payment.planCard.pricedByRoute')
+  }
   const rate = props.plan.rate_multiplier ?? 1
   return `×${Number(rate.toPrecision(10))}`
 })
 
 const appStore = useAppStore()
 const planCurrencySymbol = computed(() => currencySymbol(props.plan.currency || 'USD'))
+const compositeRoutePricing = computed(() => props.plan.composite_route_pricing ?? [])
 
-const hasPeakRate = computed(() => groupHasPeakRate(props.plan))
+const hasPeakRate = computed(() => platform.value !== 'composite' && groupHasPeakRate(props.plan))
 
 const peakRateDisplay = computed(() => {
   return formatPeakRateWindow(props.plan, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))

@@ -57,6 +57,7 @@ type GatewayHandler struct {
 	maxAccountSwitchesGemini  int
 	cfg                       *config.Config
 	settingService            *service.SettingService
+	compositeResolver         *service.CompositeRouteResolver
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -114,6 +115,12 @@ func NewGatewayHandler(
 		maxAccountSwitchesGemini:  maxAccountSwitchesGemini,
 		cfg:                       cfg,
 		settingService:            settingService,
+	}
+}
+
+func (h *GatewayHandler) SetCompositeRouteResolver(resolver *service.CompositeRouteResolver) {
+	if h != nil {
+		h.compositeResolver = resolver
 	}
 }
 
@@ -1024,17 +1031,22 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	if platform == service.PlatformComposite {
-		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID)
+		availableModels, err := h.compositeAvailableModels(c.Request.Context(), groupID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": gin.H{
+					"type":    "server_error",
+					"message": "Failed to list composite model routes",
+				},
+			})
+			return
+		}
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
-			availableModels = filterModelsByCustomList(availableModels, defaultModelIDsForPlatform(service.PlatformComposite), apiKey.Group.ModelsListConfig.Models)
+			availableModels = filterModelsByCustomList(availableModels, nil, apiKey.Group.ModelsListConfig.Models)
 			writeCustomModelsList(c, service.PlatformComposite, availableModels)
 			return
 		}
-		if len(availableModels) > 0 {
-			writeModelsList(c, service.PlatformComposite, availableModels)
-			return
-		}
-		writeModelsList(c, service.PlatformComposite, defaultModelIDsForPlatform(service.PlatformComposite))
+		writeModelsList(c, service.PlatformComposite, availableModels)
 		return
 	}
 
@@ -1079,33 +1091,49 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	})
 }
 
-func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {
-	if h == nil || h.gatewayService == nil {
-		return nil
+func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) ([]string, error) {
+	if h == nil || h.gatewayService == nil || h.compositeResolver == nil || groupID == nil || *groupID <= 0 {
+		return nil, nil
+	}
+	routes, err := h.compositeResolver.ListEnabledRoutes(ctx, *groupID)
+	if err != nil {
+		return nil, err
 	}
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
-	schedulablePlatforms := h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
-	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
-		platformModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
-		if len(platformModels) == 0 {
-			if _, ok := schedulablePlatforms[platform]; ok {
-				platformModels = defaultModelIDsForPlatform(platform)
-			}
+	addModel := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return
 		}
-		for _, model := range platformModels {
-			model = strings.TrimSpace(model)
-			if model == "" {
-				continue
+		if _, ok := seen[model]; ok {
+			return
+		}
+		seen[model] = struct{}{}
+		models = append(models, model)
+	}
+	for _, route := range routes {
+		if route.TargetGroupID == nil || *route.TargetGroupID <= 0 {
+			continue
+		}
+		publicModel := strings.TrimSpace(route.PublicModel)
+		switch route.MatchType {
+		case service.CompositeRouteMatchExact:
+			addModel(publicModel)
+		case service.CompositeRouteMatchPrefix:
+			targetGroupID := *route.TargetGroupID
+			targetModels := h.gatewayService.GetAvailableModels(ctx, &targetGroupID, route.TargetPlatform)
+			if len(targetModels) == 0 {
+				targetModels = defaultModelIDsForPlatform(route.TargetPlatform)
 			}
-			if _, ok := seen[model]; ok {
-				continue
+			for _, model := range targetModels {
+				if strings.HasPrefix(model, publicModel) {
+					addModel(model)
+				}
 			}
-			seen[model] = struct{}{}
-			models = append(models, model)
 		}
 	}
-	return models
+	return models, nil
 }
 
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {

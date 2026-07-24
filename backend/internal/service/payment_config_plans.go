@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
@@ -75,17 +76,32 @@ func validatePlanPatch(req UpdatePlanRequest) error {
 
 // PlanGroupInfo holds the group details needed for subscription plan display.
 type PlanGroupInfo struct {
-	Platform           string   `json:"platform"`
-	Name               string   `json:"name"`
-	RateMultiplier     float64  `json:"rate_multiplier"`
-	PeakRateEnabled    bool     `json:"peak_rate_enabled"`
-	PeakStart          string   `json:"peak_start"`
-	PeakEnd            string   `json:"peak_end"`
-	PeakRateMultiplier float64  `json:"peak_rate_multiplier"`
-	DailyLimitUSD      *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD     *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD    *float64 `json:"monthly_limit_usd"`
-	ModelScopes        []string `json:"supported_model_scopes"`
+	Platform              string                      `json:"platform"`
+	Name                  string                      `json:"name"`
+	RateMultiplier        float64                     `json:"rate_multiplier"`
+	PeakRateEnabled       bool                        `json:"peak_rate_enabled"`
+	PeakStart             string                      `json:"peak_start"`
+	PeakEnd               string                      `json:"peak_end"`
+	PeakRateMultiplier    float64                     `json:"peak_rate_multiplier"`
+	DailyLimitUSD         *float64                    `json:"daily_limit_usd"`
+	WeeklyLimitUSD        *float64                    `json:"weekly_limit_usd"`
+	MonthlyLimitUSD       *float64                    `json:"monthly_limit_usd"`
+	ModelScopes           []string                    `json:"supported_model_scopes"`
+	CompositeRoutePricing []CompositeRoutePricingInfo `json:"composite_route_pricing,omitempty"`
+}
+
+// CompositeRoutePricingInfo is the public billing contract for one enabled
+// composite route. RateMultiplier is already resolved using route override
+// first and the concrete target group's default second.
+type CompositeRoutePricingInfo struct {
+	PublicModel     string  `json:"public_model"`
+	MatchType       string  `json:"match_type"`
+	Endpoint        string  `json:"endpoint"`
+	TargetGroupID   int64   `json:"target_group_id"`
+	TargetGroupName string  `json:"target_group_name"`
+	TargetPlatform  string  `json:"target_platform"`
+	RateMultiplier  float64 `json:"rate_multiplier"`
+	RateSource      string  `json:"rate_source"`
 }
 
 // GetGroupInfoMap returns a map of group_id → PlanGroupInfo for the given plans.
@@ -106,6 +122,7 @@ func (s *PaymentConfigService) GetGroupInfoMap(ctx context.Context, plans []*dbe
 		return nil
 	}
 	m := make(map[int64]PlanGroupInfo, len(groups))
+	compositeIDs := make([]int64, 0)
 	for _, g := range groups {
 		m[int64(g.ID)] = PlanGroupInfo{
 			Platform:           g.Platform,
@@ -120,8 +137,93 @@ func (s *PaymentConfigService) GetGroupInfoMap(ctx context.Context, plans []*dbe
 			MonthlyLimitUSD:    g.MonthlyLimitUsd,
 			ModelScopes:        g.SupportedModelScopes,
 		}
+		if g.Platform == PlatformComposite {
+			compositeIDs = append(compositeIDs, int64(g.ID))
+		}
+	}
+	for groupID, routes := range s.GetCompositeRoutePricing(ctx, compositeIDs) {
+		info := m[groupID]
+		info.CompositeRoutePricing = routes
+		m[groupID] = info
 	}
 	return m
+}
+
+// GetCompositeRoutePricing returns the effective public route pricing for the
+// requested Composite groups. Invalid or unavailable target groups are omitted.
+func (s *PaymentConfigService) GetCompositeRoutePricing(ctx context.Context, compositeGroupIDs []int64) map[int64][]CompositeRoutePricingInfo {
+	if s == nil || s.entClient == nil || len(compositeGroupIDs) == 0 {
+		return nil
+	}
+	routes, err := s.entClient.CompositeModelRoute.Query().
+		Where(
+			compositemodelroute.GroupIDIn(compositeGroupIDs...),
+			compositemodelroute.EnabledEQ(true),
+			compositemodelroute.DeletedAtIsNil(),
+			compositemodelroute.TargetGroupIDNotNil(),
+		).
+		Order(
+			dbent.Asc(compositemodelroute.FieldPriority),
+			dbent.Asc(compositemodelroute.FieldID),
+		).
+		All(ctx)
+	if err != nil || len(routes) == 0 {
+		return nil
+	}
+
+	targetIDs := make([]int64, 0, len(routes))
+	seenTargets := make(map[int64]struct{}, len(routes))
+	for _, route := range routes {
+		if route.TargetGroupID == nil || *route.TargetGroupID <= 0 {
+			continue
+		}
+		if _, ok := seenTargets[*route.TargetGroupID]; ok {
+			continue
+		}
+		seenTargets[*route.TargetGroupID] = struct{}{}
+		targetIDs = append(targetIDs, *route.TargetGroupID)
+	}
+	if len(targetIDs) == 0 {
+		return nil
+	}
+	targets, err := s.entClient.Group.Query().Where(group.IDIn(targetIDs...)).All(ctx)
+	if err != nil {
+		return nil
+	}
+	targetByID := make(map[int64]*dbent.Group, len(targets))
+	for _, target := range targets {
+		if target.Status == StatusActive && isConcreteRequestPlatform(target.Platform) {
+			targetByID[int64(target.ID)] = target
+		}
+	}
+
+	result := make(map[int64][]CompositeRoutePricingInfo)
+	for _, route := range routes {
+		if route.TargetGroupID == nil {
+			continue
+		}
+		target := targetByID[*route.TargetGroupID]
+		if target == nil {
+			continue
+		}
+		rate := target.RateMultiplier
+		source := "target_group"
+		if route.RateMultiplier != nil && *route.RateMultiplier > 0 {
+			rate = *route.RateMultiplier
+			source = "route"
+		}
+		result[route.GroupID] = append(result[route.GroupID], CompositeRoutePricingInfo{
+			PublicModel:     route.PublicModel,
+			MatchType:       route.MatchType,
+			Endpoint:        route.Endpoint,
+			TargetGroupID:   *route.TargetGroupID,
+			TargetGroupName: target.Name,
+			TargetPlatform:  target.Platform,
+			RateMultiplier:  rate,
+			RateSource:      source,
+		})
+	}
+	return result
 }
 
 func (s *PaymentConfigService) ListPlans(ctx context.Context) ([]*dbent.SubscriptionPlan, error) {

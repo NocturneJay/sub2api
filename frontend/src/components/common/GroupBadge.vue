@@ -70,6 +70,7 @@ const isSubscription = computed(() => props.subscriptionType === 'subscription')
 // 是否有专属倍率（且与默认倍率不同）
 const hasCustomRate = computed(() => {
   return (
+    props.platform !== 'composite' &&
     props.userRateMultiplier !== null &&
     props.userRateMultiplier !== undefined &&
     props.rateMultiplier !== undefined &&
@@ -80,7 +81,13 @@ const hasCustomRate = computed(() => {
 const appStore = useAppStore()
 
 const hasPeakRate = computed(() => {
-  return Boolean(props.showRate && props.peakRateEnabled && props.peakStart && props.peakEnd)
+  return Boolean(
+    props.platform !== 'composite' &&
+    props.showRate &&
+    props.peakRateEnabled &&
+    props.peakStart &&
+    props.peakEnd
+  )
 })
 
 const peakRateText = computed(() => {
@@ -110,6 +117,9 @@ const showLabel = computed(() => {
 
 // Label text
 const labelText = computed(() => {
+  if (props.platform === 'composite') {
+    return t('admin.groups.compositePricingLabel')
+  }
   const rateLabel = props.rateMultiplier !== undefined ? `${props.rateMultiplier}x` : ''
   if (isSubscription.value && !props.alwaysShowRate) {
     // 如果有剩余天数，显示天数

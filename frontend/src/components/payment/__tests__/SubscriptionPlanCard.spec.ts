@@ -21,6 +21,14 @@ const i18n = createI18n({
         planCard: {
           quota: "Quota",
           rate: "Rate",
+          peakRate: "Peak Rate",
+          pricedByRoute: "Priced by route",
+          routePricing: "Model route rates",
+          routeCount: "{count} routes",
+          routeOverride: "Route override",
+          targetGroupRate: "Target group",
+          endpoint: "Endpoint",
+          noCompositeRoutes: "No available model routes configured",
           unlimited: "Unlimited",
         },
         subscribeNow: "Subscribe now",
@@ -85,5 +93,35 @@ describe("SubscriptionPlanCard", () => {
     expect(cnyPlan).toContain("¥20CNY");
     expect(mountPlanCard("openai", { currency: "USD" }).text()).toContain("$10USD");
     expect(mountPlanCard("openai", { currency: "" }).text()).toContain("$10");
+  });
+
+  it("shows effective target-group route rates for composite plans", () => {
+    const text = mountPlanCard("composite", {
+      rate_multiplier: 9,
+      peak_rate_enabled: true,
+      peak_start: "09:00",
+      peak_end: "18:00",
+      peak_rate_multiplier: 3,
+      composite_route_pricing: [
+        {
+          public_model: "openrouter/gpt-5",
+          match_type: "exact",
+          endpoint: "responses",
+          target_group_id: 42,
+          target_group_name: "OpenAI standard",
+          target_platform: "openai",
+          rate_multiplier: 1.25,
+          rate_source: "target_group",
+        },
+      ],
+    }).text();
+
+    expect(text).toContain("payment.planCard.pricedByRoute");
+    expect(text).toContain("openrouter/gpt-5");
+    expect(text).toContain("OpenAI standard");
+    expect(text).toContain("×1.25");
+    expect(text).toContain("payment.planCard.targetGroupRate");
+    expect(text).not.toContain("×9");
+    expect(text).not.toContain("payment.planCard.peakRate");
   });
 });

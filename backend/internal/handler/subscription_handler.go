@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -32,14 +34,53 @@ type SubscriptionProgressInfo struct {
 
 // SubscriptionHandler handles user subscription operations
 type SubscriptionHandler struct {
-	subscriptionService *service.SubscriptionService
+	subscriptionService  *service.SubscriptionService
+	paymentConfigService *service.PaymentConfigService
 }
 
 // NewSubscriptionHandler creates a new user subscription handler
-func NewSubscriptionHandler(subscriptionService *service.SubscriptionService) *SubscriptionHandler {
+func NewSubscriptionHandler(
+	subscriptionService *service.SubscriptionService,
+	paymentConfigService *service.PaymentConfigService,
+) *SubscriptionHandler {
 	return &SubscriptionHandler{
-		subscriptionService: subscriptionService,
+		subscriptionService:  subscriptionService,
+		paymentConfigService: paymentConfigService,
 	}
+}
+
+func (h *SubscriptionHandler) compositeRoutePricing(
+	ctx context.Context,
+	subscriptions []service.UserSubscription,
+) map[int64][]service.CompositeRoutePricingInfo {
+	if h.paymentConfigService == nil || len(subscriptions) == 0 {
+		return nil
+	}
+	groupIDs := make([]int64, 0, len(subscriptions))
+	seen := make(map[int64]struct{}, len(subscriptions))
+	for i := range subscriptions {
+		groupID := subscriptions[i].GroupID
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		groupIDs = append(groupIDs, groupID)
+	}
+	return h.paymentConfigService.GetCompositeRoutePricing(ctx, groupIDs)
+}
+
+func userSubscriptionDTO(
+	subscription *service.UserSubscription,
+	routePricing map[int64][]service.CompositeRoutePricingInfo,
+) *dto.UserSubscription {
+	out := dto.UserSubscriptionFromService(subscription)
+	if out != nil {
+		out.CompositeRoutePricing = routePricing[subscription.GroupID]
+	}
+	return out
 }
 
 // List handles listing current user's subscriptions
@@ -57,9 +98,10 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 		return
 	}
 
+	routePricing := h.compositeRoutePricing(c.Request.Context(), subscriptions)
 	out := make([]dto.UserSubscription, 0, len(subscriptions))
 	for i := range subscriptions {
-		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]))
+		out = append(out, *userSubscriptionDTO(&subscriptions[i], routePricing))
 	}
 	response.Success(c, out)
 }
@@ -79,9 +121,10 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 		return
 	}
 
+	routePricing := h.compositeRoutePricing(c.Request.Context(), subscriptions)
 	out := make([]dto.UserSubscription, 0, len(subscriptions))
 	for i := range subscriptions {
-		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]))
+		out = append(out, *userSubscriptionDTO(&subscriptions[i], routePricing))
 	}
 	response.Success(c, out)
 }
@@ -103,6 +146,7 @@ func (h *SubscriptionHandler) GetProgress(c *gin.Context) {
 	}
 
 	result := make([]SubscriptionProgressInfo, 0, len(subscriptions))
+	routePricing := h.compositeRoutePricing(c.Request.Context(), subscriptions)
 	for i := range subscriptions {
 		sub := &subscriptions[i]
 		progress, err := h.subscriptionService.GetSubscriptionProgress(c.Request.Context(), sub.ID)
@@ -111,7 +155,7 @@ func (h *SubscriptionHandler) GetProgress(c *gin.Context) {
 			continue
 		}
 		result = append(result, SubscriptionProgressInfo{
-			Subscription: dto.UserSubscriptionFromService(sub),
+			Subscription: userSubscriptionDTO(sub, routePricing),
 			Progress:     progress,
 		})
 	}

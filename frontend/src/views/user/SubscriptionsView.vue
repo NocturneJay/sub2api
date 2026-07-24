@@ -50,7 +50,14 @@
                   {{ subscription.group.description }}
                 </p>
                 <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-400 dark:text-gray-500">
-                  <span>{{ t('payment.planCard.rate') }}: ×{{ subscription.group?.rate_multiplier ?? 1 }}</span>
+                  <span>
+                    {{ t('payment.planCard.rate') }}:
+                    {{
+                      subscription.group?.platform === 'composite'
+                        ? t('payment.planCard.pricedByRoute')
+                        : `×${subscription.group?.rate_multiplier ?? 1}`
+                    }}
+                  </span>
                   <span v-if="subscriptionHasPeakRate(subscription)" class="text-amber-700 dark:text-amber-300">
                     {{ t('payment.planCard.peakRate') }}: {{ subscriptionPeakRateLabel(subscription) }}
                   </span>
@@ -82,6 +89,17 @@
 
           <!-- Usage Progress -->
           <div class="space-y-4 p-4">
+            <CompositeRoutePricingList
+              v-if="subscription.composite_route_pricing?.length"
+              :routes="subscription.composite_route_pricing"
+            />
+            <div
+              v-else-if="subscription.group?.platform === 'composite'"
+              class="text-xs text-amber-700 dark:text-amber-300"
+            >
+              {{ t('payment.planCard.noCompositeRoutes') }}
+            </div>
+
             <!-- Expiration Info -->
             <div v-if="subscription.expires_at" class="flex items-center justify-between text-sm">
               <span class="text-gray-500 dark:text-dark-400">{{
@@ -256,6 +274,7 @@ import subscriptionsAPI from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import CompositeRoutePricingList from '@/components/payment/CompositeRoutePricingList.vue'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
@@ -279,6 +298,7 @@ const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
+  if (subscription.group?.platform === 'composite') return false
   return hasPeakRate(subscription.group)
 }
 

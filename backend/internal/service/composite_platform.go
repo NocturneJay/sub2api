@@ -33,7 +33,7 @@ func ResolvedTargetPlatformFromContext(ctx context.Context) (string, bool) {
 }
 
 func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDecision) context.Context {
-	if ctx == nil || !decision.Matched {
+	if ctx == nil || !decision.Matched || decision.TargetGroupID == nil || *decision.TargetGroupID <= 0 {
 		return ctx
 	}
 	ctx = WithResolvedTargetPlatform(ctx, decision.TargetPlatform)
@@ -186,79 +186,20 @@ func CompositeRouteSourceFromContext(ctx context.Context) (string, bool) {
 	return source, true
 }
 
-// DetectModelPlatform maps common public model IDs to the concrete provider
-// platform used by sub2api. It intentionally returns false for ambiguous model
-// names so composite groups fail closed instead of guessing.
-func DetectModelPlatform(model string) (string, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(model))
-	if normalized == "" {
-		return "", false
-	}
-
-	normalized = strings.TrimPrefix(normalized, "models/")
-	if slash := strings.IndexByte(normalized, '/'); slash > 0 {
-		provider := strings.TrimSpace(normalized[:slash])
-		rest := strings.TrimSpace(normalized[slash+1:])
-		switch provider {
-		case "anthropic", "claude":
-			return PlatformAnthropic, true
-		case "openai", "chatgpt":
-			return PlatformOpenAI, true
-		case "google", "google-ai-studio", "gemini":
-			return PlatformGemini, true
-		case "xai", "x-ai", "grok":
-			return PlatformGrok, true
-		}
-		if rest != "" {
-			normalized = strings.TrimPrefix(rest, "models/")
-		}
-	}
-
-	switch {
-	case strings.HasPrefix(normalized, "anthropic.claude-"),
-		strings.HasPrefix(normalized, "claude-"):
-		return PlatformAnthropic, true
-	case strings.HasPrefix(normalized, "gpt-"),
-		strings.HasPrefix(normalized, "chatgpt-"),
-		strings.HasPrefix(normalized, "codex-"),
-		strings.HasPrefix(normalized, "text-embedding-"),
-		strings.HasPrefix(normalized, "text-moderation-"),
-		strings.HasPrefix(normalized, "omni-moderation-"),
-		strings.HasPrefix(normalized, "dall-e-"),
-		strings.HasPrefix(normalized, "gpt-image-"),
-		strings.HasPrefix(normalized, "tts-"),
-		strings.HasPrefix(normalized, "whisper-"),
-		hasOpenAISeriesPrefix(normalized):
-		return PlatformOpenAI, true
-	case strings.HasPrefix(normalized, "gemini-"),
-		strings.HasPrefix(normalized, "learnlm-"):
-		return PlatformGemini, true
-	case normalized == "grok" || strings.HasPrefix(normalized, "grok-"):
-		return PlatformGrok, true
-	default:
-		return "", false
-	}
-}
-
-func hasOpenAISeriesPrefix(model string) bool {
-	for _, prefix := range []string{"o1", "o3", "o4", "o5"} {
-		if model == prefix || strings.HasPrefix(model, prefix+"-") {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, group *Group, requestedModel, endpoint string) (CompositeRouteDecision, bool, error) {
 	if group == nil || group.Platform != PlatformComposite {
 		return CompositeRouteDecision{}, false, nil
 	}
 	if platform, ok := ResolvedTargetPlatformFromContext(ctx); ok {
+		pricingGroupID, pricingGroupOK := ResolvedPricingGroupIDFromContext(ctx)
+		if !pricingGroupOK {
+			return CompositeRouteDecision{}, false, nil
+		}
 		upstreamModel := requestedModel
 		if resolvedModel, modelOK := ResolvedUpstreamModelFromContext(ctx); modelOK {
 			upstreamModel = resolvedModel
 		}
-		source := CompositeRouteSourceDetector
+		source := CompositeRouteSourceExplicit
 		if resolvedSource, sourceOK := CompositeRouteSourceFromContext(ctx); sourceOK {
 			source = resolvedSource
 		}
@@ -271,14 +212,14 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 			UpstreamModel:  upstreamModel,
 			Endpoint:       normalizeCompositeRouteEndpoint(endpoint),
 		}
-		// 恢复"委托到子分组"信息（重试链路复用首次解析结果），保证调度仍落在子分组账号池。
-		if pricingGroupID, pgOK := ResolvedPricingGroupIDFromContext(ctx); pgOK {
-			pg := pricingGroupID
-			decision.TargetGroupID = &pg
-			if m, mOK := ResolvedRateMultiplierFromContext(ctx); mOK {
-				mm := m
-				decision.RateMultiplier = &mm
-			}
+		pg := pricingGroupID
+		decision.TargetGroupID = &pg
+		if m, mOK := ResolvedRateMultiplierFromContext(ctx); mOK {
+			mm := m
+			decision.RateMultiplier = &mm
+		}
+		if err := s.applyCompositeTargetGroup(ctx, group, &decision); err != nil {
+			return decision, false, err
 		}
 		return decision, true, nil
 	}
@@ -290,10 +231,13 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 		return decision, false, nil
 	}
 	// 委托到子分组：用子分组平台填充 TargetPlatform，并校验子分组合法（存在、具体平台、非自身/非 composite）。
-	if decision.TargetGroupID != nil {
-		if err := s.applyCompositeTargetGroup(ctx, group, &decision); err != nil {
-			return decision, false, err
-		}
+	if decision.TargetGroupID == nil || *decision.TargetGroupID <= 0 {
+		decision.Matched = false
+		decision.Reason = "matched route has no target group"
+		return decision, false, nil
+	}
+	if err := s.applyCompositeTargetGroup(ctx, group, &decision); err != nil {
+		return decision, false, err
 	}
 	return decision, decision.Matched, nil
 }

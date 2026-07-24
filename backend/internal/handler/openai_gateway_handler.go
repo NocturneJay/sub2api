@@ -241,12 +241,10 @@ func (h *OpenAIGatewayHandler) resolveCompositeWebSocketRoute(c *gin.Context, ap
 			}
 			return payload, model, nil
 		}
+		return nil, "", fmt.Errorf("%w: %s", service.ErrCompositeRouteRequired, model)
 	}
 
-	// Detector fallback preserves the pre-existing behavior for composite routes
-	// that do not have an explicit model rule.
-	ensureCompositeTargetPlatform(c, apiKey, model)
-	return payload, model, nil
+	return nil, "", fmt.Errorf("%w: %s", service.ErrCompositeRouteRequired, model)
 }
 
 // Responses handles OpenAI Responses API endpoint
@@ -1572,6 +1570,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	firstMessage, reqModel, err = h.resolveCompositeWebSocketRoute(c, apiKey, firstMessage, reqModel)
 	if err != nil {
 		reqLog.Warn("openai.websocket_composite_route_resolve_failed", zap.Error(err))
+		if errors.Is(err, service.ErrCompositeRouteRequired) {
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is not supported by this composite group")
+			return
+		}
 		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to resolve composite model route")
 		return
 	}

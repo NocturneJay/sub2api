@@ -774,6 +774,7 @@ export default {
       searchGroups: 'Search groups...',
       createGroup: 'Create Group',
       editGroup: 'Edit Group',
+      compositePricingLabel: 'Route pricing',
       deleteGroup: 'Delete Group',
       duplicate: 'Duplicate',
       duplicating: 'Duplicating',
@@ -1040,6 +1041,8 @@ export default {
         rateMultiplierOverride: 'Rate Multiplier Override',
         rateMultiplierPlaceholder: 'Leave blank to inherit the sub-group multiplier',
         upstreamModel: 'Upstream Model',
+        upstreamModelHint: 'Leave blank to preserve the requested model; prefix routes should usually stay blank.',
+        preserveRequestedModel: 'Preserve requested model',
         notes: 'Notes',
         enabled: 'Enabled',
         preview: 'Preview',
@@ -1069,8 +1072,7 @@ export default {
           prefix: 'Prefix'
         },
         sources: {
-          route: 'Route',
-          detector: 'Detector'
+          route: 'Route'
         }
       },
       claudeCode: {

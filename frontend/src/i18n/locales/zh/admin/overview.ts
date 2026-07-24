@@ -771,6 +771,7 @@ export default {
       searchGroups: '搜索分组...',
       createGroup: '创建分组',
       editGroup: '编辑分组',
+      compositePricingLabel: '按路由计费',
       deleteGroup: '删除分组',
       duplicate: '复制',
       duplicating: '复制中',
@@ -1037,6 +1038,8 @@ export default {
         rateMultiplierOverride: '倍率覆盖',
         rateMultiplierPlaceholder: '留空则沿用子分组倍率',
         upstreamModel: '上游模型',
+        upstreamModelHint: '留空时保留用户请求的模型名；前缀路由通常应留空。',
+        preserveRequestedModel: '保留请求模型',
         notes: '备注',
         enabled: '启用',
         preview: '预览',
@@ -1066,8 +1069,7 @@ export default {
           prefix: '前缀'
         },
         sources: {
-          route: '路由',
-          detector: '内置识别'
+          route: '路由'
         }
       },
       claudeCode: {

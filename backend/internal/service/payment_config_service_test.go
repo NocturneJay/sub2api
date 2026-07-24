@@ -382,6 +382,90 @@ func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 	}
 }
 
+func TestGetGroupInfoMapIncludesEffectiveCompositeRoutePricing(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	target, err := client.Group.Create().
+		SetName("route-target").
+		SetStatus(StatusActive).
+		SetPlatform(PlatformOpenAI).
+		SetRateMultiplier(1.25).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create target group: %v", err)
+	}
+	composite, err := client.Group.Create().
+		SetName("composite-plan").
+		SetStatus(StatusActive).
+		SetPlatform(PlatformComposite).
+		SetRateMultiplier(9).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create composite group: %v", err)
+	}
+
+	_, err = client.CompositeModelRoute.Create().
+		SetGroupID(composite.ID).
+		SetPublicModel("openrouter/gpt-5").
+		SetTargetPlatform(PlatformOpenAI).
+		SetTargetGroupID(target.ID).
+		SetEndpoint(CompositeRouteEndpointResponses).
+		SetPriority(10).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create inherited route: %v", err)
+	}
+	_, err = client.CompositeModelRoute.Create().
+		SetGroupID(composite.ID).
+		SetPublicModel("openrouter/o3").
+		SetTargetPlatform(PlatformOpenAI).
+		SetTargetGroupID(target.ID).
+		SetRateMultiplier(2.5).
+		SetPriority(20).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create override route: %v", err)
+	}
+	_, err = client.CompositeModelRoute.Create().
+		SetGroupID(composite.ID).
+		SetPublicModel("disabled").
+		SetTargetPlatform(PlatformOpenAI).
+		SetTargetGroupID(target.ID).
+		SetEnabled(false).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled route: %v", err)
+	}
+
+	plan, err := client.SubscriptionPlan.Create().
+		SetGroupID(composite.ID).
+		SetName("Ultra").
+		SetPrice(30).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	svc := &PaymentConfigService{entClient: client}
+
+	info := svc.GetGroupInfoMap(ctx, []*dbent.SubscriptionPlan{plan})[composite.ID]
+
+	if info.Platform != PlatformComposite {
+		t.Fatalf("platform = %q, want %q", info.Platform, PlatformComposite)
+	}
+	if len(info.CompositeRoutePricing) != 2 {
+		t.Fatalf("route pricing count = %d, want 2", len(info.CompositeRoutePricing))
+	}
+	inherited := info.CompositeRoutePricing[0]
+	if inherited.PublicModel != "openrouter/gpt-5" || inherited.RateMultiplier != 1.25 || inherited.RateSource != "target_group" {
+		t.Fatalf("unexpected inherited route pricing: %+v", inherited)
+	}
+	override := info.CompositeRoutePricing[1]
+	if override.PublicModel != "openrouter/o3" || override.RateMultiplier != 2.5 || override.RateSource != "route" {
+		t.Fatalf("unexpected override route pricing: %+v", override)
+	}
+}
+
 func newPaymentConfigServiceTestClient(t *testing.T) *dbent.Client {
 	t.Helper()
 

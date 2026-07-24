@@ -122,7 +122,13 @@
                   <div>
                     <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('payment.planCard.rate') }}</span>
                     <div class="flex items-baseline">
-                      <span :class="['text-lg font-bold', planTextClass]">×{{ selectedPlan.rate_multiplier ?? 1 }}</span>
+                      <span :class="['text-lg font-bold', planTextClass]">
+                        {{
+                          selectedPlan.group_platform === 'composite'
+                            ? t('payment.planCard.pricedByRoute')
+                            : `×${selectedPlan.rate_multiplier ?? 1}`
+                        }}
+                      </span>
                     </div>
                   </div>
                   <div v-if="planHasPeakRate(selectedPlan)">
@@ -147,6 +153,18 @@
                     <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('payment.planCard.quota') }}</span>
                     <div class="text-lg font-semibold text-gray-800 dark:text-gray-200">{{ t('payment.planCard.unlimited') }}</div>
                   </div>
+                </div>
+                <div
+                  v-if="selectedPlan.group_platform === 'composite'"
+                  class="mt-3 border-t border-gray-200 pt-3 dark:border-dark-600"
+                >
+                  <CompositeRoutePricingList
+                    v-if="selectedPlan.composite_route_pricing?.length"
+                    :routes="selectedPlan.composite_route_pricing"
+                  />
+                  <p v-else class="text-sm font-medium text-red-600 dark:text-red-400">
+                    {{ t('payment.planCard.noCompositeRoutes') }}
+                  </p>
                 </div>
               </div>
               <div v-if="enabledMethods.length >= 1" class="card p-6">
@@ -203,7 +221,14 @@
                         <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium', platformBadgeLightClass(sub.group?.platform || '')]">{{ platformLabel(sub.group?.platform || '') }}</span>
                       </div>
                       <div class="flex flex-wrap gap-x-3 text-[11px] text-gray-400 dark:text-gray-500">
-                        <span>{{ t('payment.planCard.rate') }}: ×{{ sub.group?.rate_multiplier ?? 1 }}</span>
+                        <span>
+                          {{ t('payment.planCard.rate') }}:
+                          {{
+                            sub.group?.platform === 'composite'
+                              ? t('payment.planCard.pricedByRoute')
+                              : `×${sub.group?.rate_multiplier ?? 1}`
+                          }}
+                        </span>
                         <span v-if="subscriptionHasPeakRate(sub)">{{ t('payment.planCard.peakRate') }}: {{ subscriptionPeakRateLabel(sub) }}</span>
                         <span v-if="sub.group?.daily_limit_usd == null && sub.group?.weekly_limit_usd == null && sub.group?.monthly_limit_usd == null">{{ t('payment.planCard.quota') }}: {{ t('payment.planCard.unlimited') }}</span>
                         <span v-if="sub.expires_at">{{ t('userSubscriptions.daysRemaining', { days: getDaysRemaining(sub.expires_at) }) }}</span>
@@ -285,6 +310,7 @@ import {
 } from '@/components/payment/paymentFlow'
 import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, platformTextClass, platformLabel } from '@/utils/platformColors'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
+import CompositeRoutePricingList from '@/components/payment/CompositeRoutePricingList.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
@@ -310,8 +336,8 @@ function getDaysRemaining(expiresAt: string): number {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
 }
 
-function subscriptionHasPeakRate(sub: { group?: PeakRateFields | null }): boolean {
-  return hasPeakRate(sub.group)
+function subscriptionHasPeakRate(sub: { group?: (PeakRateFields & { platform?: string }) | null }): boolean {
+  return sub.group?.platform !== 'composite' && hasPeakRate(sub.group)
 }
 
 function subscriptionPeakRateLabel(sub: { group?: PeakRateFields | null }): string {
@@ -730,7 +756,7 @@ const planValiditySuffix = computed(() => {
 })
 
 function planHasPeakRate(plan: SubscriptionPlan): boolean {
-  return hasPeakRate(plan)
+  return plan.group_platform !== 'composite' && hasPeakRate(plan)
 }
 
 function planPeakRateLabel(plan: SubscriptionPlan): string {

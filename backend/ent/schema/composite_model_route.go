@@ -45,11 +45,11 @@ func (CompositeModelRoute) Fields() []ent.Field {
 		field.String("target_platform").
 			MaxLen(50).
 			Default(domain.PlatformOpenAI).
-			Comment("Concrete provider platform. Ignored when target_group_id is set (derived from the sub-group)."),
+			Comment("Denormalized concrete provider platform derived from target_group_id."),
 		field.Int64("target_group_id").
 			Optional().
 			Nillable().
-			Comment("Sub-group to delegate to. When set, the request is scheduled from that group's accounts and priced by that group. Mutually exclusive with target_platform. Plain FK field (no edge) so many routes may point at one group."),
+			Comment("Required sub-group target for active routes. Requests use that group's accounts and pricing. Plain FK field (no edge) so many routes may point at one group."),
 		field.Float("rate_multiplier").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Optional().
@@ -58,7 +58,7 @@ func (CompositeModelRoute) Fields() []ent.Field {
 		field.String("upstream_model").
 			MaxLen(200).
 			Default("").
-			Comment("Provider model identifier; empty means public_model."),
+			Comment("Provider model identifier; empty preserves the requested model (exact routes normalize to public_model)."),
 		field.String("endpoint").
 			MaxLen(50).
 			Default("any").

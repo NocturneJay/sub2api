@@ -37,19 +37,18 @@ func (handlerCompositeRouteRepoStub) Delete(context.Context, int64) error { retu
 
 func (handlerCompositeRouteRepoStub) DeleteByGroup(context.Context, int64) error { return nil }
 
-func TestCompositeTargetPlatformAllowedResolvesKnownAllowedModel(t *testing.T) {
+func TestCompositeTargetPlatformAllowedRejectsUnroutedKnownModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("POST", "/v1/embeddings", nil)
 	apiKey := &service.APIKey{Group: &service.Group{Platform: service.PlatformComposite}}
 
-	require.True(t, compositeTargetPlatformAllowed(c, apiKey, "text-embedding-3-large", service.PlatformOpenAI))
-	platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
-	require.True(t, ok)
-	require.Equal(t, service.PlatformOpenAI, platform)
+	require.False(t, compositeTargetPlatformAllowed(c, apiKey, "text-embedding-3-large", service.PlatformOpenAI))
+	_, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+	require.False(t, ok)
 }
 
-func TestOpenAICompatibleTextTargetAllowsCompositeGrokModel(t *testing.T) {
+func TestOpenAICompatibleTextTargetRejectsUnroutedCompositeGrokModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	for _, path := range []string{"/v1/messages", "/v1/chat/completions"} {
@@ -57,10 +56,9 @@ func TestOpenAICompatibleTextTargetAllowsCompositeGrokModel(t *testing.T) {
 		c.Request = httptest.NewRequest("POST", path, nil)
 		apiKey := &service.APIKey{Group: &service.Group{Platform: service.PlatformComposite}}
 
-		require.True(t, openAICompatibleTextTargetAllowed(c, apiKey, "grok-4.3"), "path=%s", path)
-		platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
-		require.True(t, ok, "path=%s", path)
-		require.Equal(t, service.PlatformGrok, platform, "path=%s", path)
+		require.False(t, openAICompatibleTextTargetAllowed(c, apiKey, "grok-4.3"), "path=%s", path)
+		_, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+		require.False(t, ok, "path=%s", path)
 	}
 }
 
@@ -108,11 +106,13 @@ func TestClientRequestedModelUsesCompositePublicModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	targetGroupID := int64(42)
 	c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), service.CompositeRouteDecision{
 		Matched:        true,
 		Source:         service.CompositeRouteSourceExplicit,
 		PublicModel:    "public-alias",
 		TargetPlatform: service.PlatformOpenAI,
+		TargetGroupID:  &targetGroupID,
 		UpstreamModel:  "gpt-5",
 	}))
 

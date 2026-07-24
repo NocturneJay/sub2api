@@ -483,6 +483,13 @@ export default {
     planCard: {
       rate: '倍率',
       peakRate: '高峰倍率',
+      pricedByRoute: '按路由计费',
+      routePricing: '模型路由倍率',
+      routeCount: '{count} 条',
+      routeOverride: '路由覆盖',
+      targetGroupRate: '目标分组',
+      endpoint: '端点',
+      noCompositeRoutes: '暂未配置可用的模型路由',
       dailyLimit: '日限额',
       weeklyLimit: '周限额',
       monthlyLimit: '月限额',

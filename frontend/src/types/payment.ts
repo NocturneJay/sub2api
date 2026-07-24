@@ -108,12 +108,24 @@ export interface PaymentOrder {
 
 // ==================== Plans & Channels ====================
 
+export interface CompositeRoutePricing {
+  public_model: string
+  match_type: 'exact' | 'prefix'
+  endpoint: string
+  target_group_id: number
+  target_group_name: string
+  target_platform: string
+  rate_multiplier: number
+  rate_source: 'route' | 'target_group'
+}
+
 export interface SubscriptionPlan {
   id: number
   group_id: number
   group_platform?: string
   group_name?: string
   rate_multiplier?: number
+  composite_route_pricing?: CompositeRoutePricing[]
   peak_rate_enabled?: boolean
   peak_start?: string
   peak_end?: string

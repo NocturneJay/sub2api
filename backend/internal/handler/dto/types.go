@@ -628,6 +628,8 @@ type UserSubscription struct {
 
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
+
+	CompositeRoutePricing []service.CompositeRoutePricingInfo `json:"composite_route_pricing,omitempty"`
 }
 
 // AdminUserSubscription 是管理员接口使用的订阅 DTO（包含分配信息/备注等字段）。

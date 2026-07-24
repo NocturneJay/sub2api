@@ -215,12 +215,13 @@ func (s *adminServiceImpl) compositeRouteBelongsToGroup(ctx context.Context, gro
 func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*CompositeModelRoute, error) {
 	input = normalizeCompositeRouteInput(input)
 	if input.PublicModel == "" {
-		return nil, fmt.Errorf("public_model is required")
+		return nil, infraerrors.BadRequest("COMPOSITE_PUBLIC_MODEL_REQUIRED", "public_model is required")
 	}
-	// 两种目标二选一：委托到子分组（target_group_id）或直连平台（target_platform）。
-	// 分组模式下 TargetPlatform 由 prepareCompositeRouteTarget 用子分组平台预填，此处仍要求其为具体平台。
+	if input.TargetGroupID == nil || *input.TargetGroupID <= 0 {
+		return nil, infraerrors.BadRequest("COMPOSITE_TARGET_GROUP_REQUIRED", "target_group_id is required")
+	}
 	if !isConcreteRequestPlatform(input.TargetPlatform) {
-		return nil, fmt.Errorf("target_platform must be a concrete provider")
+		return nil, infraerrors.BadRequest("COMPOSITE_TARGET_GROUP_INVALID", "target group must use a concrete provider")
 	}
 	if input.Priority == 0 {
 		input.Priority = 100
@@ -240,14 +241,12 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 	}, nil
 }
 
-// prepareCompositeRouteTarget 校验"委托到子分组"路由并用子分组平台预填 TargetPlatform。
-// 分组模式：target_group_id 必须指向存在、启用、具体平台（非 composite）、非组合分组自身的子分组，
-// 并据此把 TargetPlatform 设为子分组平台（供运行期兜底与 usage 展示）。
-// 平台模式（未设 target_group_id）：原样返回，由 compositeRouteFromInput 校验 target_platform。
+// prepareCompositeRouteTarget validates the required concrete target group and
+// derives TargetPlatform from it. Composite routes never target a bare platform.
 func (s *adminServiceImpl) prepareCompositeRouteTarget(ctx context.Context, compositeGroupID int64, input CompositeRouteInput) (CompositeRouteInput, error) {
 	input = normalizeCompositeRouteInput(input)
 	if input.TargetGroupID == nil {
-		return input, nil
+		return input, infraerrors.BadRequest("COMPOSITE_TARGET_GROUP_REQUIRED", "target_group_id is required")
 	}
 	targetID := *input.TargetGroupID
 	if targetID == compositeGroupID {
@@ -324,7 +323,7 @@ func compositeDefaultModelsListCandidateIDs() []string {
 
 func canCopyAccountsFromGroupPlatform(targetPlatform, sourcePlatform string) bool {
 	if targetPlatform == PlatformComposite {
-		return sourcePlatform == PlatformComposite || isConcreteRequestPlatform(sourcePlatform)
+		return false
 	}
 	return sourcePlatform == targetPlatform
 }
@@ -339,13 +338,14 @@ func groupSupportsOAuthOnlyFilter(platform string) bool {
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
-	if input.RateMultiplier <= 0 {
-		return nil, errors.New("rate_multiplier must be > 0")
-	}
-
 	platform := input.Platform
 	if platform == "" {
 		platform = PlatformAnthropic
+	}
+	if platform == PlatformComposite {
+		input.RateMultiplier = 1
+	} else if input.RateMultiplier <= 0 {
+		return nil, errors.New("rate_multiplier must be > 0")
 	}
 	maxReasoningEffort, err := normalizeMaxReasoningEffortForPlatform(platform, input.MaxReasoningEffort)
 	if err != nil {
@@ -447,6 +447,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	// 如果指定了复制账号的源分组，先获取账号 ID 列表
 	var accountIDsToCopy []int64
 	if len(input.CopyAccountsFromGroupIDs) > 0 {
+		if platform == PlatformComposite {
+			return nil, infraerrors.BadRequest("COMPOSITE_ACCOUNT_COPY_UNSUPPORTED", "composite groups use target-group routes and cannot copy accounts")
+		}
 		// 去重源分组 IDs
 		seen := make(map[int64]struct{})
 		uniqueSourceGroupIDs := make([]int64, 0, len(input.CopyAccountsFromGroupIDs))
@@ -660,11 +663,16 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Platform != "" {
 		group.Platform = input.Platform
 	}
-	if input.RateMultiplier != nil {
+	if group.Platform == PlatformComposite {
+		group.RateMultiplier = 1
+	} else if input.RateMultiplier != nil {
 		if *input.RateMultiplier <= 0 {
 			return nil, errors.New("rate_multiplier must be > 0")
 		}
 		group.RateMultiplier = *input.RateMultiplier
+	}
+	if group.Platform == PlatformComposite && len(input.CopyAccountsFromGroupIDs) > 0 {
+		return nil, infraerrors.BadRequest("COMPOSITE_ACCOUNT_COPY_UNSUPPORTED", "composite groups use target-group routes and cannot copy accounts")
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive
@@ -997,6 +1005,15 @@ func (s *adminServiceImpl) ClearGroupRateMultipliers(ctx context.Context, groupI
 func (s *adminServiceImpl) BatchSetGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error {
 	if s.userGroupRateRepo == nil {
 		return nil
+	}
+	if s.groupRepo != nil {
+		group, err := s.groupRepo.GetByIDLite(ctx, groupID)
+		if err != nil {
+			return err
+		}
+		if group != nil && group.Platform == PlatformComposite {
+			return infraerrors.BadRequest("COMPOSITE_USER_RATE_UNSUPPORTED", "composite groups are priced by their target-group routes")
+		}
 	}
 	for _, e := range entries {
 		if e.RateMultiplier <= 0 {

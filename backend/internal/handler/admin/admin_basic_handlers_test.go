@@ -197,8 +197,20 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{
 		"public_model":    "openrouter/gpt-5",
+		"target_platform": "openai",
+		"enabled":         true,
+	})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups/2/composite-routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	body, _ = json.Marshal(map[string]any{
+		"public_model":    "openrouter/gpt-5",
 		"match_type":      "exact",
 		"target_platform": "openai",
+		"target_group_id": 3,
 		"upstream_model":  "gpt-5",
 		"endpoint":        "chat_completions",
 		"enabled":         true,
@@ -213,6 +225,7 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	body, _ = json.Marshal(map[string]any{
 		"public_model":    "openrouter/gpt-5",
 		"target_platform": "openai",
+		"target_group_id": 3,
 		"upstream_model":  "gpt-5",
 		"endpoint":        "responses",
 		"enabled":         true,
@@ -229,7 +242,7 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), `"source":"detector"`)
+	require.Contains(t, rec.Body.String(), `"source":"route"`)
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/groups/2/composite-routes/1", nil)

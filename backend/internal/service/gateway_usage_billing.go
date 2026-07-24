@@ -678,26 +678,21 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	if s.cfg != nil {
 		multiplier = s.cfg.Default.RateMultiplier
 	}
-	if apiKey.GroupID != nil && apiKey.Group != nil {
-		groupDefault := apiKey.Group.RateMultiplier
-		multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
-	}
-	// 委托到子分组（composite 路由 target_group）：token 倍率改用子分组——路由级覆盖优先，
-	// 其次子分组自身倍率。仅倍率与下方的模型价/渠道价改走子分组；配额/限额/扣费仍记在
-	// apiKey.Group（组合分组）。高峰因子仍按组合分组，在下一行叠加。
 	if delegatedPricing {
 		multiplier = pricingAPIKey.Group.RateMultiplier
 		if routeMultiplier, ok := ResolvedRateMultiplierFromContext(ctx); ok {
 			multiplier = routeMultiplier
 		}
+	} else if apiKey.GroupID != nil && apiKey.Group != nil {
+		groupDefault := apiKey.Group.RateMultiplier
+		multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
 	}
-	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
-	// 不并入上面的 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
 	baseMultiplier := multiplier
-	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, timezone.Now())
+	pricingPolicyAPIKey := apiKey
 	if delegatedPricing {
-		imageMultiplier = resolveImageRateMultiplier(pricingAPIKey, baseMultiplier)
+		pricingPolicyAPIKey = pricingAPIKey
 	}
+	multiplier, imageMultiplier := computePeakAwareMultipliers(pricingPolicyAPIKey, baseMultiplier, timezone.Now())
 
 	// 确定计费模型
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)

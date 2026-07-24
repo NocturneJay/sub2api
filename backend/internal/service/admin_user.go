@@ -199,6 +199,18 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 			if rate != nil && *rate <= 0 {
 				return nil, fmt.Errorf("rate_multiplier must be > 0 (group_id=%d)", groupID)
 			}
+			if rate != nil && s.groupRepo != nil {
+				group, err := s.groupRepo.GetByID(ctx, groupID)
+				if err != nil {
+					return nil, err
+				}
+				if group.Platform == PlatformComposite {
+					return nil, infraerrors.BadRequest(
+						"COMPOSITE_USER_RATE_UNSUPPORTED",
+						"composite groups are priced by their target-group routes and do not support user-specific rates",
+					)
+				}
+			}
 		}
 	}
 

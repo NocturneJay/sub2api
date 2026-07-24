@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -22,28 +23,28 @@ const (
 	CompositeRouteEndpointGemini          = "gemini"
 
 	CompositeRouteSourceExplicit = "route"
-	CompositeRouteSourceDetector = "detector"
 )
 
 var (
 	ErrCompositeRouteNotFound = infraerrors.NotFound("COMPOSITE_ROUTE_NOT_FOUND", "composite route not found")
 	ErrCompositeRouteExists   = infraerrors.Conflict("COMPOSITE_ROUTE_EXISTS", "composite route already exists")
+	ErrCompositeRouteRequired = errors.New("an enabled composite route with a target group is required")
 )
 
 // CompositeModelRoute maps one public model identifier in a composite group to
-// the concrete provider/model that should handle the request.
+// the concrete target group/model that should handle and price the request.
 type CompositeModelRoute struct {
-	ID             int64     `json:"id"`
-	GroupID        int64     `json:"group_id"`
-	PublicModel    string    `json:"public_model"`
-	MatchType      string    `json:"match_type"`
-	TargetPlatform string    `json:"target_platform"`
-	// TargetGroupID 非空表示该路由"委托到子分组"：请求由该子分组的账号池调度，
-	// 并按该子分组定价计费；配额/限额/扣费仍记在 composite（通用）分组头上。
-	// 与 TargetPlatform 二选一。
+	ID             int64  `json:"id"`
+	GroupID        int64  `json:"group_id"`
+	PublicModel    string `json:"public_model"`
+	MatchType      string `json:"match_type"`
+	TargetPlatform string `json:"target_platform"`
+	// TargetGroupID 是启用路由的必填目标：请求由该分组的账号池调度并按该分组定价，
+	// 配额、限额和扣费仍记在 Composite 父分组。TargetPlatform 由目标分组派生，
+	// 仅作为兼容读取和展示的冗余字段。
 	TargetGroupID *int64 `json:"target_group_id,omitempty"`
 	// RateMultiplier 为委托路由的每路由倍率覆盖；nil 表示沿用子分组自身倍率。
-	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
+	RateMultiplier *float64  `json:"rate_multiplier,omitempty"`
 	UpstreamModel  string    `json:"upstream_model"`
 	Endpoint       string    `json:"endpoint"`
 	Priority       int       `json:"priority"`
@@ -59,13 +60,13 @@ type CompositeRoutePreviewRequest struct {
 }
 
 type CompositeRouteDecision struct {
-	Matched        bool                 `json:"matched"`
-	Source         string               `json:"source"`
-	GroupID        int64                `json:"group_id"`
-	PublicModel    string               `json:"public_model"`
-	TargetPlatform string               `json:"target_platform"`
-	// TargetGroupID 非空表示命中"委托到子分组"路由；调度改用该子分组的账号池，
-	// 计费改用该子分组定价（RateMultiplier 为生效倍率覆盖，nil 表示沿用子分组倍率）。
+	Matched        bool   `json:"matched"`
+	Source         string `json:"source"`
+	GroupID        int64  `json:"group_id"`
+	PublicModel    string `json:"public_model"`
+	TargetPlatform string `json:"target_platform"`
+	// TargetGroupID 表示命中的具体目标分组；调度和定价改用该分组，
+	// RateMultiplier 为生效倍率覆盖，nil 表示沿用目标分组倍率。
 	TargetGroupID  *int64               `json:"target_group_id,omitempty"`
 	RateMultiplier *float64             `json:"rate_multiplier,omitempty"`
 	UpstreamModel  string               `json:"upstream_model"`
@@ -130,16 +131,14 @@ func normalizeCompositeRouteInput(input CompositeRouteInput) CompositeRouteInput
 	input.TargetPlatform = strings.TrimSpace(input.TargetPlatform)
 	input.UpstreamModel = strings.TrimSpace(input.UpstreamModel)
 	input.Endpoint = normalizeCompositeRouteEndpoint(input.Endpoint)
-	if input.UpstreamModel == "" {
+	if input.UpstreamModel == "" && input.MatchType == CompositeRouteMatchExact {
 		input.UpstreamModel = input.PublicModel
 	}
 	// 委托到子分组：非正数视为未设置；倍率覆盖非正数（<=0）视为未设置，沿用子分组倍率。
 	if input.TargetGroupID != nil && *input.TargetGroupID <= 0 {
 		input.TargetGroupID = nil
 	}
-	if input.TargetGroupID == nil {
-		input.RateMultiplier = nil
-	} else if input.RateMultiplier != nil && *input.RateMultiplier <= 0 {
+	if input.RateMultiplier != nil && *input.RateMultiplier <= 0 {
 		input.RateMultiplier = nil
 	}
 	input.Notes = strings.TrimSpace(input.Notes)

@@ -26,8 +26,11 @@
     <div class="flex shrink-0 items-center gap-2 pt-0.5">
       <div class="flex shrink-0 flex-col items-end gap-1">
         <!-- Rate pill (platform color) -->
-        <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
-          <template v-if="hasCustomRate">
+        <span v-if="rateMultiplier !== undefined || platform === 'composite'" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
+          <template v-if="platform === 'composite'">
+            {{ t('admin.groups.compositePricingLabel') }}
+          </template>
+          <template v-else-if="hasCustomRate">
             <span class="mr-1 line-through opacity-50">{{ rateMultiplier }}x</span>
             <span class="font-bold">{{ userRateMultiplier }}x</span>
           </template>
@@ -94,6 +97,7 @@ const props = withDefaults(defineProps<Props>(), {
 // Whether user has a custom rate different from default
 const hasCustomRate = computed(() => {
   return (
+    props.platform !== 'composite' &&
     props.userRateMultiplier !== null &&
     props.userRateMultiplier !== undefined &&
     props.rateMultiplier !== undefined &&
@@ -104,7 +108,12 @@ const hasCustomRate = computed(() => {
 const appStore = useAppStore()
 
 const hasPeakRate = computed(() => {
-  return Boolean(props.peakRateEnabled && props.peakStart && props.peakEnd)
+  return Boolean(
+    props.platform !== 'composite' &&
+    props.peakRateEnabled &&
+    props.peakStart &&
+    props.peakEnd
+  )
 })
 
 const peakRateText = computed(() => {

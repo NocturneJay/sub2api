@@ -459,6 +459,13 @@ export default {
     planCard: {
       rate: 'Rate',
       peakRate: 'Peak Rate',
+      pricedByRoute: 'Priced by route',
+      routePricing: 'Model route rates',
+      routeCount: '{count} routes',
+      routeOverride: 'Route override',
+      targetGroupRate: 'Target group',
+      endpoint: 'Endpoint',
+      noCompositeRoutes: 'No available model routes configured',
       dailyLimit: 'Daily',
       weeklyLimit: 'Weekly',
       monthlyLimit: 'Monthly',

@@ -40,6 +40,9 @@ func RegisterGatewayRoutes(
 	endpointNorm := handler.InboundEndpointMiddleware()
 	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
+	if h != nil && h.Gateway != nil {
+		h.Gateway.SetCompositeRouteResolver(compositeResolver)
+	}
 	if h != nil && h.OpenAIGateway != nil {
 		h.OpenAIGateway.SetCompositeRouteResolver(compositeResolver)
 	}
@@ -413,6 +416,9 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 						body = rewritten
 					}
 				}
+			} else {
+				abortUnsupportedCompositeModel(c)
+				return
 			}
 		}
 		resetRequestBody(c, body)
@@ -473,14 +479,24 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 				}
 				if decision.Matched {
 					c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+				} else {
+					abortUnsupportedCompositeModel(c)
+					return
 				}
-			}
-			if _, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); !resolved {
-				c.Request = c.Request.WithContext(service.WithResolvedTargetPlatform(c.Request.Context(), service.PlatformGemini))
 			}
 		}
 		c.Next()
 	}
+}
+
+func abortUnsupportedCompositeModel(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": gin.H{
+			"type":    "invalid_request_error",
+			"message": "Model is not supported by this composite group: configure an enabled route with a target group",
+		},
+	})
+	c.Abort()
 }
 
 func compositeGeminiModelFromParams(c *gin.Context) string {

@@ -50,7 +50,7 @@ func (s compositeRouteRepoStub) DeleteByGroup(ctx context.Context, groupID int64
 	return nil
 }
 
-func TestCompositeTargetPlatformMiddlewareResolvesModelAndRestoresBody(t *testing.T) {
+func TestCompositeTargetPlatformMiddlewareRejectsUnroutedModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
@@ -63,14 +63,7 @@ func TestCompositeTargetPlatformMiddlewareResolvesModelAndRestoresBody(t *testin
 	})))
 	router.Use(compositeTargetPlatformMiddleware(nil))
 	router.POST("/", func(c *gin.Context) {
-		platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
-		require.True(t, ok)
-		require.Equal(t, service.PlatformOpenAI, platform)
-
-		body, err := io.ReadAll(c.Request.Body)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"model":"gpt-5"}`, string(body))
-		c.Status(http.StatusNoContent)
+		t.Fatal("unrouted composite request reached handler")
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"model":"gpt-5"}`))
@@ -79,12 +72,14 @@ func TestCompositeTargetPlatformMiddlewareResolvesModelAndRestoresBody(t *testin
 
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusNoContent, w.Code)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "target group")
 }
 
 func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteAndRewritesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	targetGroupID := int64(42)
 	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []service.CompositeModelRoute{
 			{
@@ -93,6 +88,7 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteAndRewritesBody(t *te
 				PublicModel:    "openrouter/gpt-5",
 				MatchType:      service.CompositeRouteMatchExact,
 				TargetPlatform: service.PlatformOpenAI,
+				TargetGroupID:  &targetGroupID,
 				UpstreamModel:  "gpt-5",
 				Endpoint:       service.CompositeRouteEndpointAny,
 				Priority:       100,
@@ -136,6 +132,7 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteAndRewritesBody(t *te
 func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteForMultipartImages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	targetGroupID := int64(42)
 	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []service.CompositeModelRoute{
 			{
@@ -144,6 +141,7 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteForMultipartImages(t 
 				PublicModel:    "image-alias",
 				MatchType:      service.CompositeRouteMatchExact,
 				TargetPlatform: service.PlatformOpenAI,
+				TargetGroupID:  &targetGroupID,
 				UpstreamModel:  "gpt-image-1",
 				Endpoint:       service.CompositeRouteEndpointImages,
 				Priority:       100,
@@ -197,6 +195,7 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteForMultipartImages(t 
 func TestCompositeGeminiTargetPlatformMiddlewareUsesPathRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	targetGroupID := int64(43)
 	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []service.CompositeModelRoute{
 			{
@@ -205,6 +204,7 @@ func TestCompositeGeminiTargetPlatformMiddlewareUsesPathRoute(t *testing.T) {
 				PublicModel:    "openrouter/gemini-pro",
 				MatchType:      service.CompositeRouteMatchExact,
 				TargetPlatform: service.PlatformGemini,
+				TargetGroupID:  &targetGroupID,
 				UpstreamModel:  "gemini-2.5-pro",
 				Endpoint:       service.CompositeRouteEndpointGemini,
 				Priority:       100,

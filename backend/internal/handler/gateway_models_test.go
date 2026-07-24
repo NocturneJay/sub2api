@@ -19,6 +19,34 @@ type gatewayModelsAccountRepoStub struct {
 	byGroup map[int64][]service.Account
 }
 
+type gatewayModelsCompositeRouteRepoStub struct {
+	routes []service.CompositeModelRoute
+}
+
+func (s gatewayModelsCompositeRouteRepoStub) ListByGroup(_ context.Context, groupID int64, includeDisabled bool) ([]service.CompositeModelRoute, error) {
+	routes := make([]service.CompositeModelRoute, 0, len(s.routes))
+	for _, route := range s.routes {
+		if route.GroupID == groupID && (includeDisabled || route.Enabled) {
+			routes = append(routes, route)
+		}
+	}
+	return routes, nil
+}
+
+func (gatewayModelsCompositeRouteRepoStub) Create(context.Context, *service.CompositeModelRoute) error {
+	return nil
+}
+
+func (gatewayModelsCompositeRouteRepoStub) Update(context.Context, *service.CompositeModelRoute) error {
+	return nil
+}
+
+func (gatewayModelsCompositeRouteRepoStub) Delete(context.Context, int64) error { return nil }
+
+func (gatewayModelsCompositeRouteRepoStub) DeleteByGroup(context.Context, int64) error {
+	return nil
+}
+
 type gatewayModelsResponseForTest struct {
 	Object string                    `json:"object"`
 	Data   []gatewayModelItemForTest `json:"data"`
@@ -51,22 +79,43 @@ func (s *gatewayModelsAccountRepoStub) ListSchedulableByGroupID(ctx context.Cont
 	return out, nil
 }
 
-func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHandler {
-	return &GatewayHandler{
+func newGatewayModelsHandlerForTest(repo service.AccountRepository, compositeRoutes ...service.CompositeModelRoute) *GatewayHandler {
+	h := &GatewayHandler{
 		gatewayService: service.NewGatewayService(
 			repo,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		),
 	}
+	h.SetCompositeRouteResolver(service.NewCompositeRouteResolver(
+		gatewayModelsCompositeRouteRepoStub{routes: compositeRoutes},
+	))
+	return h
 }
 
-func TestDefaultModelIDsForCompositeIncludesAntigravityDefaults(t *testing.T) {
-	antigravityIDs := defaultModelIDsForPlatform(service.PlatformAntigravity)
-	require.NotEmpty(t, antigravityIDs)
+func TestGatewayModels_CompositeWithoutRoutesReturnsEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 
-	compositeIDs := defaultModelIDsForPlatform(service.PlatformComposite)
-	require.Contains(t, compositeIDs, antigravityIDs[0])
+	groupID := int64(32)
+	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{
+		byGroup: map[int64][]service.Account{
+			groupID: {{ID: 1, Platform: service.PlatformOpenAI}},
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: groupID, Platform: service.PlatformComposite},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Empty(t, got.Data)
 }
 
 func TestGatewayModels_GeminiGroupFallsBackToGeminiModels(t *testing.T) {
@@ -289,40 +338,22 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(33)
+	openAIGroupID := int64(331)
+	geminiGroupID := int64(332)
+	antigravityGroupID := int64(333)
 	h := newGatewayModelsHandlerForTest(
-		&gatewayModelsAccountRepoStub{
-			byGroup: map[int64][]service.Account{
-				groupID: {
-					{
-						ID:       1,
-						Platform: service.PlatformOpenAI,
-						Credentials: map[string]any{
-							"model_mapping": map[string]any{
-								"gpt-5.4": "gpt-5.4",
-								"gpt-5.5": "gpt-5.5",
-							},
-						},
-					},
-					{
-						ID:       2,
-						Platform: service.PlatformGemini,
-						Credentials: map[string]any{
-							"model_mapping": map[string]any{
-								"gemini-2.5-flash": "gemini-2.5-flash",
-							},
-						},
-					},
-					{
-						ID:       3,
-						Platform: service.PlatformAntigravity,
-						Credentials: map[string]any{
-							"model_mapping": map[string]any{
-								"ag-custom-model": "ag-custom-model",
-							},
-						},
-					},
-				},
-			},
+		&gatewayModelsAccountRepoStub{},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "gpt-5.5", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformOpenAI, TargetGroupID: &openAIGroupID, Enabled: true,
+		},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "gemini-2.5-flash", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformGemini, TargetGroupID: &geminiGroupID, Enabled: true,
+		},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "ag-custom-model", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformAntigravity, TargetGroupID: &antigravityGroupID, Enabled: true,
 		},
 	)
 
@@ -349,18 +380,35 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 	require.Equal(t, []string{"gemini-2.5-flash", "ag-custom-model", "gpt-5.5"}, modelIDsForTest(got.Data))
 }
 
-func TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly(t *testing.T) {
+func TestGatewayModels_CompositePrefixRouteExpandsOnlyTargetGroupModels(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(34)
+	targetGroupID := int64(7)
 	h := newGatewayModelsHandlerForTest(
 		&gatewayModelsAccountRepoStub{
 			byGroup: map[int64][]service.Account{
 				groupID: {
-					{ID: 1, Platform: service.PlatformOpenAI},
-					{ID: 2, Platform: service.PlatformGrok},
+					{ID: 1, Platform: service.PlatformGrok},
+				},
+				targetGroupID: {
+					{
+						ID:       2,
+						Platform: service.PlatformOpenAI,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gpt-5.4":          "gpt-5.4",
+								"gpt-5.5":          "gpt-5.5",
+								"text-embedding-3": "text-embedding-3",
+							},
+						},
+					},
 				},
 			},
+		},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "gpt", MatchType: service.CompositeRouteMatchPrefix,
+			TargetPlatform: service.PlatformOpenAI, TargetGroupID: &targetGroupID, Enabled: true,
 		},
 	)
 
@@ -379,10 +427,11 @@ func TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly(t 
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 
 	ids := modelIDsForTest(got.Data)
-	require.Contains(t, ids, "gpt-5.5")
-	require.Contains(t, ids, "grok-4.3")
+	require.Equal(t, []string{"gpt-5.4", "gpt-5.5"}, ids)
 	require.NotContains(t, ids, "claude-sonnet-4-6")
 	require.NotContains(t, ids, "gemini-2.5-flash")
+	require.NotContains(t, ids, "grok-4.3")
+	require.NotContains(t, ids, "text-embedding-3")
 }
 
 func TestGatewayModels_CustomModelsListKeepsConcreteModelAllowedByWildcardMapping(t *testing.T) {

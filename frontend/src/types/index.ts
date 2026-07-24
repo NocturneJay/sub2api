@@ -2,6 +2,8 @@
  * Core Type Definitions for Sub2API Frontend
  */
 
+import type { CompositeRoutePricing } from './payment'
+
 // ==================== Common Types ====================
 
 export interface SelectOption {
@@ -605,7 +607,7 @@ export type CompositeRouteEndpoint =
   | 'images'
   | 'gemini'
 
-export type CompositeRouteSource = 'route' | 'detector' | string
+export type CompositeRouteSource = 'route' | string
 
 export interface CompositeModelRoute {
   id: number
@@ -613,7 +615,7 @@ export interface CompositeModelRoute {
   public_model: string
   match_type: CompositeRouteMatchType
   target_platform: Exclude<GroupPlatform, 'composite'>
-  // 委托到子分组：非空表示请求转发到该子分组并按其定价计费；与 target_platform 二选一。
+  // Every enabled route must delegate scheduling and pricing to this group.
   target_group_id?: number | null
   // 委托路由的倍率覆盖；空表示沿用子分组自身倍率。
   rate_multiplier?: number | null
@@ -629,8 +631,7 @@ export interface CompositeModelRoute {
 export interface CompositeModelRouteInput {
   public_model: string
   match_type: CompositeRouteMatchType
-  target_platform?: Exclude<GroupPlatform, 'composite'>
-  target_group_id?: number | null
+  target_group_id: number | null
   rate_multiplier?: number | null
   upstream_model?: string
   endpoint: CompositeRouteEndpoint
@@ -1897,6 +1898,7 @@ export interface UserSubscription {
   expires_at: string | null
   user?: User
   group?: Group
+  composite_route_pricing?: CompositeRoutePricing[]
 }
 
 export interface SubscriptionProgress {

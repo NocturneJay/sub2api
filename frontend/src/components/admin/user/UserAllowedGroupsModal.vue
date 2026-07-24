@@ -70,13 +70,20 @@
                     </span>
                     <span class="text-gray-300 dark:text-dark-500">•</span>
                     <span class="text-gray-500 dark:text-gray-400">
-                      {{ t('admin.users.defaultRate') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ config.defaultRate }}x</span>
+                      {{ t('admin.users.defaultRate') }}:
+                      <span class="font-medium text-gray-700 dark:text-gray-300">
+                        {{
+                          config.platform === 'composite'
+                            ? t('admin.groups.compositePricingLabel')
+                            : `${config.defaultRate}x`
+                        }}
+                      </span>
                     </span>
                   </div>
                 </div>
 
                 <!-- 专属倍率输入 -->
-                <div class="flex flex-shrink-0 items-center gap-3">
+                <div v-if="config.platform !== 'composite'" class="flex flex-shrink-0 items-center gap-3">
                   <label class="text-sm font-medium text-gray-600 dark:text-gray-400">{{ t('admin.users.customRate') }}</label>
                   <input
                     type="number"
@@ -128,13 +135,20 @@
                     </span>
                     <span class="text-gray-300 dark:text-dark-500">•</span>
                     <span class="text-gray-500 dark:text-gray-400">
-                      {{ t('admin.users.defaultRate') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ config.defaultRate }}x</span>
+                      {{ t('admin.users.defaultRate') }}:
+                      <span class="font-medium text-gray-700 dark:text-gray-300">
+                        {{
+                          config.platform === 'composite'
+                            ? t('admin.groups.compositePricingLabel')
+                            : `${config.defaultRate}x`
+                        }}
+                      </span>
                     </span>
                   </div>
                 </div>
 
                 <!-- 专属倍率输入 -->
-                <div class="flex flex-shrink-0 items-center gap-3">
+                <div v-if="config.platform !== 'composite'" class="flex flex-shrink-0 items-center gap-3">
                   <label class="text-sm font-medium text-gray-600 dark:text-gray-400">{{ t('admin.users.customRate') }}</label>
                   <input
                     type="number"
@@ -244,7 +258,7 @@ const load = async () => {
       platform: g.platform,
       isExclusive: g.is_exclusive,
       defaultRate: g.rate_multiplier,
-      customRate: userGroupRates[g.id] ?? null,
+      customRate: g.platform === 'composite' ? null : userGroupRates[g.id] ?? null,
       // 专属分组：检查是否在 allowed_groups 中
       // 公开分组：始终选中
       isSelected: g.is_exclusive ? userAllowedGroups.includes(g.id) : true,
@@ -289,6 +303,10 @@ const handleSave = async () => {
     const groupRates: Record<number, number | null> = {}
     for (const c of groupConfigs.value) {
       const hadOriginalRate = originalGroupRates.value[c.groupId] !== undefined
+      if (c.platform === 'composite') {
+        if (hadOriginalRate) groupRates[c.groupId] = null
+        continue
+      }
 
       if (c.customRate !== null) {
         // 有专属倍率

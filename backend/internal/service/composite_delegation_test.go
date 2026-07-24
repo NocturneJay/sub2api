@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -243,12 +244,14 @@ func TestGatewaySchedulerUsesCompositeDelegatedGroupPool(t *testing.T) {
 func TestOpenAIRecordUsagePricesByDelegatedGroupButLogsCompositeGroup(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	compositeUserRate := 9.0
+	rateRepo := &openAIUserGroupRateRepoStub{rate: &compositeUserRate}
 	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
 		usageRepo,
 		billingRepo,
 		&openAIRecordUsageUserRepoStub{},
 		&openAIRecordUsageSubRepoStub{},
-		nil,
+		rateRepo,
 	)
 	svc.groupRepo = &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
 		42: {ID: 42, Platform: PlatformOpenAI, Status: StatusActive, RateMultiplier: 2.0},
@@ -280,8 +283,23 @@ func TestOpenAIRecordUsagePricesByDelegatedGroupButLogsCompositeGroup(t *testing
 	require.NotNil(t, usageRepo.lastLog.GroupID)
 	require.Equal(t, compositeGroupID, *usageRepo.lastLog.GroupID)
 	require.Equal(t, 2.0, usageRepo.lastLog.RateMultiplier)
+	require.Zero(t, rateRepo.calls)
 	expected := expectedOpenAICost(t, svc, "gpt-5.1", usage, 2.0)
 	require.InDelta(t, expected.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
+}
+
+func TestUpdateUserRejectsCompositeSpecificRate(t *testing.T) {
+	rate := 1.5
+	svc := &adminServiceImpl{groupRepo: &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+	}}}
+
+	_, err := svc.UpdateUser(context.Background(), 20, &UpdateUserInput{
+		GroupRates: map[int64]*float64{7: &rate},
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "COMPOSITE_USER_RATE_UNSUPPORTED", infraerrors.Reason(err))
 }
 
 func TestOpenAIRecordUsagePrefersDelegatedRouteMultiplier(t *testing.T) {

@@ -1563,19 +1563,23 @@ func TestAdminService_CreateCompositeRoute_RejectsNonCompositeGroup(t *testing.T
 }
 
 func TestAdminService_CreateCompositeRoute_NormalizesAndPersists(t *testing.T) {
+	targetGroupID := int64(42)
 	groupRepo := &groupRepoStubForAdmin{
-		getByID: &Group{ID: 7, Platform: PlatformComposite},
+		getByIDByID: map[int64]*Group{
+			7:  {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+			42: {ID: 42, Platform: PlatformOpenAI, Status: StatusActive},
+		},
 	}
 	routeRepo := &compositeRouteRepoStubForAdmin{nextID: 99}
 	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
 
 	route, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
-		PublicModel:    " router/gpt- ",
-		MatchType:      CompositeRouteMatchPrefix,
-		TargetPlatform: PlatformOpenAI,
-		Endpoint:       CompositeRouteEndpointResponses,
-		Enabled:        true,
-		Notes:          " route note ",
+		PublicModel:   " router/gpt- ",
+		MatchType:     CompositeRouteMatchPrefix,
+		TargetGroupID: &targetGroupID,
+		Endpoint:      CompositeRouteEndpointResponses,
+		Enabled:       true,
+		Notes:         " route note ",
 	})
 
 	require.NoError(t, err)
@@ -1584,7 +1588,8 @@ func TestAdminService_CreateCompositeRoute_NormalizesAndPersists(t *testing.T) {
 	require.Equal(t, "router/gpt-", route.PublicModel)
 	require.Equal(t, CompositeRouteMatchPrefix, route.MatchType)
 	require.Equal(t, PlatformOpenAI, route.TargetPlatform)
-	require.Equal(t, "router/gpt-", route.UpstreamModel)
+	require.Equal(t, targetGroupID, *route.TargetGroupID)
+	require.Empty(t, route.UpstreamModel)
 	require.Equal(t, CompositeRouteEndpointResponses, route.Endpoint)
 	require.Equal(t, 100, route.Priority)
 	require.True(t, route.Enabled)
@@ -1593,8 +1598,12 @@ func TestAdminService_CreateCompositeRoute_NormalizesAndPersists(t *testing.T) {
 }
 
 func TestAdminService_UpdateAndDeleteCompositeRouteRequireRouteOwnership(t *testing.T) {
+	targetGroupID := int64(43)
 	groupRepo := &groupRepoStubForAdmin{
-		getByID: &Group{ID: 7, Platform: PlatformComposite},
+		getByIDByID: map[int64]*Group{
+			7:  {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+			43: {ID: 43, Platform: PlatformGemini, Status: StatusActive},
+		},
 	}
 	routeRepo := &compositeRouteRepoStubForAdmin{
 		routes: []CompositeModelRoute{
@@ -1605,16 +1614,17 @@ func TestAdminService_UpdateAndDeleteCompositeRouteRequireRouteOwnership(t *test
 	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
 
 	updated, err := svc.UpdateCompositeRoute(context.Background(), 7, 11, CompositeRouteInput{
-		PublicModel:    "router/gpt-5",
-		TargetPlatform: PlatformGemini,
-		UpstreamModel:  "gemini-2.5-pro",
-		Endpoint:       CompositeRouteEndpointChatCompletions,
-		Priority:       3,
-		Enabled:        true,
+		PublicModel:   "router/gpt-5",
+		TargetGroupID: &targetGroupID,
+		UpstreamModel: "gemini-2.5-pro",
+		Endpoint:      CompositeRouteEndpointChatCompletions,
+		Priority:      3,
+		Enabled:       true,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(11), updated.ID)
 	require.Equal(t, PlatformGemini, updated.TargetPlatform)
+	require.Equal(t, targetGroupID, *updated.TargetGroupID)
 	require.Equal(t, "gemini-2.5-pro", updated.UpstreamModel)
 	require.Equal(t, updated, routeRepo.updated)
 
@@ -1628,6 +1638,7 @@ func TestAdminService_UpdateAndDeleteCompositeRouteRequireRouteOwnership(t *test
 }
 
 func TestAdminService_PreviewCompositeRouteUsesExplicitRoutes(t *testing.T) {
+	targetGroupID := int64(42)
 	groupRepo := &groupRepoStubForAdmin{
 		getByID: &Group{ID: 7, Platform: PlatformComposite},
 	}
@@ -1639,6 +1650,7 @@ func TestAdminService_PreviewCompositeRouteUsesExplicitRoutes(t *testing.T) {
 				PublicModel:    "openrouter/claude",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformAnthropic,
+				TargetGroupID:  &targetGroupID,
 				UpstreamModel:  "claude-sonnet-4-6",
 				Endpoint:       CompositeRouteEndpointMessages,
 				Priority:       100,

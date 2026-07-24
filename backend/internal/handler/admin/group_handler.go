@@ -201,10 +201,10 @@ type UpdateGroupRequest struct {
 type CompositeRouteRequest struct {
 	PublicModel string `json:"public_model" binding:"required"`
 	MatchType   string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
-	// TargetPlatform 与 TargetGroupID 二选一：设了 target_group_id 即"委托到子分组"，
-	// 平台由子分组推导，此时 target_platform 可省略。
+	// TargetPlatform is retained for wire compatibility and is always derived
+	// from the required concrete target group by the service.
 	TargetPlatform string   `json:"target_platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok"`
-	TargetGroupID  *int64   `json:"target_group_id" binding:"omitempty"`
+	TargetGroupID  *int64   `json:"target_group_id" binding:"required,gt=0"`
 	RateMultiplier *float64 `json:"rate_multiplier" binding:"omitempty"`
 	UpstreamModel  string   `json:"upstream_model"`
 	Endpoint       string   `json:"endpoint" binding:"omitempty,oneof=any messages count_tokens responses chat_completions embeddings images gemini"`

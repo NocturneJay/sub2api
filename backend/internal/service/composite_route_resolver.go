@@ -15,6 +15,13 @@ func NewCompositeRouteResolver(repo CompositeModelRouteRepository) *CompositeRou
 	return &CompositeRouteResolver{repo: repo}
 }
 
+func (r *CompositeRouteResolver) ListEnabledRoutes(ctx context.Context, groupID int64) ([]CompositeModelRoute, error) {
+	if r == nil || r.repo == nil || groupID <= 0 {
+		return nil, nil
+	}
+	return r.repo.ListByGroup(ctx, groupID, false)
+}
+
 func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, model, endpoint string) (CompositeRouteDecision, error) {
 	model = strings.TrimSpace(model)
 	endpoint = normalizeCompositeRouteEndpoint(endpoint)
@@ -38,8 +45,8 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 			if upstreamModel == "" {
 				upstreamModel = model
 			}
-			// 委托到子分组的路由：TargetPlatform 由上层（gateway/admin）用子分组平台填充；
-			// 这里只携带 TargetGroupID 与倍率覆盖。平台模式路由保持原样。
+			// TargetPlatform is persisted as a routing hint; the gateway
+			// revalidates it against the current target group before dispatch.
 			return CompositeRouteDecision{
 				Matched:        true,
 				Source:         CompositeRouteSourceExplicit,
@@ -55,18 +62,7 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 		}
 	}
 
-	if platform, ok := DetectModelPlatform(model); ok {
-		return CompositeRouteDecision{
-			Matched:        true,
-			Source:         CompositeRouteSourceDetector,
-			GroupID:        groupID,
-			PublicModel:    model,
-			TargetPlatform: platform,
-			UpstreamModel:  model,
-			Endpoint:       endpoint,
-		}, nil
-	}
-	decision.Reason = "no explicit route or built-in detector match"
+	decision.Reason = "no enabled explicit target-group route matched"
 	return decision, nil
 }
 
@@ -83,6 +79,9 @@ func matchCompositeRoute(routes []CompositeModelRoute, model, endpoint string) (
 	}
 	candidates := make([]candidate, 0, len(routes))
 	for _, route := range routes {
+		if route.TargetGroupID == nil || *route.TargetGroupID <= 0 {
+			continue
+		}
 		route.Endpoint = normalizeCompositeRouteEndpoint(route.Endpoint)
 		if route.Endpoint != endpoint && route.Endpoint != CompositeRouteEndpointAny {
 			continue
