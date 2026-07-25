@@ -92,6 +92,36 @@ describe("SubscriptionPlanCard", () => {
     expect(mountPlanCard("openai", { currency: "" }).text()).toContain("$10");
   });
 
+  it("hides unlimited quota windows while keeping positive limits", () => {
+    const text = mountPlanCard("openai", {
+      daily_limit_usd: 0,
+      weekly_limit_usd: 32,
+      monthly_limit_usd: 125,
+    }).text();
+
+    expect(text).not.toContain("payment.planCard.dailyLimit");
+    expect(text).toContain("payment.planCard.weeklyLimit");
+    expect(text).toContain("$32");
+    expect(text).toContain("payment.planCard.monthlyLimit");
+    expect(text).toContain("$125");
+    expect(text).not.toContain("payment.planCard.quota");
+    expect(text).not.toContain("payment.planCard.unlimited");
+  });
+
+  it("collapses plans without positive limits into one unlimited row", () => {
+    const text = mountPlanCard("openai", {
+      daily_limit_usd: 0,
+      weekly_limit_usd: null,
+      monthly_limit_usd: -1,
+    }).text();
+
+    expect(text).not.toContain("payment.planCard.dailyLimit");
+    expect(text).not.toContain("payment.planCard.weeklyLimit");
+    expect(text).not.toContain("payment.planCard.monthlyLimit");
+    expect(text).toContain("payment.planCard.quota");
+    expect(text).toContain("payment.planCard.unlimited");
+  });
+
   it("shows each effective target-group rate once for composite plans", () => {
     const wrapper = mountPlanCard("composite", {
       rate_multiplier: 9,
