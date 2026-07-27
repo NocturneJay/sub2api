@@ -55,6 +55,38 @@ func TestBillingErrorDetails_UnknownErrorFallsBackTo403(t *testing.T) {
 	require.NotEmpty(t, msg)
 }
 
+func TestBillingErrorDetails_SubscriptionUsageLimitsMapTo429WithRetryAfter(t *testing.T) {
+	// 订阅日/周/月限额 sentinel 本身声明为 429（TooManyRequests），
+	// 修复前落入 403 billing_error 兜底，与 auth 中间件层的 429 语义不一致。
+	// 现映射 429 + Retry-After（window_resets_at metadata → 剩余秒数）。
+	resetAt := time.Now().Add(90 * time.Minute).UTC().Format(time.RFC3339)
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"daily", service.ErrDailyLimitExceeded.WithMetadata(map[string]string{"window_resets_at": resetAt})},
+		{"weekly", service.ErrWeeklyLimitExceeded.WithMetadata(map[string]string{"window_resets_at": resetAt})},
+		{"monthly", service.ErrMonthlyLimitExceeded.WithMetadata(map[string]string{"window_resets_at": resetAt})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, code, msg, retryAfter := billingErrorDetails(tc.err)
+			require.Equal(t, http.StatusTooManyRequests, status)
+			require.Equal(t, "billing_error", code, "沿用 billing_error 保持 ops 分类（P3/业务限额）不变")
+			require.NotEmpty(t, msg)
+			require.InDelta(t, 90*60, retryAfter, 2, "Retry-After 应为距窗口重置的剩余秒数")
+		})
+	}
+}
+
+func TestBillingErrorDetails_SubscriptionUsageLimitWithoutMetadataFallsBack60(t *testing.T) {
+	// 未附 metadata（防御路径）时 Retry-After 用 60s fallback，状态仍为 429。
+	status, code, _, retryAfter := billingErrorDetails(service.ErrDailyLimitExceeded)
+	require.Equal(t, http.StatusTooManyRequests, status)
+	require.Equal(t, "billing_error", code)
+	require.Equal(t, 60, retryAfter)
+}
+
 func TestExtractQuotaResetSeconds_T19_HappyPath(t *testing.T) {
 	err := service.ErrUserPlatformDailyQuotaExhausted.WithMetadata(map[string]string{
 		"window_resets_at": time.Now().Add(10 * time.Second).UTC().Format(time.RFC3339),

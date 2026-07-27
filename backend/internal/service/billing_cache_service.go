@@ -921,17 +921,18 @@ func (s *BillingCacheService) checkSubscriptionEligibility(ctx context.Context, 
 		return ErrSubscriptionInvalid
 	}
 
-	// 检查限额（使用传入的Group限额配置）
+	// 检查限额（使用传入的Group限额配置）；附加 window_resets_at metadata
+	// 供 HTTP 层（billingErrorDetails/extractQuotaResetSeconds）换算 Retry-After。
 	if group.HasDailyLimit() && subData.DailyUsage >= *group.DailyLimitUSD {
-		return ErrDailyLimitExceeded
+		return subscriptionUsageLimitError(ErrDailyLimitExceeded, subscription.DailyResetTime())
 	}
 
 	if group.HasWeeklyLimit() && subData.WeeklyUsage >= *group.WeeklyLimitUSD {
-		return ErrWeeklyLimitExceeded
+		return subscriptionUsageLimitError(ErrWeeklyLimitExceeded, subscription.WeeklyResetTime())
 	}
 
 	if group.HasMonthlyLimit() && subData.MonthlyUsage >= *group.MonthlyLimitUSD {
-		return ErrMonthlyLimitExceeded
+		return subscriptionUsageLimitError(ErrMonthlyLimitExceeded, subscription.MonthlyResetTime())
 	}
 
 	return nil
@@ -1300,6 +1301,15 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
 	}
 	return nil
+}
+
+// subscriptionUsageLimitError 给订阅日/周/月限额错误附加窗口重置时间 metadata；
+// 重置时间不可知（窗口未激活）时原样返回 sentinel。
+func subscriptionUsageLimitError(base error, resetAt *time.Time) error {
+	if resetAt == nil {
+		return base
+	}
+	return withWindowResetsMetadata(base, *resetAt)
 }
 
 // withWindowResetsMetadata 给 quota error 附加 window_resets_at metadata（RFC3339）。

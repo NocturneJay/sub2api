@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -254,6 +257,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 						errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
 						code = "USAGE_LIMIT_EXCEEDED"
 						status = 429
+						// 限额 429 带 Retry-After（距窗口重置的秒数），让合规客户端自动退避，
+						// 避免撞限后的无退避重试风暴。
+						if retryAfter := subscriptionLimitRetryAfterSeconds(subscription, validateErr, time.Now()); retryAfter > 0 {
+							c.Header("Retry-After", strconv.Itoa(retryAfter))
+						}
 					}
 					AbortWithError(c, status, code, validateErr.Error())
 					return
@@ -303,6 +311,37 @@ func hasAPIKeyCredentialInput(c *gin.Context) bool {
 	return c.GetHeader("Authorization") != "" ||
 		c.GetHeader("x-api-key") != "" ||
 		c.GetHeader("x-goog-api-key") != ""
+}
+
+// subscriptionLimitRetryAfterFallbackSeconds 是重置时间已过（窗口维护竞态）时的
+// Retry-After 兜底值：与 handler 层 extractQuotaResetSeconds 的 fallback 同口径，
+// 避免返回 1 秒导致客户端立即重试仍触发限额的紧循环。
+const subscriptionLimitRetryAfterFallbackSeconds = 60
+
+// subscriptionLimitRetryAfterSeconds 计算订阅限额 429 的 Retry-After 秒数：
+// 距被超出的用量窗口（日/周/月）重置时刻的剩余秒数（向上取整）。
+// 订阅为 nil 或窗口未激活（重置时间不可知）时返回 0，调用方不设置头。
+func subscriptionLimitRetryAfterSeconds(sub *service.UserSubscription, err error, now time.Time) int {
+	if sub == nil {
+		return 0
+	}
+	var resetAt *time.Time
+	switch {
+	case errors.Is(err, service.ErrDailyLimitExceeded):
+		resetAt = sub.DailyResetTime()
+	case errors.Is(err, service.ErrWeeklyLimitExceeded):
+		resetAt = sub.WeeklyResetTime()
+	case errors.Is(err, service.ErrMonthlyLimitExceeded):
+		resetAt = sub.MonthlyResetTime()
+	}
+	if resetAt == nil {
+		return 0
+	}
+	secs := resetAt.Sub(now).Seconds()
+	if secs <= 0 {
+		return subscriptionLimitRetryAfterFallbackSeconds
+	}
+	return int(math.Ceil(secs))
 }
 
 func abortWithAPIKeyQuotaError(c *gin.Context) {

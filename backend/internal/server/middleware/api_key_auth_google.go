@@ -3,7 +3,9 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
@@ -193,6 +195,10 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					errors.Is(err, service.ErrWeeklyLimitExceeded) ||
 					errors.Is(err, service.ErrMonthlyLimitExceeded) {
 					status = 429
+					// 与主中间件一致：限额 429 带 Retry-After（距窗口重置的秒数）。
+					if retryAfter := subscriptionLimitRetryAfterSeconds(subscription, err, time.Now()); retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
 				}
 				abortWithGoogleError(c, status, err.Error())
 				return

@@ -83,7 +83,8 @@ func CORS(cfg config.CORSConfig) gin.HandlerFunc {
 			}
 			c.Writer.Header().Set("Access-Control-Allow-Headers", allowHeadersValue)
 			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
-			c.Writer.Header().Set("Access-Control-Expose-Headers", "ETag, Server-Timing")
+			// Retry-After 非 CORS 安全头，需显式暴露，浏览器端客户端才能读到限流退避时间。
+			c.Writer.Header().Set("Access-Control-Expose-Headers", "ETag, Server-Timing, Retry-After")
 			c.Writer.Header().Set("Access-Control-Max-Age", "86400")
 		}
 		// 处理预检请求

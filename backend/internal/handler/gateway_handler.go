@@ -2323,6 +2323,16 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		msg := pkgerrors.Message(err)
 		return http.StatusTooManyRequests, "rate_limit_exceeded", msg, extractQuotaResetSeconds(err)
 	}
+	// 订阅日/周/月限额：这些 sentinel 本身即 429 语义（TooManyRequests），不应落入 403 兜底 ——
+	// 与 auth 中间件层的 429 保持一致，并带 Retry-After（窗口重置时间）让 SDK 自动退避。
+	// 错误码沿用 billing_error：ops 的业务限额归类/client 归属不变，带 type 字段的响应体仍记 P3
+	//（无 type 字段的形状如 gemini googleError / responses code-only 按既有规则落 api_error）。
+	if errors.Is(err, service.ErrDailyLimitExceeded) ||
+		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+		errors.Is(err, service.ErrMonthlyLimitExceeded) {
+		msg := pkgerrors.Message(err)
+		return http.StatusTooManyRequests, "billing_error", msg, extractQuotaResetSeconds(err)
+	}
 	msg := pkgerrors.Message(err)
 	if msg == "" {
 		logger.L().With(
