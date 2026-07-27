@@ -1233,3 +1233,50 @@ func TestGetOpsAPIKeyPrefersPrimaryContextKey(t *testing.T) {
 	require.NotNil(t, got)
 	require.Equal(t, int64(1), got.ID, "已鉴权请求应优先使用正式 api key")
 }
+
+func TestClassifyOpsSeverity_BusinessLimited429IsP3ButCapacity503StaysP1(t *testing.T) {
+	cases := []struct {
+		name              string
+		errType           string
+		status            int
+		isBusinessLimited bool
+		message           string
+		want              string
+	}{
+		// 本次降级目标：用户撞到自己套餐的额度，护栏正常工作。
+		// 生产 7 天共 597 条，全部属于下列五类。
+		{"日限额", "api_error", 429, true, `error: code=429 reason="DAILY_LIMIT_EXCEEDED"`, "P3"},
+		{"周限额", "api_error", 429, true, `error: code=429 reason="WEEKLY_LIMIT_EXCEEDED"`, "P3"},
+		{"用户每分钟请求数", "rate_limit_error", 429, true, "user requests-per-minute limit exceeded", "P3"},
+		{"API key 额度用尽", "api_error", 429, true, "API key 额度已用完", "P3"},
+		{"API key 日限额", "api_error", 429, true, "api key 日限额已用完", "P3"},
+
+		// 回归护栏一：routing 容量耗尽同样带 is_business_limited=true，但它是真实的
+		// 账号池故障（实测 7 天 20381 条），必须保持 P1，不能被一刀切降级。
+		{"无可用账号 503 必须保持 P1", "api_error", 503, true, "no available accounts", "P1"},
+
+		// 回归护栏二：并发/排队槽位耗尽是容量压力（slotType 可为 user/account），
+		// 虽同样标记 business_limited，也必须保持 P1。
+		{"账号并发槽耗尽保持 P1", "rate_limit_error", 429, true,
+			"Concurrency limit exceeded for account, please retry later", "P1"},
+		{"用户并发槽耗尽保持 P1", "rate_limit_error", 429, true,
+			"Concurrency limit exceeded for user, please retry later", "P1"},
+		{"排队积压保持 P1", "rate_limit_error", 429, true, "too many pending requests", "P1"},
+
+		// 未标记业务限额的 429 是上游真限流，仍需告警。
+		{"上游 429 保持 P1", "rate_limit_error", 429, false, "rate limit exceeded", "P1"},
+		{"上游 5xx 保持 P1", "upstream_error", 502, false, "bad gateway", "P1"},
+
+		// 其余分档不受影响。
+		{"普通 4xx 仍为 P2", "api_error", 403, false, "forbidden", "P2"},
+		{"业务限额 403 不在本次范围，仍走原有分档", "api_error", 403, true, "not allowed", "P2"},
+		{"已知客户端错误类型仍为 P3", "invalid_request_error", 400, false, "bad request", "P3"},
+		{"2xx 为 P3", "api_error", 200, false, "", "P3"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want,
+				classifyOpsSeverity(tc.errType, tc.status, tc.isBusinessLimited, tc.message))
+		})
+	}
+}

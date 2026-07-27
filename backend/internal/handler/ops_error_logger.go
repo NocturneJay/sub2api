@@ -1066,7 +1066,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 			ErrorPhase:        phase,
 			ErrorType:         normalizedType,
-			Severity:          classifyOpsSeverity(normalizedType, status),
+			Severity:          classifyOpsSeverity(normalizedType, status, isBusinessLimited, parsed.Message),
 			StatusCode:        status,
 			IsBusinessLimited: isBusinessLimited,
 			IsCountTokens:     isCountTokensRequest(c),
@@ -1219,7 +1219,7 @@ func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int, 
 
 		ErrorPhase:        phase,
 		ErrorType:         normalizedType,
-		Severity:          classifyOpsSeverity(normalizedType, classifyStatus),
+		Severity:          classifyOpsSeverity(normalizedType, classifyStatus, isBusinessLimited, streamErr.Message),
 		StatusCode:        recordedStatus,
 		IsBusinessLimited: isBusinessLimited,
 		IsCountTokens:     isCountTokensRequest(c),
@@ -1552,13 +1552,34 @@ func classifyOpsPhase(errType, message, code string) string {
 	}
 }
 
-func classifyOpsSeverity(errType string, status int) string {
+// isOpsCapacityPressureMessage 区分"用户撞到自己的额度"与"并发/排队槽位耗尽"。
+// 后者虽然同样被标记 is_business_limited，反映的却是容量压力（用户槽或上游账号槽
+// 被打满，slotType 可为 user/account），与"无可用账号"同类，必须保留告警级别，
+// 不能随限额一起降级。
+func isOpsCapacityPressureMessage(message string) bool {
+	msg := strings.ToLower(message)
+	return strings.Contains(msg, "concurrency limit exceeded") ||
+		strings.Contains(msg, "too many pending requests")
+}
+
+func classifyOpsSeverity(errType string, status int, isBusinessLimited bool, message string) string {
 	switch errType {
 	case "invalid_request_error", "authentication_error", "billing_error", "subscription_error":
 		return "P3"
 	}
 	if status >= 500 {
 		return "P1"
+	}
+	// 业务限额 429（用户撞到自己套餐的日/周/月额度、RPM、API key 额度）是护栏在按
+	// 设计工作，不是系统故障，记 P3；否则这些"一切正常"会以最高严重度混进告警，
+	// 淹没真实故障。实测 7 天共 597 条，全部属于这五类。
+	//
+	// 两处限定不可省：
+	//   1) status == 429 —— 路由容量耗尽（无可用账号）同样带 is_business_limited=true，
+	//      但它返回 503 且是真实的账号池故障（实测 7 天 20381 条），必须保持 P1；
+	//   2) 排除并发/排队消息 —— 槽位耗尽是容量压力而非用户额度，同样保持 P1。
+	if isBusinessLimited && status == 429 && !isOpsCapacityPressureMessage(message) {
+		return "P3"
 	}
 	if status == 429 {
 		return "P1"
