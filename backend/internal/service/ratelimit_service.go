@@ -1004,6 +1004,25 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			}
 		}
 
+		// 5. 标准 Retry-After（RFC 9110）：厂商专有头与响应体都没给出重置时间时，
+		// 退回读取这个通用头。中转/自建网关常常只发它——此前整条常规 429 路径都不读
+		// （parseRetryAfterResetTime 仅被 OpenAI 图像路径调用），导致上游明确说了
+		// "N 秒后再来"仍被当作"无重置时间"，套上固定兜底冷却。优先使用上游的明示值，
+		// 兜底只在上游真的什么都没说时才生效。
+		if resetAt, ok := resolveRetryAfterResetTime(headers, time.Now()); ok {
+			s.notifyAccountSchedulingBlocked(account, resetAt, "429_retry_after")
+			if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
+				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+				return
+			}
+			slog.Info("account_rate_limited_retry_after",
+				"account_id", account.ID,
+				"platform", account.Platform,
+				"reset_at", resetAt,
+				"reset_in", time.Until(resetAt).Truncate(time.Second))
+			return
+		}
+
 		// Anthropic 平台：没有限流重置时间的 429 可能是非真实限流（如 Extra usage required），
 		// 不适合按 5h/7d 窗口长时间封禁；但完全不标记会导致账号永不冷却，
 		// 调度器让每个请求反复撞同一批持续 429 的账号（failover 预算被白白烧掉，
@@ -1975,6 +1994,28 @@ func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {
 		return now.Add(cooldown)
 	}
 	return now.Add(openAIImageRateLimitDefaultCooldown)
+}
+
+// resolveRetryAfterResetTime 解析标准 Retry-After 头并给出可直接使用的重置时刻。
+// 仅当上游给出一个位于将来的时刻时返回 ok=true。
+//
+// 上游值会被截断到 maxRateLimit429CooldownSeconds：畸形或恶意的超大 Retry-After
+// （例如中转返回 30 天）不该把账号长时间踢出调度。宁可早一点重试、再吃一次 429
+// 重新冷却，也不因单个响应头造成长时间容量损失——这与兜底冷却的上限同口径。
+func resolveRetryAfterResetTime(headers http.Header, now time.Time) (time.Time, bool) {
+	parsed := parseRetryAfterResetTime(headers, now)
+	if parsed == nil || !parsed.After(now) {
+		return time.Time{}, false
+	}
+	resetAt := *parsed
+	if maxReset := now.Add(maxRateLimit429CooldownSeconds * time.Second); resetAt.After(maxReset) {
+		slog.Warn("rate_limit_retry_after_clamped",
+			"requested_reset_at", resetAt,
+			"clamped_reset_at", maxReset,
+			"max_seconds", maxRateLimit429CooldownSeconds)
+		resetAt = maxReset
+	}
+	return resetAt, true
 }
 
 func parseRetryAfterResetTime(headers http.Header, now time.Time) *time.Time {
