@@ -34,6 +34,10 @@ const (
 	opsUpstreamModelKey = "ops_upstream_model"
 	opsRequestTypeKey   = "ops_request_type"
 
+	// opsCyberSessionBlockedRecordedKey 标记本请求已由 enqueueCyberSessionBlockedOpsEntry
+	// 落过专属错误日志,中间件据此跳过对 403 响应体的二次落库(防双写)。
+	opsCyberSessionBlockedRecordedKey = "ops_cyber_session_blocked_recorded"
+
 	// 错误过滤匹配常量 — shouldSkipOpsErrorLog 和错误分类共用
 	opsErrContextCanceled            = "context canceled"
 	opsErrNoAvailableAccounts        = "no available accounts"
@@ -679,6 +683,7 @@ func (w *opsCaptureWriter) shouldCapture() bool {
 // - Streaming errors after the response has started (SSE) may still need explicit logging.
 func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		requestStart := time.Now()
 		originalWriter := c.Writer
 		w := acquireOpsCaptureWriter(originalWriter)
 		w.ctx = c
@@ -748,7 +753,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				// 没有上游错误上下文，但网关可能在已固化的 200 流上就地补发了 SSE 错误帧
 				// （如 ping 等待后并发超限、Wait 后二次计费校验失败）。这类失败若不在此补记，
 				// 会因 wire 状态码为 200 而在错误看板里彻底隐形。
-				logOpsStreamError(c, ops, status)
+				logOpsStreamError(c, ops, status, requestStart)
 				return
 			}
 
@@ -914,8 +919,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 				ErrorPhase: recoveredPhase,
 				ErrorType:  "upstream_error",
-				// Severity should reflect the upstream failure, not the final client status (200).
-				Severity:          classifyOpsSeverity("upstream_error", effectiveUpstreamStatus),
+				// 请求最终成功(failover 已消化上游错误),仅作账号健康观测:
+				// 固定 P3 并在落库时即标记 resolved,避免混入待处理错误与 P1 告警。
+				Severity:          "P3",
 				StatusCode:        status,
 				IsBusinessLimited: recoveredBusinessLimited,
 				IsCountTokens:     isCountTokensRequest(c),
@@ -933,6 +939,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 				CreatedAt: time.Now(),
 			}
+			entry.Resolved = true
+			entry.ResolvedAt = &entry.CreatedAt
+			entry.DurationMs = opsDurationMsSince(requestStart)
 			applyOpsLatencyFieldsFromContext(c, entry)
 			applyOpsUpstreamFieldsFromContext(c, entry)
 
@@ -1071,6 +1080,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 			CreatedAt: time.Now(),
 		}
+		entry.DurationMs = opsDurationMsSince(requestStart)
 		applyOpsLatencyFieldsFromContext(c, entry)
 		applyOpsUpstreamFieldsFromContext(c, entry)
 
@@ -1107,7 +1117,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 //
 // 仅在 status<400 且不存在上游错误上下文时调用：上游透传错误已由中间件的
 // upstream-context 分支落库，无需在此重复记录。
-func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int) {
+func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int, requestStart time.Time) {
 	streamErr, ok := service.GetOpsStreamError(c)
 	if !ok {
 		return
@@ -1221,6 +1231,7 @@ func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int) 
 
 		CreatedAt: time.Now(),
 	}
+	entry.DurationMs = opsDurationMsSince(requestStart)
 	applyOpsLatencyFieldsFromContext(c, entry)
 
 	if apiKey != nil {
@@ -1242,6 +1253,16 @@ func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int) 
 	}
 
 	enqueueOpsErrorLog(ops, entry)
+}
+
+// opsDurationMsSince 计算请求总耗时(毫秒)。不足 1ms 记为 1,与
+// opsNullInt64 的"0 即 NULL"语义区分开,保证极快失败也有耗时可查。
+func opsDurationMsSince(start time.Time) *int64 {
+	ms := time.Since(start).Milliseconds()
+	if ms < 1 {
+		ms = 1
+	}
+	return &ms
 }
 
 // isCountTokensRequest checks if the request is a count_tokens request
@@ -1499,6 +1520,12 @@ func classifyOpsPhase(errType, message, code string) string {
 	}
 	if isOpsLocalBusinessLimitError(code, msg) {
 		return "request"
+	}
+	// "无可用账号"是调度选号阶段的容量问题:部分写出端点(如 codex models、
+	// count_tokens)把它包装成 upstream_error/api_error 等不同 error_type,
+	// 统一按消息归入 routing,避免误标为上游故障。
+	if isOpsNoAvailableAccountMessage(msg) {
+		return "routing"
 	}
 
 	switch errType {
@@ -1812,7 +1839,17 @@ func shouldSkipOpsErrorLog(ctx context.Context, ops *service.OpsService, message
 }
 
 // shouldSkipOpsErrorLogForCyber：cyber_policy 命中的请求由 recordCyberPolicyIfMarked
-// 统一落一条 status=403 的错误请求，故中间件跳过自身落库，避免双写。
+// 统一落一条 status=403 的错误请求；本地会话屏蔽(session block)则由
+// enqueueCyberSessionBlockedOpsEntry 落库并设置标记。两种情况中间件都跳过
+// 自身落库，避免同一 request_id 双写。
 func shouldSkipOpsErrorLogForCyber(c *gin.Context) bool {
-	return service.GetOpsCyberPolicy(c) != nil
+	if service.GetOpsCyberPolicy(c) != nil {
+		return true
+	}
+	if v, ok := c.Get(opsCyberSessionBlockedRecordedKey); ok {
+		if recorded, _ := v.(bool); recorded {
+			return true
+		}
+	}
+	return false
 }

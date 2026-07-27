@@ -2911,6 +2911,8 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 		meta.UserID = apiKey.User.ID
 	}
 	enqueueOpsErrorLog(h.opsService, buildCyberSessionBlockedOpsEntry(meta))
+	// 已落专属日志,通知 ops 中间件跳过对 403 响应体的二次落库(防双写)。
+	c.Set(opsCyberSessionBlockedRecordedKey, true)
 }
 
 // recordCyberPolicyIfMarked 在 gateway forward 返回后检查 cyber 标记，异步写风控日志/邮件，

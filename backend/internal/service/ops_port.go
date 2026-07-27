@@ -116,6 +116,15 @@ type OpsInsertErrorLogInput struct {
 	UpstreamLatencyMs  *int64
 	ResponseLatencyMs  *int64
 	TimeToFirstTokenMs *int64
+	// DurationMs is the total request wall-clock time measured by the ops middleware
+	// (request entry to response completion), independent of the segmented latencies.
+	DurationMs *int64
+
+	// Resolved/ResolvedAt mark entries that need no operator action at insert time
+	// (e.g. upstream errors already recovered by in-request failover), so unresolved
+	// views and alerting can exclude them.
+	Resolved   bool
+	ResolvedAt *time.Time
 
 	CreatedAt time.Time
 
