@@ -391,6 +391,24 @@ const (
 	// billing, routing or model availability.
 	SettingKeyModelPlazaMeta = "model_plaza_meta"
 
+	// SettingKeyModelPlazaPublicEnabled is a DB-backed soft switch that lets anonymous
+	// visitors read the model plaza. When false the public endpoint returns 404 and the
+	// page stays behind login. Defaults to false (opt-in): the plaza exposes per-group
+	// rate multipliers and full per-model pricing, so anonymous access must be a
+	// deliberate decision. Deliberately separate from SettingKeyAvailableChannelsEnabled
+	// so that enabling the logged-in "Available Channels" view never implies publishing
+	// pricing to the open internet.
+	//
+	// NOTE: intentionally NOT named "model_plaza_enabled" — upstream owns that key for
+	// its own plaza implementation. Keeping distinct names lets both settings coexist.
+	SettingKeyModelPlazaPublicEnabled = "model_plaza_public_enabled"
+
+	// SettingKeyModelPlazaPublicIncludeSubscriptionGroups controls whether the anonymous
+	// plaza view includes subscription-type groups. Defaults to false: peak-rate windows
+	// only apply to subscription groups, so publishing them exposes paid-plan peak
+	// pricing strategy. Exclusive groups are always excluded regardless of this switch.
+	SettingKeyModelPlazaPublicIncludeSubscriptionGroups = "model_plaza_public_include_subscription_groups"
+
 	// SettingKeyUpstreamBillingProbeSettings stores the global enable switch and interval
 	// for probing remote Sub2API API-key billing metadata.
 	SettingKeyUpstreamBillingProbeSettings = "upstream_billing_probe_settings"

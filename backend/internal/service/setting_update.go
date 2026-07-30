@@ -355,6 +355,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Available channels feature switch
 	updates[SettingKeyAvailableChannelsEnabled] = strconv.FormatBool(settings.AvailableChannelsEnabled)
 
+	// Public (anonymous) model plaza switches
+	updates[SettingKeyModelPlazaPublicEnabled] = strconv.FormatBool(settings.ModelPlazaPublicEnabled)
+	updates[SettingKeyModelPlazaPublicIncludeSubscriptionGroups] = strconv.FormatBool(settings.ModelPlazaPublicIncludeSubscriptionGroups)
+
 	// Affiliate (邀请返利) feature switch
 	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
 

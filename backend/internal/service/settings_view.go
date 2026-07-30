@@ -190,6 +190,11 @@ type SystemSettings struct {
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 
+	// Public (anonymous) model plaza. Enabling ModelPlazaPublicEnabled publishes
+	// per-group rate multipliers and full per-model pricing to the open internet.
+	ModelPlazaPublicEnabled                   bool `json:"model_plaza_public_enabled"`
+	ModelPlazaPublicIncludeSubscriptionGroups bool `json:"model_plaza_public_include_subscription_groups"`
+
 	// Claude Code version check
 	MinClaudeCodeVersion string
 	MaxClaudeCodeVersion string
@@ -339,6 +344,12 @@ type PublicSettings struct {
 
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+
+	// Public (anonymous) model plaza. Exposed publicly so the SPA can decide whether to
+	// render the plaza entry and whether to redirect anonymous visitors to login.
+	// The subscription-group filter is deliberately NOT exposed: it is a server-side
+	// visibility decision and the client has no use for it.
+	ModelPlazaPublicEnabled bool `json:"model_plaza_public_enabled"`
 
 	// Affiliate (邀请返利) feature toggle
 	AffiliateEnabled bool `json:"affiliate_enabled"`

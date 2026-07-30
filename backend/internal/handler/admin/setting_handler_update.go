@@ -316,6 +316,10 @@ type UpdateSettingsRequest struct {
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
 
+	// Public (anonymous) model plaza switches
+	ModelPlazaPublicEnabled                   *bool `json:"model_plaza_public_enabled"`
+	ModelPlazaPublicIncludeSubscriptionGroups *bool `json:"model_plaza_public_include_subscription_groups"`
+
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
 
@@ -1691,6 +1695,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AvailableChannelsEnabled
 		}(),
+		ModelPlazaPublicEnabled: func() bool {
+			if req.ModelPlazaPublicEnabled != nil {
+				return *req.ModelPlazaPublicEnabled
+			}
+			return previousSettings.ModelPlazaPublicEnabled
+		}(),
+		ModelPlazaPublicIncludeSubscriptionGroups: func() bool {
+			if req.ModelPlazaPublicIncludeSubscriptionGroups != nil {
+				return *req.ModelPlazaPublicIncludeSubscriptionGroups
+			}
+			return previousSettings.ModelPlazaPublicIncludeSubscriptionGroups
+		}(),
 		AffiliateEnabled: func() bool {
 			if req.AffiliateEnabled != nil {
 				return *req.AffiliateEnabled
@@ -2085,6 +2101,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
+
+		ModelPlazaPublicEnabled:                   updatedSettings.ModelPlazaPublicEnabled,
+		ModelPlazaPublicIncludeSubscriptionGroups: updatedSettings.ModelPlazaPublicIncludeSubscriptionGroups,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 

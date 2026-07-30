@@ -231,6 +231,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyAvailableChannelsEnabled,
+		SettingKeyModelPlazaPublicEnabled,
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
@@ -344,6 +345,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 
+		ModelPlazaPublicEnabled: settings[SettingKeyModelPlazaPublicEnabled] == "true",
+
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
@@ -423,6 +426,34 @@ func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) Availa
 	}
 	return AvailableChannelsRuntime{
 		Enabled: vals[SettingKeyAvailableChannelsEnabled] == "true",
+	}
+}
+
+// ModelPlazaPublicRuntime is the lightweight view of the public (anonymous) model
+// plaza switches consumed by the public plaza handler.
+type ModelPlazaPublicRuntime struct {
+	// Enabled gates anonymous access entirely. When false the public endpoint 404s.
+	Enabled bool
+	// IncludeSubscriptionGroups widens the anonymous view to subscription-type groups.
+	// Exclusive groups are never included regardless of this flag.
+	IncludeSubscriptionGroups bool
+}
+
+// GetModelPlazaPublicRuntime reads the public model plaza switches directly from the
+// settings store. Fail-closed: on error returns the zero value (disabled), matching the
+// opt-in default. Because enabling this publishes pricing to anonymous visitors, an
+// unreadable settings store must never be treated as "open".
+func (s *SettingService) GetModelPlazaPublicRuntime(ctx context.Context) ModelPlazaPublicRuntime {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyModelPlazaPublicEnabled,
+		SettingKeyModelPlazaPublicIncludeSubscriptionGroups,
+	})
+	if err != nil {
+		return ModelPlazaPublicRuntime{}
+	}
+	return ModelPlazaPublicRuntime{
+		Enabled:                   vals[SettingKeyModelPlazaPublicEnabled] == "true",
+		IncludeSubscriptionGroups: vals[SettingKeyModelPlazaPublicIncludeSubscriptionGroups] == "true",
 	}
 }
 
@@ -507,6 +538,7 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 	AvailableChannelsEnabled             bool `json:"available_channels_enabled"`
+	ModelPlazaPublicEnabled              bool `json:"model_plaza_public_enabled"`
 	AffiliateEnabled                     bool `json:"affiliate_enabled"`
 	RiskControlEnabled                   bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests           bool `json:"allow_user_view_error_requests"`
@@ -573,6 +605,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
+		ModelPlazaPublicEnabled:              settings.ModelPlazaPublicEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,

@@ -351,6 +351,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 
+		ModelPlazaPublicEnabled:                   settings.ModelPlazaPublicEnabled,
+		ModelPlazaPublicIncludeSubscriptionGroups: settings.ModelPlazaPublicIncludeSubscriptionGroups,
+
 		AffiliateEnabled: settings.AffiliateEnabled,
 
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,

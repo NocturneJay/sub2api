@@ -292,6 +292,11 @@ type SystemSettings struct {
 	// Available Channels feature switch (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 
+	// 公开(匿名)模型广场开关。开启 ModelPlazaPublicEnabled 等于把各分组倍率与
+	// 逐模型完整定价发布到公网,需管理员显式决定。
+	ModelPlazaPublicEnabled                   bool `json:"model_plaza_public_enabled"`
+	ModelPlazaPublicIncludeSubscriptionGroups bool `json:"model_plaza_public_include_subscription_groups"`
+
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 
@@ -375,6 +380,10 @@ type PublicSettings struct {
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+
+	// 公开广场开关对匿名可读:SPA 据此决定是否渲染入口、是否把访客重定向到登录。
+	// 订阅分组过滤开关刻意不下发——那是服务端可见性决策,客户端用不到。
+	ModelPlazaPublicEnabled bool `json:"model_plaza_public_enabled"`
 
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 

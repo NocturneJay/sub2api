@@ -195,6 +195,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// Available channels feature (default disabled; opt-in)
 		SettingKeyAvailableChannelsEnabled: "false",
 
+		// Public (anonymous) model plaza (default disabled; opt-in — publishes pricing)
+		SettingKeyModelPlazaPublicEnabled:                   "false",
+		SettingKeyModelPlazaPublicIncludeSubscriptionGroups: "false",
+
 		// Affiliate (邀请返利) feature (default disabled; opt-in)
 		SettingKeyAffiliateEnabled:              "false",
 		SettingKeyAffiliateAdminRechargeEnabled: strconv.FormatBool(AdminRechargeRebateEnabledDefault),
@@ -772,6 +776,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// Available channels feature (default: disabled; strict true)
 	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
+
+	// Public model plaza (default: disabled; strict true — anything else stays closed)
+	result.ModelPlazaPublicEnabled = settings[SettingKeyModelPlazaPublicEnabled] == "true"
+	result.ModelPlazaPublicIncludeSubscriptionGroups = settings[SettingKeyModelPlazaPublicIncludeSubscriptionGroups] == "true"
 
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
 	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
