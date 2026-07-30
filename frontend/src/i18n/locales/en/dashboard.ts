@@ -544,6 +544,8 @@ export default {
     billingModePerRequest: 'Pay per request',
     billingModeImage: 'Pay per image',
     billingModeVideo: 'Pay per video',
+    anonymousHint: 'Showing default group pricing. Sign in to see exclusive groups and your own rate.',
+    unavailable: 'The model plaza is not open yet.',
     input: 'Input',
     output: 'Output',
     cacheRead: 'Cache read',

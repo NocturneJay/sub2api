@@ -549,6 +549,8 @@ export default {
     billingModePerRequest: '按次付费',
     billingModeImage: '按图付费',
     billingModeVideo: '按视频付费',
+    anonymousHint: '当前展示的是分组默认价格；登录后可查看专属分组与你的专属倍率',
+    unavailable: '模型广场暂未开放',
     input: '输入',
     output: '输出',
     cacheRead: '缓存读',

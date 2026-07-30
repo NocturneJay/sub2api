@@ -272,7 +272,9 @@ const routes: RouteRecordRaw[] = [
     name: 'UserModelPlaza',
     component: () => import('@/views/user/ModelPlazaView.vue'),
     meta: {
-      requiresAuth: true,
+      // 可匿名访问:是否真的对未登录开放由后端 model_plaza_public_enabled 决定,
+      // 关闭时后端返回 404、页面渲染「暂未开放」空态(见下方 beforeEach 守卫)。
+      requiresAuth: false,
       requiresAdmin: false,
       title: 'Model Plaza',
       titleKey: 'modelPlaza.title',
@@ -837,6 +839,25 @@ router.beforeEach(async (to, _from, next) => {
       const isAllowed = isBackendModePublicRouteAllowed(to.path, authStore.hasPendingAuthSession)
       if (!isAllowed) {
         next('/login')
+        return
+      }
+    }
+    // 模型广场对未登录访客默认不开放：仅当公开开关明确为 false 时才拦到登录页。
+    // 加载失败视为「未知」而不拦截——后端同口径 fail-closed（返回 404），
+    // 页面会渲染「暂未开放」空态，避免瞬时网络抖动把访客弹去登录。
+    if (to.path === '/model-plaza' && !authStore.isAuthenticated) {
+      if (!appStore.publicSettingsLoaded) {
+        try {
+          await appStore.fetchPublicSettings()
+        } catch (error) {
+          console.warn('Failed to load public settings in model plaza guard', error)
+        }
+      }
+      if (
+        appStore.publicSettingsLoaded &&
+        appStore.cachedPublicSettings?.model_plaza_public_enabled === false
+      ) {
+        next({ path: '/login', query: { redirect: to.fullPath } })
         return
       }
     }

@@ -15,6 +15,16 @@ import {
 import { getAPIBaseURL } from './url'
 export { buildApiUrl, buildGatewayUrl } from './url'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /**
+     * 公开(可匿名)页面的请求置 true：401 时不清 token、不跳转 /login，
+     * 只把错误抛给调用方自行降级为匿名视图。详见响应拦截器中的说明。
+     */
+    skipAuthRedirect?: boolean
+  }
+}
+
 // ==================== Axios Instance Configuration ====================
 
 export const apiClient: AxiosInstance = axios.create({
@@ -128,7 +138,18 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean
+      /**
+       * 公开(可匿名)页面的请求置 true：401 时不清 token、不跳转 /login，只把错误
+       * 抛给调用方自行降级。
+       *
+       * 背景：后端 OptionalJWT 对「有 Authorization 头但已失效」是严格 401。
+       * 浏览器里存着过期 token 的访客打开公开页时会命中该分支，若沿用默认行为
+       * 就会被直接踢到登录页——公开页反而比不带 token 的全新访客更不可用。
+       */
+      skipAuthRedirect?: boolean
+    }
 
     // Handle common errors
     if (error.response) {
@@ -259,6 +280,15 @@ apiClient.interceptors.response.use(
             onTokenRefreshed('')
             isRefreshing = false
 
+            // 公开页请求：保留本地 token（可能只是这一个端点拒绝），交由调用方降级。
+            if (originalRequest.skipAuthRedirect) {
+              return Promise.reject({
+                status: 401,
+                code: 'TOKEN_REFRESH_FAILED',
+                message: 'Session expired. Please log in again.'
+              })
+            }
+
             // Clear tokens and redirect to login
             localStorage.removeItem('auth_token')
             localStorage.removeItem('refresh_token')
@@ -276,6 +306,15 @@ apiClient.interceptors.response.use(
               message: 'Session expired. Please log in again.'
             })
           }
+        }
+
+        // 公开页请求：不清 token、不跳转，交由调用方按匿名视图降级。
+        if (originalRequest.skipAuthRedirect) {
+          return Promise.reject({
+            status,
+            code: apiData.code,
+            message: apiData.message || apiData.detail || error.message
+          })
         }
 
         // No refresh token or is auth endpoint - clear auth and redirect

@@ -30,6 +30,14 @@ export default {
           enabled: '启用可用渠道',
           enabledHint: '关闭后用户端侧边栏入口隐藏，接口返回空数组。',
         },
+        modelPlazaPublic: {
+          enabled: '模型广场允许未登录访问',
+          enabledHint:
+            '开启后任何人无需登录即可查看模型广场。这会把各分组的折扣倍率、峰谷策略与逐模型完整定价公开到互联网（包括同行）。专属分组任何情况下都不会对匿名访客展示。默认关闭。',
+          includeSubscription: '匿名视图包含订阅型分组',
+          includeSubscriptionHint:
+            '高峰倍率仅对订阅型分组生效，公开它们等于公开付费套餐的峰值定价策略。默认关闭。',
+        },
         riskControl: {
           title: '风控中心',
           description: '启用内容审计菜单和全端点请求审核入口。默认关闭。',

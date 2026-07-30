@@ -30,6 +30,14 @@ export default {
           enabled: 'Enable Available Channels',
           enabledHint: 'When off, the sidebar entry is hidden and the endpoint returns an empty list.',
         },
+        modelPlazaPublic: {
+          enabled: 'Allow anonymous access to Model Plaza',
+          enabledHint:
+            'Anyone can view the model plaza without signing in. This publishes per-group discount multipliers, peak-rate windows and full per-model pricing to the open internet, competitors included. Exclusive groups are never shown to anonymous visitors. Off by default.',
+          includeSubscription: 'Include subscription groups in the anonymous view',
+          includeSubscriptionHint:
+            'Peak-rate multipliers only apply to subscription groups, so publishing them exposes your paid-plan peak pricing strategy. Off by default.',
+        },
         riskControl: {
           title: 'Risk Control',
           description: 'Enable the content moderation menu and gateway audit entry point. Disabled by default.',

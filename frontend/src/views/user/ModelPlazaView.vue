@@ -1,6 +1,24 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
+      <!-- 匿名提示:展示的是分组默认倍率,不含用户专属倍率与专属分组 -->
+      <p
+        v-if="!viewerAuthenticated && !plazaUnavailable"
+        class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-dark-400"
+      >
+        <Icon name="infoCircle" size="xs" class="h-3.5 w-3.5 flex-shrink-0" />
+        {{ t('modelPlaza.anonymousHint') }}
+      </p>
+
+      <!-- 广场未开放:开关关闭时的正常空态,不是错误 -->
+      <div
+        v-if="plazaUnavailable"
+        class="card p-10 text-center text-sm text-gray-500 dark:text-dark-400"
+      >
+        {{ t('modelPlaza.unavailable') }}
+      </div>
+
+      <template v-else>
       <!-- 筛选区 -->
       <div class="card space-y-4 p-4 sm:p-5">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -377,6 +395,7 @@
           </tbody>
         </table>
       </div>
+      </template>
     </div>
   </AppLayout>
 </template>
@@ -388,13 +407,13 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
-import userChannelsAPI, {
-  type ModelPlazaMeta,
-  type UserAvailableGroup,
-  type UserPricingInterval,
-  type UserSupportedModelPricing,
+import type {
+  ModelPlazaMeta,
+  UserAvailableGroup,
+  UserPricingInterval,
+  UserSupportedModelPricing,
 } from '@/api/channels'
-import userGroupsAPI from '@/api/groups'
+import { getPlazaPublicModels } from '@/api/plazaPublic'
 import { formatScaled } from '@/utils/pricing'
 import {
   BILLING_MODE_TOKEN,
@@ -426,18 +445,22 @@ const groups = ref<UserAvailableGroup[]>([])
 const models = ref<PlazaModel[]>([])
 const userGroupRates = ref<Record<number, number>>({})
 const plazaMeta = ref<ModelPlazaMeta>({ models: {} })
+/** 后端判定的登录态:匿名视图不含专属分组与专属倍率,据此给出提示。 */
+const viewerAuthenticated = ref(true)
+/** 广场未开放(开关关闭 → 后端 404):渲染空态而不是弹错误 toast。 */
+const plazaUnavailable = ref(false)
 
 async function load() {
   loading.value = true
+  plazaUnavailable.value = false
   try {
-    // 端点元数据失败不阻塞主列表:降级为不显示端点标签。
-    const [list, rates, meta] = await Promise.all([
-      userChannelsAPI.getAvailable(),
-      userGroupsAPI.getUserGroupRates().catch(() => ({}) as Record<number, number>),
-      userChannelsAPI.getModelMeta().catch(() => ({ models: {} }) as ModelPlazaMeta),
-    ])
-    userGroupRates.value = rates
-    plazaMeta.value = meta?.models ? meta : { models: {} }
+    // 单次聚合请求:未登录也可访问(受 model_plaza_public_enabled 控制),
+    // 带 token 时后端自动返回该用户的可见分组与专属倍率。
+    const res = await getPlazaPublicModels()
+    const list = res.channels ?? []
+    userGroupRates.value = res.group_rates ?? {}
+    plazaMeta.value = res.model_meta?.models ? res.model_meta : { models: {} }
+    viewerAuthenticated.value = res.authenticated ?? false
 
     const groupMap = new Map<number, UserAvailableGroup>()
     const modelMap = new Map<string, PlazaModel>()
@@ -465,7 +488,21 @@ async function load() {
     groups.value = Array.from(groupMap.values())
     models.value = Array.from(modelMap.values()).sort((a, b) => a.name.localeCompare(b.name))
   } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, t('common.error')))
+    // 404 = 广场未开放(开关关闭或依赖未注入):渲染空态,不弹错误 toast——
+    // 对匿名访客来说这是正常状态而非故障。
+    // 401 = 带着失效 token 访问:apiClient 已被告知不跳转,这里同样降级为空态,
+    // 由「登录后可见更多」提示引导用户重新登录。
+    const status = (err as { status?: number } | null)?.status
+    if (status === 404 || status === 401) {
+      plazaUnavailable.value = true
+      groups.value = []
+      models.value = []
+      userGroupRates.value = {}
+      plazaMeta.value = { models: {} }
+      viewerAuthenticated.value = false
+    } else {
+      appStore.showError(extractApiErrorMessage(err, t('common.error')))
+    }
   } finally {
     loading.value = false
   }
