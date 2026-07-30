@@ -698,6 +698,14 @@ const CubeIcon = {
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
+const flagModelPlazaPublic = makeSidebarFlag(FeatureFlags.modelPlazaPublic)
+/**
+ * 模型广场入口按访客身份取不同判据：已登录沿用 availableChannels（行为不变），
+ * 未登录看公开开关。否则会出现「广场对匿名开放、但侧边栏没有入口」，
+ * 或反过来「入口可见、点进去却被后端 404」的不一致。
+ */
+const flagModelPlazaEntry = () =>
+  authStore.isAuthenticated ? flagAvailableChannels() : flagModelPlazaPublic()
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
@@ -731,7 +739,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
     { path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
-    { path: '/model-plaza', label: t('nav.modelPlaza'), icon: CubeIcon, featureFlag: flagAvailableChannels },
+    { path: '/model-plaza', label: t('nav.modelPlaza'), icon: CubeIcon, featureFlag: flagModelPlazaEntry },
     // 「可用渠道」入口已隐藏:模型广场信息更全,且渠道描述含运营内部备注不宜对用户展示。
     // 页面与路由保留(/available-channels 直链仍可访问),后端开关仍与模型广场共用。
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },

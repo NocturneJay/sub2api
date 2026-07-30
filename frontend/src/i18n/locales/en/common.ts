@@ -180,6 +180,7 @@ export default {
     collapse: 'Collapse',
     expand: 'Expand',
     logout: 'Logout',
+    login: 'Log in',
     github: 'GitHub',
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',

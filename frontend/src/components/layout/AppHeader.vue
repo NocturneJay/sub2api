@@ -255,6 +255,15 @@
             </div>
           </transition>
         </div>
+
+        <!-- 未登录访客（公开页面，如模型广场）：用登录入口替代用户区 -->
+        <RouterLink
+          v-else
+          :to="{ path: '/login', query: { redirect: route.fullPath } }"
+          class="inline-flex flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition-all duration-200 hover:from-primary-600 hover:to-primary-700 active:scale-[0.98]"
+        >
+          {{ t('nav.login') }}
+        </RouterLink>
       </div>
     </div>
   </header>

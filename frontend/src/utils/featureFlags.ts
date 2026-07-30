@@ -104,6 +104,15 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Available Channels',
   }),
+  /**
+   * 模型广场对未登录访客开放。仅用于判定「匿名访客能否看到广场」；
+   * 已登录用户的广场可见性仍由 availableChannels 决定，两者互不影响。
+   */
+  modelPlazaPublic: defineFlag({
+    key: 'model_plaza_public_enabled',
+    mode: 'opt-in',
+    label: 'Public Model Plaza',
+  }),
   payment: defineFlag({
     key: 'payment_enabled',
     mode: 'opt-out',

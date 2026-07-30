@@ -180,6 +180,7 @@ export default {
     collapse: '收起',
     expand: '展开',
     logout: '退出登录',
+    login: '登录',
     github: 'GitHub',
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
