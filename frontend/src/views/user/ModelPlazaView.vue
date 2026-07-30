@@ -400,6 +400,7 @@ import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
   BILLING_MODE_IMAGE,
+  BILLING_MODE_VIDEO,
 } from '@/constants/channel'
 import { platformBadgeClass } from '@/utils/platformColors'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
@@ -528,15 +529,19 @@ function effectiveRate(g: UserAvailableGroup): number {
 }
 
 /**
- * 展示倍率,与计费侧 resolveImageRateMultiplier 保持一致:
- * 按图计费且分组开启图片独立倍率时,用 image_rate_multiplier
- * (忽略通用倍率与用户专属倍率);其余情况用通用有效倍率。
- * 原价模式恒为 1。
+ * 展示倍率,与计费侧 resolveImageRateMultiplier / resolveVideoRateMultiplier 保持一致:
+ * 按图计费且分组开启图片独立倍率时用 image_rate_multiplier,
+ * 按视频计费且分组开启视频独立倍率时用 video_rate_multiplier
+ * (两者都忽略通用倍率与用户专属倍率);其余情况用通用有效倍率。
+ * 负值归 0,与后端一致。原价模式恒为 1。
  */
 function displayRate(g: UserAvailableGroup, pricing: UserSupportedModelPricing | null): number {
   if (!actualPrice.value) return 1
   if (pricing?.billing_mode === BILLING_MODE_IMAGE && g.image_rate_independent) {
     return g.image_rate_multiplier < 0 ? 0 : g.image_rate_multiplier
+  }
+  if (pricing?.billing_mode === BILLING_MODE_VIDEO && g.video_rate_independent) {
+    return g.video_rate_multiplier < 0 ? 0 : g.video_rate_multiplier
   }
   return effectiveRate(g)
 }
@@ -561,12 +566,18 @@ function fmtTok(v: number | null, rate: number): string {
 }
 
 function unitLabel(p: UserSupportedModelPricing): string {
-  return p.billing_mode === BILLING_MODE_IMAGE ? t('modelPlaza.unitPerImage') : t('modelPlaza.unitPerRequest')
+  if (p.billing_mode === BILLING_MODE_IMAGE) return t('modelPlaza.unitPerImage')
+  if (p.billing_mode === BILLING_MODE_VIDEO) return t('modelPlaza.unitPerVideo')
+  return t('modelPlaza.unitPerRequest')
 }
 
-/** 按次/按图价格的紧凑单行文本:有阶梯时列出全部档位(如 "1K $0.05 · 2K $0.10 · 4K $0.20 /张")。 */
+/** 按次/按图/按视频价格的紧凑单行文本:有阶梯时列出全部档位(如 "1K $0.05 · 2K $0.10 · 4K $0.20 /张")。 */
 function fmtPer(p: UserSupportedModelPricing, rate: number): string {
-  if (p.billing_mode === BILLING_MODE_IMAGE || p.billing_mode === BILLING_MODE_PER_REQUEST) {
+  if (
+    p.billing_mode === BILLING_MODE_IMAGE ||
+    p.billing_mode === BILLING_MODE_VIDEO ||
+    p.billing_mode === BILLING_MODE_PER_REQUEST
+  ) {
     const tiers = perRequestTiers(p)
     if (tiers.length > 0) {
       return (
@@ -580,7 +591,9 @@ function fmtPer(p: UserSupportedModelPricing, rate: number): string {
 }
 
 function perUnitLabel(p: UserSupportedModelPricing): string {
-  return p.billing_mode === BILLING_MODE_IMAGE ? t('modelPlaza.perImage') : t('modelPlaza.perRequest')
+  if (p.billing_mode === BILLING_MODE_IMAGE) return t('modelPlaza.perImage')
+  if (p.billing_mode === BILLING_MODE_VIDEO) return t('modelPlaza.perVideo')
+  return t('modelPlaza.perRequest')
 }
 
 function formatPerUnit(v: number | null | undefined, rate: number): string {
@@ -617,6 +630,8 @@ function billingLabel(m: PlazaModel): string {
       return t('modelPlaza.billingModePerRequest')
     case BILLING_MODE_IMAGE:
       return t('modelPlaza.billingModeImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.billingModeVideo')
     default:
       return t('modelPlaza.billingModeToken')
   }
@@ -631,6 +646,8 @@ function billingBadgeClass(m: PlazaModel): string {
       return `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300`
     case BILLING_MODE_IMAGE:
       return `${base} bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300`
+    case BILLING_MODE_VIDEO:
+      return `${base} bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300`
     default:
       return `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300`
   }

@@ -23,6 +23,9 @@ export interface UserAvailableGroup {
   /** true 时图片按次计费使用独立倍率 image_rate_multiplier(忽略通用/用户专属/高峰倍率)。 */
   image_rate_independent: boolean
   image_rate_multiplier: number
+  /** true 时视频按次计费使用独立倍率 video_rate_multiplier(忽略通用/用户专属/高峰倍率)。 */
+  video_rate_independent: boolean
+  video_rate_multiplier: number
 }
 
 export interface UserPricingInterval {

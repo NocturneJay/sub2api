@@ -67,6 +67,10 @@ type userAvailableGroup struct {
 	// 而非通用倍率(与计费侧 resolveImageRateMultiplier 保持一致)。
 	ImageRateIndependent bool    `json:"image_rate_independent"`
 	ImageRateMultiplier  float64 `json:"image_rate_multiplier"`
+	// 视频按次独立倍率:开启时前端展示视频价格应用 VideoRateMultiplier,
+	// 而非通用倍率(与计费侧 resolveVideoRateMultiplier 保持一致)。
+	VideoRateIndependent bool    `json:"video_rate_independent"`
+	VideoRateMultiplier  float64 `json:"video_rate_multiplier"`
 }
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
@@ -254,6 +258,8 @@ func filterUserVisibleGroups(
 			IsExclusive:          g.IsExclusive,
 			ImageRateIndependent: g.ImageRateIndependent,
 			ImageRateMultiplier:  g.ImageRateMultiplier,
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  g.VideoRateMultiplier,
 		})
 	}
 	return visible

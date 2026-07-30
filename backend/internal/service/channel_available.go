@@ -27,6 +27,10 @@ type AvailableGroupRef struct {
 	// 忽略通用倍率/用户专属倍率/高峰倍率(与 resolveImageRateMultiplier 一致)。
 	ImageRateIndependent bool
 	ImageRateMultiplier  float64
+	// 视频按次计费独立倍率:开启时视频计费用 VideoRateMultiplier,
+	// 忽略通用倍率/用户专属倍率/高峰倍率(与 resolveVideoRateMultiplier 一致)。
+	VideoRateIndependent bool
+	VideoRateMultiplier  float64
 }
 
 // AvailableChannel 可用渠道视图：用于「可用渠道」页面展示渠道基础信息 +
@@ -79,6 +83,8 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 			IsExclusive:          g.IsExclusive,
 			ImageRateIndependent: g.ImageRateIndependent,
 			ImageRateMultiplier:  g.ImageRateMultiplier,
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  g.VideoRateMultiplier,
 		}
 	}
 
