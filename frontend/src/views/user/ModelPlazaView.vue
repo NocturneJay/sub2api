@@ -615,11 +615,23 @@ function endpointsOf(m: PlazaModel): string[] {
   return plazaMeta.value.models[m.name]?.endpoints ?? []
 }
 
+/**
+ * 代表性定价:决定计费方式徽章、限时免费与阶梯定价徽章。
+ *
+ * 不能取 Map 的第一个非 null——遍历序即插入序,受渠道/分组返回顺序影响,
+ * 同一模型在不同可见分组集合下(如登录前后)会得到不同徽章。
+ * 改为按 group.id 升序取第一个有定价的分组,结果只取决于数据本身。
+ */
 function firstPricing(m: PlazaModel): UserSupportedModelPricing | null {
-  for (const p of m.groupPricing.values()) {
-    if (p) return p
+  let picked: UserSupportedModelPricing | null = null
+  let pickedGroupId = Number.POSITIVE_INFINITY
+  for (const [groupId, pricing] of m.groupPricing) {
+    if (pricing && groupId < pickedGroupId) {
+      picked = pricing
+      pickedGroupId = groupId
+    }
   }
-  return null
+  return picked
 }
 
 function billingLabel(m: PlazaModel): string {

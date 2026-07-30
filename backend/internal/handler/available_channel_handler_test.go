@@ -155,3 +155,55 @@ func TestBuildPlatformSections_GroupsByPlatform(t *testing.T) {
 	require.Len(t, sections[0].SupportedModels, 1)
 	require.Equal(t, "claude-sonnet-4-6", sections[0].SupportedModels[0].Name)
 }
+
+func TestUserModelMeta_Unauthenticated401(t *testing.T) {
+	// 未登录必须 401，且不触达任何 service 依赖（nil services 会 panic 即为回归）。
+	gin.SetMode(gin.TestMode)
+	h := &AvailableChannelHandler{}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/model-meta", nil)
+
+	h.ModelMeta(c)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestFilterModelPlazaMeta_KeepsOnlyVisibleModels(t *testing.T) {
+	// 管理员按模型名统一配置端点标签，其中 exclusive-only-model 只挂在用户看不到的
+	// 专属分组下；过滤后不得出现在响应里，否则等于泄漏专属分组的模型名与能力面。
+	meta := &service.ModelPlazaMeta{Models: map[string]service.ModelPlazaModelMeta{
+		"claude-sonnet-4-6":    {Endpoints: []string{"/v1/messages"}},
+		"exclusive-only-model": {Endpoints: []string{"/v1/secret"}},
+	}}
+	visible := map[string]struct{}{"claude-sonnet-4-6": {}}
+
+	out := filterModelPlazaMeta(meta, visible)
+
+	require.Len(t, out.Models, 1)
+	require.Contains(t, out.Models, "claude-sonnet-4-6")
+	require.NotContains(t, out.Models, "exclusive-only-model")
+	// 原始 meta 不能被就地修改（同一份缓存可能被其他请求复用）。
+	require.Len(t, meta.Models, 2)
+}
+
+func TestFilterModelPlazaMeta_EmptyVisibleYieldsEmpty(t *testing.T) {
+	// 可见集合为空时必须 fail-closed 返回空，而不是回退成全量。
+	meta := &service.ModelPlazaMeta{Models: map[string]service.ModelPlazaModelMeta{
+		"a": {Endpoints: []string{"/v1/a"}},
+	}}
+
+	out := filterModelPlazaMeta(meta, map[string]struct{}{})
+
+	require.NotNil(t, out)
+	require.Empty(t, out.Models)
+}
+
+func TestFilterModelPlazaMeta_NilMetaReturnsEmptyNotNil(t *testing.T) {
+	// meta 为 nil 时返回空对象，保证响应恒为 {"models":{}} 而非 null。
+	out := filterModelPlazaMeta(nil, map[string]struct{}{"a": {}})
+
+	require.NotNil(t, out)
+	require.NotNil(t, out.Models)
+	require.Empty(t, out.Models)
+}

@@ -181,14 +181,19 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 
 // ModelMeta 返回模型广场展示元数据(管理员配置的按模型端点标签)。
 // 与可用渠道共用 available_channels 开关;仅登录用户可见。
+//
+// 元数据按模型名索引且由管理员统一配置,其中可能包含只挂在专属分组下的模型。
+// 因此必须按该用户在 /channels/available 口径下的可见模型集过滤后再返回,
+// 否则等于把不可见分组的模型名与端点标签泄漏给任意登录用户。
 // GET /api/v1/channels/model-meta
 func (h *AvailableChannelHandler) ModelMeta(c *gin.Context) {
-	if _, ok := middleware.GetAuthSubjectFromContext(c); !ok {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
 	}
 	if !h.featureEnabled(c) || h.settingService == nil {
-		response.Success(c, service.ModelPlazaMeta{Models: map[string]service.ModelPlazaModelMeta{}})
+		response.Success(c, emptyUserModelPlazaMeta())
 		return
 	}
 	meta, err := h.settingService.GetModelPlazaMeta(c.Request.Context())
@@ -196,7 +201,75 @@ func (h *AvailableChannelHandler) ModelMeta(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, meta)
+	visible, err := h.visibleModelNames(c, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, filterModelPlazaMeta(meta, visible))
+}
+
+func emptyUserModelPlazaMeta() *service.ModelPlazaMeta {
+	return &service.ModelPlazaMeta{Models: map[string]service.ModelPlazaModelMeta{}}
+}
+
+// visibleModelNames 返回该用户在「可用渠道」口径下可见的模型名集合。
+// 与 List 使用同一条链路(可访问分组 → 活跃渠道 → 平台 section),
+// 保证两个端点的可见性判定不会漂移。
+func (h *AvailableChannelHandler) visibleModelNames(
+	c *gin.Context,
+	userID int64,
+) (map[string]struct{}, error) {
+	ctx := c.Request.Context()
+	userGroups, err := h.apiKeyService.GetAvailableGroups(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	allowedGroupIDs := make(map[int64]struct{}, len(userGroups))
+	for i := range userGroups {
+		allowedGroupIDs[userGroups[i].ID] = struct{}{}
+	}
+
+	channels, err := h.channelService.ListAvailable(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make(map[string]struct{}, 64)
+	for _, ch := range channels {
+		if ch.Status != service.StatusActive {
+			continue
+		}
+		visibleGroups := filterUserVisibleGroups(ch.Groups, allowedGroupIDs)
+		if len(visibleGroups) == 0 {
+			continue
+		}
+		for _, section := range buildPlatformSections(ch, visibleGroups) {
+			for _, m := range section.SupportedModels {
+				names[m.Name] = struct{}{}
+			}
+		}
+	}
+	return names, nil
+}
+
+// filterModelPlazaMeta 只保留 visible 中出现过的模型名。
+// meta 为 nil 或 visible 为空集时返回空元数据(而非全量),保持 fail-closed。
+func filterModelPlazaMeta(
+	meta *service.ModelPlazaMeta,
+	visible map[string]struct{},
+) *service.ModelPlazaMeta {
+	out := emptyUserModelPlazaMeta()
+	if meta == nil {
+		return out
+	}
+	for name, entry := range meta.Models {
+		if _, ok := visible[name]; !ok {
+			continue
+		}
+		out.Models[name] = entry
+	}
+	return out
 }
 
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
