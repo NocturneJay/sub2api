@@ -28,7 +28,8 @@ export default {
           description: 'Show logged-in users an aggregate view of the channels, models and pricing they can access. Disabled by default.',
           configureLink: 'Configure model pricing in Channel Management > Channel Pricing',
           enabled: 'Enable Available Channels',
-          enabledHint: 'When off, the sidebar entry is hidden and the endpoint returns an empty list.',
+          enabledHint:
+            'When off, the sidebar entry is hidden and the endpoint returns an empty list. The Model Plaza (including public access) also becomes unavailable — it is fed by this same switch.',
         },
         modelPlazaPublic: {
           enabled: 'Allow anonymous access to Model Plaza',

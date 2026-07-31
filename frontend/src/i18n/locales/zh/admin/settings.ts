@@ -28,7 +28,8 @@ export default {
           description: '向已登录用户展示他们能访问的渠道、模型和定价聚合视图。默认关闭。',
           configureLink: '前往 渠道管理 > 渠道定价 配置模型价格',
           enabled: '启用可用渠道',
-          enabledHint: '关闭后用户端侧边栏入口隐藏，接口返回空数组。',
+          enabledHint:
+            '关闭后用户端侧边栏入口隐藏，接口返回空数组；模型广场（含公开访问）也会一并不可用——广场的数据同样由该开关供给。',
         },
         modelPlazaPublic: {
           enabled: '模型广场允许未登录访问',
