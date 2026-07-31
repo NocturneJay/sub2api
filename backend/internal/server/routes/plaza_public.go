@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"net"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -43,14 +44,50 @@ func RegisterPlazaPublicRoutes(
 	}
 
 	rateLimiter := middleware.NewRateLimiter(redisClient)
+	limit := rateLimiter.LimitWithOptions("plaza-public", plazaPublicRPM, time.Minute, middleware.RateLimitOptions{
+		FailureMode: middleware.RateLimitFailOpen,
+	})
 
 	plaza := v1.Group("/plaza")
-	plaza.Use(rateLimiter.LimitWithOptions("plaza-public", plazaPublicRPM, time.Minute, middleware.RateLimitOptions{
-		FailureMode: middleware.RateLimitFailOpen,
-	}))
+	plaza.Use(publicIPRateLimit(limit))
 	plaza.Use(gin.HandlerFunc(optionalJWT))
 	plaza.Use(servermiddleware.BackendModeUserGuard(settingService))
 	{
 		plaza.GET("/models", h.PlazaPublic.Get)
 	}
+}
+
+// publicIPRateLimit 只对「公网可路由的客户端 IP」计数。
+//
+// 底层限流按 c.ClientIP() 分桶，而 c.ClientIP() 只有在 server.trusted_proxies
+// 正确配置时才是真实访客地址。该配置缺省时（代码明确支持的状态，启动仅打一条
+// warning）Gin 忽略 XFF 直接返回对端地址——反代后面所有访客会坍缩成同一个桶，
+// 60/min 从「每 IP 配额」变成「全站配额」，第 61 个访客起全部 429，而限流又挂在
+// OptionalJWT 之前，登录用户一并被打死。那是比它要防的抓取更严重的可用性故障。
+//
+// 因此这里在归因不可信时选择「不计数」而不是「共用一个桶」，与本组限流
+// fail-open 的取向一致：真正压住 DB 放大面的是 handler 内的匿名视图 TTL 缓存，
+// 限流只是额外一层。内网来源（反代回源、健康检查、容器网络）本就不该被计入。
+func publicIPRateLimit(limit gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !isPubliclyRoutableIP(c.ClientIP()) {
+			c.Next()
+			return
+		}
+		limit(c)
+	}
+}
+
+// isPubliclyRoutableIP 判断地址是否为公网可路由地址。
+// 环回、私有网段、链路本地、未指定地址均视为不可信归因。
+func isPubliclyRoutableIP(raw string) bool {
+	parsed := net.ParseIP(raw)
+	if parsed == nil {
+		return false
+	}
+	if parsed.IsLoopback() || parsed.IsUnspecified() ||
+		parsed.IsPrivate() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() {
+		return false
+	}
+	return true
 }

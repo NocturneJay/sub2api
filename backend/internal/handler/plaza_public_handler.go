@@ -140,29 +140,33 @@ func (h *PlazaPublicHandler) Get(c *gin.Context) {
 
 	// 匿名访问需要公开开关;登录用户沿用既有的 available_channels 开关口径,
 	// 保证「登录能看的东西」不因这个新端点而变多或变少。
+	//
+	// 开关只读一次并向下传递:settingRepo.GetMultiple 是无缓存的真实查询,
+	// 而这是一个可匿名访问的端点,每多读一次就是一次可被外部无限触发的 DB 查询。
 	if !authenticated {
-		if !h.settingService.GetModelPlazaPublicRuntime(ctx).Enabled {
+		runtime := h.settingService.GetModelPlazaPublicRuntime(ctx)
+		if !runtime.Enabled {
 			response.NotFound(c, "Model plaza is not available")
 			return
 		}
-	} else if !h.settingService.GetAvailableChannelsRuntime(ctx).Enabled {
-		response.NotFound(c, "Model plaza is not available")
-		return
-	}
 
-	if !authenticated {
 		now := time.Now()
 		if cached := h.anonCache.get(now); cached != nil {
 			response.Success(c, cached)
 			return
 		}
-		payload, err := h.buildAnonymous(c)
+		payload, err := h.buildAnonymous(c, runtime)
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
 		h.anonCache.set(payload, now)
 		response.Success(c, payload)
+		return
+	}
+
+	if !h.settingService.GetAvailableChannelsRuntime(ctx).Enabled {
+		response.NotFound(c, "Model plaza is not available")
 		return
 	}
 
@@ -175,9 +179,12 @@ func (h *PlazaPublicHandler) Get(c *gin.Context) {
 }
 
 // buildAnonymous 组装匿名视图:公开且(默认)非订阅的分组,不含任何用户维度数据。
-func (h *PlazaPublicHandler) buildAnonymous(c *gin.Context) (*plazaPublicResponse, error) {
+// runtime 由调用方读取后传入,避免同一请求内重复查询 settings。
+func (h *PlazaPublicHandler) buildAnonymous(
+	c *gin.Context,
+	runtime service.ModelPlazaPublicRuntime,
+) (*plazaPublicResponse, error) {
 	ctx := c.Request.Context()
-	runtime := h.settingService.GetModelPlazaPublicRuntime(ctx)
 
 	groups, err := h.apiKeyService.GetAnonymousVisibleGroups(ctx, runtime.IncludeSubscriptionGroups)
 	if err != nil {
