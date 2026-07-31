@@ -33,7 +33,7 @@ export default {
         modelPlazaPublic: {
           enabled: 'Allow anonymous access to Model Plaza',
           enabledHint:
-            'Anyone can view the model plaza without signing in. This publishes per-group discount multipliers, peak-rate windows and full per-model pricing to the open internet, competitors included. Exclusive groups are never shown to anonymous visitors. Off by default.',
+            'Anyone can view the model plaza without signing in. This publishes per-group discount multipliers, peak-rate windows and full per-model pricing to the open internet, competitors included. Exclusive groups are never shown to anonymous visitors. Requires Available Channels above to be enabled; otherwise the plaza is unavailable to both signed-in and anonymous visitors. Off by default.',
           includeSubscription: 'Include subscription groups in the anonymous view',
           includeSubscriptionHint:
             'Peak-rate multipliers only apply to subscription groups, so publishing them exposes your paid-plan peak pricing strategy. Off by default.',

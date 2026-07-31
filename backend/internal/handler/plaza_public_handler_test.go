@@ -131,13 +131,37 @@ func TestBuildPlazaPublicSections_NoVisibleGroupsYieldsNil(t *testing.T) {
 
 func TestPlazaPublicAnonymousCache_ExpiresAndIsolates(t *testing.T) {
 	var cache plazaPublicAnonymousCache
-	base := time.Now()
+	const key = "anon|sub=0"
 
-	require.Nil(t, cache.get(base), "空缓存必须 miss")
+	require.Nil(t, cache.get(key, time.Now()), "空缓存必须 miss")
 
 	payload := &plazaPublicResponse{Authenticated: false}
-	cache.set(payload, base)
+	cache.set(key, payload)
+	writtenAt := time.Now()
 
-	require.Same(t, payload, cache.get(base.Add(plazaPublicAnonymousCacheTTL-1)))
-	require.Nil(t, cache.get(base.Add(plazaPublicAnonymousCacheTTL+1)), "过期后必须 miss")
+	require.Same(t, payload, cache.get(key, writtenAt))
+	require.Nil(t, cache.get(key, writtenAt.Add(plazaPublicAnonymousCacheTTL+time.Second)),
+		"过期后必须 miss")
+}
+
+func TestPlazaPublicAnonymousCache_KeyedByVisibilitySwitch(t *testing.T) {
+	// 缓存必须按影响可见性的开关分键：管理员关掉「匿名含订阅分组」后，
+	// 不能再从缓存里把含订阅分组的旧 payload 发出去。
+	var cache plazaPublicAnonymousCache
+	withSub := &plazaPublicResponse{Authenticated: false}
+
+	cache.set(anonCacheKey(service.ModelPlazaPublicRuntime{IncludeSubscriptionGroups: true}), withSub)
+
+	now := time.Now()
+	require.Same(t, withSub,
+		cache.get(anonCacheKey(service.ModelPlazaPublicRuntime{IncludeSubscriptionGroups: true}), now))
+	require.Nil(t,
+		cache.get(anonCacheKey(service.ModelPlazaPublicRuntime{IncludeSubscriptionGroups: false}), now),
+		"开关变化后必须 miss，而不是复用旧可见性下构建的 payload")
+}
+
+func TestAnonCacheKey_DistinguishesSwitch(t *testing.T) {
+	on := anonCacheKey(service.ModelPlazaPublicRuntime{IncludeSubscriptionGroups: true})
+	off := anonCacheKey(service.ModelPlazaPublicRuntime{IncludeSubscriptionGroups: false})
+	require.NotEqual(t, on, off)
 }

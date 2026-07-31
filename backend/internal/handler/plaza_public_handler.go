@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -81,26 +83,44 @@ const plazaPublicAnonymousCacheTTL = 30 * time.Second
 
 // plazaPublicAnonymousCache 只缓存匿名视图。
 // 登录视图含用户专属倍率与个人可见分组,永远不进这里。
+//
+// key 必须携带所有影响可见性的输入:否则管理员关掉
+// model_plaza_public_include_subscription_groups 之后,旧 payload 仍会把订阅型
+// 分组继续发给匿名访客,直到 TTL 到期。
 type plazaPublicAnonymousCache struct {
 	mu        sync.RWMutex
+	key       string
 	payload   *plazaPublicResponse
 	expiresAt time.Time
 }
 
-func (c *plazaPublicAnonymousCache) get(now time.Time) *plazaPublicResponse {
+func (c *plazaPublicAnonymousCache) get(key string, now time.Time) *plazaPublicResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.payload == nil || now.After(c.expiresAt) {
+	if c.payload == nil || c.key != key || now.After(c.expiresAt) {
 		return nil
 	}
 	return c.payload
 }
 
-func (c *plazaPublicAnonymousCache) set(payload *plazaPublicResponse, now time.Time) {
+// set 以写入时刻起算 TTL。
+// 不能沿用构建开始前采样的时间戳:那样有效 TTL = TTL - 构建耗时,负载升高时
+// 构建变慢 → 有效 TTL 缩短 → 命中率下降 → 更多请求走构建,形成正反馈;
+// 构建耗时一旦超过 TTL,写入即已过期,缓存在最需要它的时候永久失效。
+func (c *plazaPublicAnonymousCache) set(key string, payload *plazaPublicResponse) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.key = key
 	c.payload = payload
-	c.expiresAt = now.Add(plazaPublicAnonymousCacheTTL)
+	c.expiresAt = time.Now().Add(plazaPublicAnonymousCacheTTL)
+}
+
+// anonCacheKey 由影响匿名可见性的开关组合而成。
+func anonCacheKey(runtime service.ModelPlazaPublicRuntime) string {
+	if runtime.IncludeSubscriptionGroups {
+		return "anon|sub=1"
+	}
+	return "anon|sub=0"
 }
 
 // PlazaPublicHandler 公开模型广场 handler。
@@ -109,6 +129,7 @@ type PlazaPublicHandler struct {
 	apiKeyService  *service.APIKeyService
 	settingService *service.SettingService
 	anonCache      plazaPublicAnonymousCache
+	anonFlight     singleflight.Group
 }
 
 // NewPlazaPublicHandler 创建公开模型广场 handler。
@@ -138,11 +159,19 @@ func (h *PlazaPublicHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// 匿名访问需要公开开关;登录用户沿用既有的 available_channels 开关口径,
-	// 保证「登录能看的东西」不因这个新端点而变多或变少。
-	//
-	// 开关只读一次并向下传递:settingRepo.GetMultiple 是无缓存的真实查询,
-	// 而这是一个可匿名访问的端点,每多读一次就是一次可被外部无限触发的 DB 查询。
+	// available_channels_enabled 是「是否对外披露渠道与定价」的既有主闸,
+	// 登录与匿名都必须先过它。匿名分支若只看自己的开关,会出现
+	// available_channels=false + public=true 时「对互联网 200、对自己用户 404」
+	// 的倒挂——而 available_channels 默认就是 false,那正是管理员只打开公开
+	// 广场时会落入的状态,登录用户去掉 Authorization 头反而能拿到更多数据。
+	if !h.settingService.GetAvailableChannelsRuntime(ctx).Enabled {
+		response.NotFound(c, "Model plaza is not available")
+		return
+	}
+
+	// 匿名再额外要求公开开关。开关只读一次并向下传递:settingRepo.GetMultiple
+	// 是无缓存的真实查询,而这是可匿名访问的端点,每多读一次就是一次可被外部
+	// 无限触发的 DB 查询。
 	if !authenticated {
 		runtime := h.settingService.GetModelPlazaPublicRuntime(ctx)
 		if !runtime.Enabled {
@@ -150,23 +179,28 @@ func (h *PlazaPublicHandler) Get(c *gin.Context) {
 			return
 		}
 
-		now := time.Now()
-		if cached := h.anonCache.get(now); cached != nil {
+		key := anonCacheKey(runtime)
+		if cached := h.anonCache.get(key, time.Now()); cached != nil {
 			response.Success(c, cached)
 			return
 		}
-		payload, err := h.buildAnonymous(c, runtime)
+
+		// singleflight:缓存冷启动与每次过期瞬间,并发请求会同时 miss。
+		// 单次构建约 6-7 条 DB 往返(含 channel 全表扫)加逐模型定价回填,
+		// 不做在途去重则 DB 放大面等于并发数而非每 TTL 一次。
+		v, err, _ := h.anonFlight.Do(key, func() (any, error) {
+			payload, buildErr := h.buildAnonymous(c, runtime)
+			if buildErr != nil {
+				return nil, buildErr
+			}
+			h.anonCache.set(key, payload)
+			return payload, nil
+		})
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
-		h.anonCache.set(payload, now)
-		response.Success(c, payload)
-		return
-	}
-
-	if !h.settingService.GetAvailableChannelsRuntime(ctx).Enabled {
-		response.NotFound(c, "Model plaza is not available")
+		response.Success(c, v.(*plazaPublicResponse))
 		return
 	}
 
