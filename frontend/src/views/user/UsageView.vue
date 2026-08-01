@@ -327,10 +327,11 @@ let modelStatsReqSeq = 0
 const formatLocalDate = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
-const getLast24HoursRangeDates = () => {
-  const end = new Date()
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  return { start: formatLocalDate(start), end: formatLocalDate(end) }
+/** 默认区间取「今天」：后端把 start_date 解析为用户时区当日 00:00，
+ *  end_date 取次日 00:00 为上界，因此同一天即「从凌晨算起到此刻」。 */
+const getTodayRangeDates = () => {
+  const today = formatLocalDate(new Date())
+  return { start: today, end: today }
 }
 
 const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
@@ -339,7 +340,7 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   return Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24)) <= 1 ? 'hour' : 'day'
 }
 
-const defaultRange = getLast24HoursRangeDates()
+const defaultRange = getTodayRangeDates()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
 const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, endDate.value))
@@ -544,7 +545,7 @@ const refreshData = () => {
 }
 
 const resetFilters = () => {
-  const range = getLast24HoursRangeDates()
+  const range = getTodayRangeDates()
   startDate.value = range.start
   endDate.value = range.end
   filters.value = {
