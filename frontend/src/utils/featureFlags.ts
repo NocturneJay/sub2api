@@ -107,11 +107,19 @@ export const FeatureFlags = {
   /**
    * 模型广场对未登录访客开放。仅用于判定「匿名访客能否看到广场」；
    * 已登录用户的广场可见性仍由 availableChannels 决定，两者互不影响。
+   *
+   * 注意与下面的 modelPlaza 区分：那是上游自带广场的开关，aicat 不路由到
+   * 上游前端，保留仅为让上游后端与设置链路完整。
    */
   modelPlazaPublic: defineFlag({
     key: 'model_plaza_public_enabled',
     mode: 'opt-in',
     label: 'Public Model Plaza',
+  }),
+  modelPlaza: defineFlag({
+    key: 'model_plaza_enabled',
+    mode: 'opt-in',
+    label: 'Model Plaza',
   }),
   payment: defineFlag({
     key: 'payment_enabled',

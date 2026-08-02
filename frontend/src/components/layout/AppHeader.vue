@@ -59,6 +59,11 @@
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
         </a>
 
+        <!-- 上游在此处有一个指向 /model-plaza?embedded=1 的广场入口，每次同步都要删除：
+             embedded=1 是上游 ModelPlazaView 的内嵌形态参数，aicat 自研广场不认；
+             且自研广场入口已在侧边栏（AppSidebar 的 flagModelPlazaEntry），顶栏再放一个
+             会出现两个同名「模型广场」。 -->
+
         <!-- Language Switcher -->
         <LocaleSwitcher />
 

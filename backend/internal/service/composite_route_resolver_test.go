@@ -50,7 +50,6 @@ func TestCompositeRouteResolverExplicitExactRouteRewritesModel(t *testing.T) {
 				PublicModel:    "openrouter/gpt-5",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformOpenAI,
-				TargetGroupID:  i64p(42),
 				UpstreamModel:  "gpt-5",
 				Endpoint:       CompositeRouteEndpointAny,
 				Priority:       100,
@@ -79,7 +78,6 @@ func TestCompositeRouteResolverPrefersEndpointSpecificLongestPrefix(t *testing.T
 				PublicModel:    "router/",
 				MatchType:      CompositeRouteMatchPrefix,
 				TargetPlatform: PlatformAnthropic,
-				TargetGroupID:  i64p(41),
 				Endpoint:       CompositeRouteEndpointAny,
 				Priority:       10,
 				Enabled:        true,
@@ -90,7 +88,6 @@ func TestCompositeRouteResolverPrefersEndpointSpecificLongestPrefix(t *testing.T
 				PublicModel:    "router/gpt-",
 				MatchType:      CompositeRouteMatchPrefix,
 				TargetPlatform: PlatformOpenAI,
-				TargetGroupID:  i64p(42),
 				UpstreamModel:  "gpt-family",
 				Endpoint:       CompositeRouteEndpointResponses,
 				Priority:       100,
@@ -110,17 +107,19 @@ func TestCompositeRouteResolverPrefersEndpointSpecificLongestPrefix(t *testing.T
 	require.Equal(t, int64(2), decision.Route.ID)
 }
 
-func TestCompositeRouteResolverPrefixWithoutUpstreamPreservesRequestedModel(t *testing.T) {
-	targetGroupID := int64(42)
+// TestCompositeRouteResolverPrefixEmptyUpstreamPassesThroughRequestedModel 验证：
+// 前缀匹配路由留空 upstream_model 时，转发的是具体请求模型（各自原样），而不是
+// 塌缩成 public_model。这是「留空 = 透传原始模型」语义的核心场景。
+func TestCompositeRouteResolverPrefixEmptyUpstreamPassesThroughRequestedModel(t *testing.T) {
 	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []CompositeModelRoute{
 			{
 				ID:             1,
 				GroupID:        7,
-				PublicModel:    "gpt",
+				PublicModel:    "deepseek-v4",
 				MatchType:      CompositeRouteMatchPrefix,
 				TargetPlatform: PlatformOpenAI,
-				TargetGroupID:  &targetGroupID,
+				UpstreamModel:  "", // 留空 = 透传
 				Endpoint:       CompositeRouteEndpointAny,
 				Priority:       100,
 				Enabled:        true,
@@ -128,14 +127,44 @@ func TestCompositeRouteResolverPrefixWithoutUpstreamPreservesRequestedModel(t *t
 		},
 	})
 
-	decision, err := resolver.Resolve(context.Background(), 7, "gpt-5.5-codex", CompositeRouteEndpointResponses)
-
-	require.NoError(t, err)
-	require.True(t, decision.Matched)
-	require.Equal(t, "gpt-5.5-codex", decision.UpstreamModel)
+	for _, model := range []string{"deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4"} {
+		decision, err := resolver.Resolve(context.Background(), 7, model, CompositeRouteEndpointChatCompletions)
+		require.NoError(t, err)
+		require.True(t, decision.Matched, "model %q should match prefix route", model)
+		require.Equal(t, CompositeRouteSourceExplicit, decision.Source)
+		require.Equal(t, PlatformOpenAI, decision.TargetPlatform)
+		require.Equal(t, model, decision.UpstreamModel, "model %q should pass through verbatim", model)
+	}
 }
 
-func TestCompositeRouteResolverRejectsDisabledOrUnroutedModel(t *testing.T) {
+// TestCompositeRouteResolverPrefixExplicitUpstreamStillFixed 验证：前缀匹配路由显式
+// 填写 upstream_model 时，所有命中请求仍转发同一个固定上游模型（行为不变）。
+func TestCompositeRouteResolverPrefixExplicitUpstreamStillFixed(t *testing.T) {
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
+		routes: []CompositeModelRoute{
+			{
+				ID:             1,
+				GroupID:        7,
+				PublicModel:    "deepseek-v4",
+				MatchType:      CompositeRouteMatchPrefix,
+				TargetPlatform: PlatformOpenAI,
+				UpstreamModel:  "deepseek-chat",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       100,
+				Enabled:        true,
+			},
+		},
+	})
+
+	for _, model := range []string{"deepseek-v4-flash", "deepseek-v4-pro"} {
+		decision, err := resolver.Resolve(context.Background(), 7, model, CompositeRouteEndpointChatCompletions)
+		require.NoError(t, err)
+		require.True(t, decision.Matched)
+		require.Equal(t, "deepseek-chat", decision.UpstreamModel)
+	}
+}
+
+func TestCompositeRouteResolverIgnoresDisabledRoutesAndFallsBackToDetector(t *testing.T) {
 	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []CompositeModelRoute{
 			{
@@ -144,7 +173,6 @@ func TestCompositeRouteResolverRejectsDisabledOrUnroutedModel(t *testing.T) {
 				PublicModel:    "gpt-5",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformAnthropic,
-				TargetGroupID:  i64p(41),
 				UpstreamModel:  "claude-sonnet-4-6",
 				Endpoint:       CompositeRouteEndpointAny,
 				Priority:       100,
@@ -156,9 +184,10 @@ func TestCompositeRouteResolverRejectsDisabledOrUnroutedModel(t *testing.T) {
 	decision, err := resolver.Resolve(context.Background(), 7, "gpt-5", CompositeRouteEndpointAny)
 
 	require.NoError(t, err)
-	require.False(t, decision.Matched)
-	require.Empty(t, decision.Source)
-	require.Contains(t, decision.Reason, "explicit target-group route")
+	require.True(t, decision.Matched)
+	require.Equal(t, CompositeRouteSourceDetector, decision.Source)
+	require.Equal(t, PlatformOpenAI, decision.TargetPlatform)
+	require.Equal(t, "gpt-5", decision.UpstreamModel)
 	require.Nil(t, decision.Route)
 }
 
@@ -171,7 +200,6 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 				PublicModel:    "all/gpt-5",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformOpenAI,
-				TargetGroupID:  i64p(41),
 				UpstreamModel:  "gpt-5",
 				Endpoint:       CompositeRouteEndpointResponses,
 				Priority:       100,
@@ -183,7 +211,6 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 				PublicModel:    "all/claude-sonnet",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformAnthropic,
-				TargetGroupID:  i64p(42),
 				UpstreamModel:  "claude-sonnet-4-6",
 				Endpoint:       CompositeRouteEndpointMessages,
 				Priority:       100,
@@ -195,7 +222,6 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 				PublicModel:    "all/gemini-pro",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformGemini,
-				TargetGroupID:  i64p(43),
 				UpstreamModel:  "gemini-2.5-pro",
 				Endpoint:       CompositeRouteEndpointGemini,
 				Priority:       100,
@@ -207,7 +233,6 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 				PublicModel:    "all/grok",
 				MatchType:      CompositeRouteMatchExact,
 				TargetPlatform: PlatformGrok,
-				TargetGroupID:  i64p(44),
 				UpstreamModel:  "grok-4.3",
 				Endpoint:       CompositeRouteEndpointResponses,
 				Priority:       100,
@@ -239,4 +264,31 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 			require.Equal(t, tt.wantUpstream, decision.UpstreamModel)
 		})
 	}
+}
+
+func TestCompositeRouteResolverRejectsDisabledOrUnroutedModel(t *testing.T) {
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
+		routes: []CompositeModelRoute{
+			{
+				ID:             1,
+				GroupID:        7,
+				PublicModel:    "gpt-5",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformAnthropic,
+				TargetGroupID:  i64p(41),
+				UpstreamModel:  "claude-sonnet-4-6",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       100,
+				Enabled:        false,
+			},
+		},
+	})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "gpt-5", CompositeRouteEndpointAny)
+
+	require.NoError(t, err)
+	require.False(t, decision.Matched)
+	require.Empty(t, decision.Source)
+	require.Contains(t, decision.Reason, "explicit target-group route")
+	require.Nil(t, decision.Route)
 }

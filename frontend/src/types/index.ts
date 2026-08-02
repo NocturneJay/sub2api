@@ -205,6 +205,7 @@ export interface PublicSettings {
   login_agreement_revision?: string
   login_agreement_documents?: LoginAgreementDocument[]
   turnstile_enabled: boolean
+  passkey_enabled?: boolean
   turnstile_site_key: string
   site_name: string
   site_logo: string
@@ -215,6 +216,7 @@ export interface PublicSettings {
   /** Optional HTTPS link shown as a purchase action on the redeem page. */
   redeem_purchase_url?: string
   home_content: string
+  compact_home_enabled: boolean
   hide_ccs_import_button: boolean
   payment_enabled: boolean
   risk_control_enabled: boolean
@@ -244,8 +246,11 @@ export interface PublicSettings {
   channel_monitor_enabled: boolean
   channel_monitor_default_interval_seconds: number
   available_channels_enabled: boolean
-  /** 模型广场是否对未登录访客开放（默认 false，opt-in）。 */
+  /** 模型广场是否对未登录访客开放（aicat 自研广场，默认 false，opt-in）。 */
   model_plaza_public_enabled: boolean
+  /** 上游自带广场的开关；aicat 不路由到上游前端，保留以维持设置链路完整。 */
+  model_plaza_enabled: boolean
+  model_plaza_require_auth: boolean
   service_quota_enabled: boolean
   affiliate_enabled: boolean
   allow_user_view_error_requests?: boolean

@@ -1038,7 +1038,7 @@ export default {
         rateMultiplierOverride: '倍率覆盖',
         rateMultiplierPlaceholder: '留空则沿用子分组倍率',
         upstreamModel: '上游模型',
-        upstreamModelHint: '留空时保留用户请求的模型名；前缀路由通常应留空。',
+        upstreamModelHint: '留空表示透传原始请求模型：前缀匹配下每个命中模型各自原样转发（如 deepseek-v4-flash、deepseek-v4-pro 分别转发）；填写则所有命中请求都固定转发该模型。',
         preserveRequestedModel: '保留请求模型',
         notes: '备注',
         enabled: '启用',

@@ -13,6 +13,8 @@ const {
   getOverloadCooldownSettings,
   getRateLimit429CooldownSettings,
   updateRateLimit429CooldownSettings,
+  getPanelRateLimitSettings,
+  updatePanelRateLimitSettings,
   getStreamTimeoutSettings,
   getRectifierSettings,
   getBetaPolicySettings,
@@ -39,6 +41,14 @@ const {
   getOverloadCooldownSettings: vi.fn(),
   getRateLimit429CooldownSettings: vi.fn(),
   updateRateLimit429CooldownSettings: vi.fn(),
+  getPanelRateLimitSettings: vi.fn().mockResolvedValue({
+    enabled: true,
+    user_rpm: 240,
+    heavy_rpm: 60,
+    exempt_admin: true,
+    public_ip_rpm: 300,
+  }),
+  updatePanelRateLimitSettings: vi.fn().mockImplementation(async (payload) => payload),
   getStreamTimeoutSettings: vi.fn(),
   getRectifierSettings: vi.fn(),
   getBetaPolicySettings: vi.fn(),
@@ -78,6 +88,8 @@ vi.mock("@/api", () => ({
       getOverloadCooldownSettings,
       getRateLimit429CooldownSettings,
       updateRateLimit429CooldownSettings,
+      getPanelRateLimitSettings,
+      updatePanelRateLimitSettings,
       getStreamTimeoutSettings,
       getRectifierSettings,
       getBetaPolicySettings,
@@ -213,9 +225,10 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.upstreamBillingProbe.intervalHint": "范围 5–1440 分钟。",
     "admin.settings.upstreamBillingProbe.saved": "上游倍率自动探测设置已保存",
     "admin.settings.upstreamBillingProbe.saveFailed": "保存上游倍率自动探测设置失败",
+    "admin.settings.security.passkeyDeploymentHint":
+      "请由服务器运维在部署配置中将 webauthn.enabled 设为 true，填写 webauthn.rp_id（仅域名）与 webauthn.rp_origins（完整 HTTPS 来源），然后重启服务。",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
-    "admin.settings.site.redeemPurchaseUrlInvalid": "兑换码购买链接必须是完整的 HTTPS 地址。",
     "admin.settings.platformQuota.platform": "平台",
     "admin.settings.platformQuota.daily": "日限额 (USD)",
     "admin.settings.platformQuota.weekly": "周限额 (USD)",
@@ -351,6 +364,10 @@ const baseSettingsResponse = {
   password_reset_enabled: false,
   totp_enabled: false,
   totp_encryption_key_configured: false,
+  passkey_enabled: true,
+  passkey_configured: true,
+  passkey_rp_id: "sub3.nebula-spaces.com",
+  passkey_rp_origins: ["https://sub3.nebula-spaces.com"],
   default_balance: 0,
   default_concurrency: 1,
   default_subscriptions: [],
@@ -360,8 +377,8 @@ const baseSettingsResponse = {
   api_base_url: "",
   contact_info: "",
   doc_url: "",
-  redeem_purchase_url: "",
   home_content: "",
+  compact_home_enabled: false,
   hide_ccs_import_button: false,
   table_default_page_size: 20,
   table_page_size_options: [10, 20, 50, 100],
@@ -385,10 +402,6 @@ const baseSettingsResponse = {
   linuxdo_connect_client_id: "",
   linuxdo_connect_client_secret_configured: false,
   linuxdo_connect_redirect_url: "",
-  linuxdo_connect_api_cn_client_id: "",
-  linuxdo_connect_api_cn_client_secret_configured: false,
-  linuxdo_connect_api_cn_redirect_url: "",
-  google_oauth_api_cn_redirect_url: "",
   wechat_connect_enabled: true,
   wechat_connect_app_id: "wx-app-id-123",
   wechat_connect_app_secret_configured: true,
@@ -668,6 +681,60 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
+  it("submits the compact home page toggle", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    const toggle = wrapper.get('[data-testid="compact-home-toggle"]');
+    expect((toggle.element as HTMLInputElement).checked).toBe(false);
+
+    await toggle.setValue(true);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ compact_home_enabled: true }),
+    );
+  });
+
+  it("renders panel rate limit card and saves settings", async () => {
+    getPanelRateLimitSettings.mockClear();
+    updatePanelRateLimitSettings.mockClear();
+    getPanelRateLimitSettings.mockResolvedValue({
+      enabled: true,
+      user_rpm: 240,
+      heavy_rpm: 60,
+      exempt_admin: true,
+      public_ip_rpm: 300,
+    });
+    updatePanelRateLimitSettings.mockImplementation(async (payload) => payload);
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(getPanelRateLimitSettings).toHaveBeenCalled();
+    expect(wrapper.text()).toContain("admin.settings.panelRateLimit.title");
+    expect(wrapper.text()).toContain("admin.settings.panelRateLimit.proxySafeNote");
+
+    const userRpmInput = wrapper.find('[data-testid="panel-rate-limit-user-rpm"]');
+    expect(userRpmInput.exists()).toBe(true);
+    await userRpmInput.setValue("120");
+
+    const saveButton = wrapper.find('[data-testid="panel-rate-limit-save"]');
+    expect(saveButton.exists()).toBe(true);
+    await saveButton.trigger("click");
+    await flushPromises();
+
+    expect(updatePanelRateLimitSettings).toHaveBeenCalledWith({
+      enabled: true,
+      user_rpm: 120,
+      heavy_rpm: 60,
+      exempt_admin: true,
+      public_ip_rpm: 300,
+    });
+    expect(showSuccess).toHaveBeenCalled();
+  });
+
   it("does not render legacy visible payment method controls", async () => {
     const wrapper = mountView();
 
@@ -678,48 +745,51 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).not.toContain("支付来源");
   });
 
-  it("loads and saves the api-cn OAuth overrides without replacing primary credentials", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      linuxdo_connect_enabled: true,
-      linuxdo_connect_client_id: "linuxdo-primary-id",
-      linuxdo_connect_api_cn_client_id: "linuxdo-api-cn-id",
-      linuxdo_connect_api_cn_client_secret_configured: true,
-      linuxdo_connect_api_cn_redirect_url:
-        "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback",
-      google_oauth_api_cn_redirect_url:
-        "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback",
-    });
-
+  it("shows valid passkey RP configuration and persists the sign-in toggle", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openSecurityTab(wrapper);
-    expect(wrapper.get('[data-testid="linuxdo-api-cn-client-id"]').element).toHaveProperty(
-      "value",
-      "linuxdo-api-cn-id",
-    );
-    await wrapper
-      .get('[data-testid="linuxdo-api-cn-client-secret"]')
-      .setValue("linuxdo-api-cn-secret");
+
+    const settings = wrapper.get('[data-testid="passkey-settings"]');
+    const toggle = settings.get('[data-testid="passkey-toggle"]');
+    expect(toggle.attributes("disabled")).toBeUndefined();
+    expect(settings.text()).toContain("sub3.nebula-spaces.com");
+    expect(settings.text()).toContain("https://sub3.nebula-spaces.com");
+    expect(settings.text()).not.toContain("webauthn.enabled");
+
+    await toggle.setValue(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
     expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        linuxdo_connect_client_id: "linuxdo-primary-id",
-        linuxdo_connect_api_cn_client_id: "linuxdo-api-cn-id",
-        linuxdo_connect_api_cn_client_secret: "linuxdo-api-cn-secret",
-        linuxdo_connect_api_cn_redirect_url:
-          "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback",
-        google_oauth_api_cn_redirect_url:
-          "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback",
-      }),
+      expect.objectContaining({ passkey_enabled: false }),
     );
-    expect(
-      (wrapper.get('[data-testid="linuxdo-api-cn-client-secret"]').element as HTMLInputElement)
-        .value,
-    ).toBe("");
+  });
+
+  it("disables passkey sign-in when the RP configuration is unavailable", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      passkey_enabled: false,
+      passkey_configured: false,
+      passkey_rp_id: "",
+      passkey_rp_origins: [],
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const settings = wrapper.get('[data-testid="passkey-settings"]');
+    expect(settings.get('[data-testid="passkey-toggle"]').attributes("disabled")).toBeDefined();
+    const status = settings.get('[data-testid="passkey-config-status"]');
+    expect(status.text()).toContain(
+      "admin.settings.security.passkeyNotConfigured",
+    );
+    expect(status.text()).toContain("webauthn.enabled");
+    expect(status.text()).toContain("webauthn.rp_id");
+    expect(status.text()).toContain("webauthn.rp_origins");
+    expect(status.text()).toContain("然后重启服务");
   });
 
   it("loads, edits, validates, and saves forwarded client-IP headers", async () => {
@@ -777,39 +847,6 @@ describe("admin SettingsView payment visible method controls", () => {
         api_key_acl_trust_forwarded_ip: true,
         forwarded_client_ip_headers: ["Cf-Connecting-Ip", "X-Client-Ip"],
       }),
-    );
-  });
-
-  it("submits the configured redeem code purchase URL", async () => {
-    const wrapper = mountView();
-
-    await flushPromises();
-    await wrapper
-      .get('[data-testid="redeem-purchase-url-input"]')
-      .setValue("https://shop.example.com/redeem-codes");
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        redeem_purchase_url: "https://shop.example.com/redeem-codes",
-      }),
-    );
-  });
-
-  it("rejects a non-HTTPS redeem code purchase URL", async () => {
-    const wrapper = mountView();
-
-    await flushPromises();
-    await wrapper
-      .get('[data-testid="redeem-purchase-url-input"]')
-      .setValue("http://shop.example.com/redeem-codes");
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(updateSettings).not.toHaveBeenCalled();
-    expect(showError).toHaveBeenCalledWith(
-      "兑换码购买链接必须是完整的 HTTPS 地址。",
     );
   });
 
@@ -1645,4 +1682,83 @@ describe("admin SettingsView platform quota matrix", () => {
     // 不管输入是什么，提交值应为 null（而非 "" 或 NaN）
     expect(quotas["anthropic"]?.["daily"]).toBe(null);
   });
+  it("loads and saves the api-cn OAuth overrides without replacing primary credentials", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      linuxdo_connect_enabled: true,
+      linuxdo_connect_client_id: "linuxdo-primary-id",
+      linuxdo_connect_api_cn_client_id: "linuxdo-api-cn-id",
+      linuxdo_connect_api_cn_client_secret_configured: true,
+      linuxdo_connect_api_cn_redirect_url:
+        "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback",
+      google_oauth_api_cn_redirect_url:
+        "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+    expect(wrapper.get('[data-testid="linuxdo-api-cn-client-id"]').element).toHaveProperty(
+      "value",
+      "linuxdo-api-cn-id",
+    );
+    await wrapper
+      .get('[data-testid="linuxdo-api-cn-client-secret"]')
+      .setValue("linuxdo-api-cn-secret");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        linuxdo_connect_client_id: "linuxdo-primary-id",
+        linuxdo_connect_api_cn_client_id: "linuxdo-api-cn-id",
+        linuxdo_connect_api_cn_client_secret: "linuxdo-api-cn-secret",
+        linuxdo_connect_api_cn_redirect_url:
+          "https://api-cn.aicatstudios.com/api/v1/auth/oauth/linuxdo/callback",
+        google_oauth_api_cn_redirect_url:
+          "https://api-cn.aicatstudios.com/api/v1/auth/oauth/google/callback",
+      }),
+    );
+    expect(
+      (wrapper.get('[data-testid="linuxdo-api-cn-client-secret"]').element as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
+  it("rejects a non-HTTPS redeem code purchase URL", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="redeem-purchase-url-input"]')
+      .setValue("http://shop.example.com/redeem-codes");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    // 该 spec 的 i18n mock 只翻译白名单内的 key，其余原样返回 key 本身，
+    // 因此这里断言 key 而不是中文文案（与本文件其它用例保持一致）。
+    expect(showError).toHaveBeenCalledWith(
+      "admin.settings.site.redeemPurchaseUrlInvalid",
+    );
+  });
+
+  it("submits the configured redeem code purchase URL", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="redeem-purchase-url-input"]')
+      .setValue("https://shop.example.com/redeem-codes");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redeem_purchase_url: "https://shop.example.com/redeem-codes",
+      }),
+    );
+  });
+
 });

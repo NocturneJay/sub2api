@@ -20,6 +20,7 @@ type SystemSettings struct {
 	FrontendURL                      string
 	InvitationCodeEnabled            bool
 	TotpEnabled                      bool // TOTP 双因素认证
+	PasskeyEnabled                   bool // Passkey 登录
 	SessionBindingEnabled            bool // 会话 IP/UA 绑定（变更即失效）
 	StepUpEnabled                    bool // 敏感操作 step-up 2FA 门控
 	AuditLogRetentionDays            int  // 审计日志保留天数（<=0 永久保留）
@@ -143,6 +144,7 @@ type SystemSettings struct {
 	ContactInfo                 string
 	DocURL                      string
 	HomeContent                 string
+	CompactHomeEnabled          bool
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
@@ -194,6 +196,13 @@ type SystemSettings struct {
 	// per-group rate multipliers and full per-model pricing to the open internet.
 	ModelPlazaPublicEnabled                   bool `json:"model_plaza_public_enabled"`
 	ModelPlazaPublicIncludeSubscriptionGroups bool `json:"model_plaza_public_include_subscription_groups"`
+
+	// Model Plaza feature (upstream's own showcase; aicat routes to its in-house
+	// plaza instead and never renders the upstream page — these are kept so the
+	// upstream backend and settings pipeline stay intact across syncs).
+	ModelPlazaEnabled     bool   `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth bool   `json:"model_plaza_require_auth"`
+	ModelPlazaDescription string `json:"model_plaza_description"`
 
 	// Claude Code version check
 	MinClaudeCodeVersion string
@@ -295,6 +304,7 @@ type PublicSettings struct {
 	PasswordResetEnabled             bool
 	InvitationCodeEnabled            bool
 	TotpEnabled                      bool // TOTP 双因素认证
+	PasskeyEnabled                   bool
 	LoginAgreementEnabled            bool
 	LoginAgreementMode               string
 	LoginAgreementUpdatedAt          string
@@ -309,6 +319,7 @@ type PublicSettings struct {
 	ContactInfo                      string
 	DocURL                           string
 	HomeContent                      string
+	CompactHomeEnabled               bool
 	HideCcsImportButton              bool
 
 	PurchaseSubscriptionEnabled bool
@@ -350,6 +361,10 @@ type PublicSettings struct {
 	// The subscription-group filter is deliberately NOT exposed: it is a server-side
 	// visibility decision and the client has no use for it.
 	ModelPlazaPublicEnabled bool `json:"model_plaza_public_enabled"`
+
+	// Model Plaza feature (upstream's own showcase; kept for pipeline completeness)
+	ModelPlazaEnabled     bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth bool `json:"model_plaza_require_auth"`
 
 	// Affiliate (邀请返利) feature toggle
 	AffiliateEnabled bool `json:"affiliate_enabled"`

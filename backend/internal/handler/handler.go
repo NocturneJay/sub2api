@@ -58,12 +58,16 @@ type Handlers struct {
 	OpenAIGateway    *OpenAIGatewayHandler
 	Setting          *SettingHandler
 	Totp             *TotpHandler
+	Passkey          *PasskeyHandler
 	Payment          *PaymentHandler
 	PaymentWebhook   *PaymentWebhookHandler
 	AvailableChannel *AvailableChannelHandler
-	PlazaPublic      *PlazaPublicHandler
-	AsyncImage       *AsyncImageHandler
-	BatchImage       *BatchImageHandler
+	// PlazaPublic 是 aicat 自研广场的公开端点(/api/v1/plaza/models)。
+	// ModelPlaza 是上游自带广场(/api/v1/model-plaza)，保留后端但不路由到其前端。
+	PlazaPublic *PlazaPublicHandler
+	ModelPlaza  *ModelPlazaHandler
+	AsyncImage  *AsyncImageHandler
+	BatchImage  *BatchImageHandler
 }
 
 // BuildInfo contains build-time information

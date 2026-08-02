@@ -1041,7 +1041,7 @@ export default {
         rateMultiplierOverride: 'Rate Multiplier Override',
         rateMultiplierPlaceholder: 'Leave blank to inherit the sub-group multiplier',
         upstreamModel: 'Upstream Model',
-        upstreamModelHint: 'Leave blank to preserve the requested model; prefix routes should usually stay blank.',
+        upstreamModelHint: 'Leave empty to pass the original requested model through: under prefix match each matched model forwards verbatim (e.g. deepseek-v4-flash and deepseek-v4-pro each forwarded as-is); set a value to forward every matched request to that fixed model.',
         preserveRequestedModel: 'Preserve requested model',
         notes: 'Notes',
         enabled: 'Enabled',

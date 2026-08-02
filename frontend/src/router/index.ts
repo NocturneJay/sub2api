@@ -175,6 +175,15 @@ const routes: RouteRecordRaw[] = [
       title: 'Legal Document'
     }
   },
+  // 注意：上游在此处也注册了一条 path: '/model-plaza'（name: 'ModelPlaza'，指向
+  // views/ModelPlazaView.vue）。aicat 使用自研广场（见下方 name: 'UserModelPlaza'），
+  // 故每次同步上游时都必须删除上游那条。
+  //
+  // 这是本仓库同步上游时最危险的一处：两条同 path 路由分处公开段与用户段、相距
+  // 上百行，git 判定为两处独立新增而**静默自动合并、不产生冲突标记**；
+  // vue-router 只解析靠前的那条，自研广场会变成永远不可达的死代码，而
+  // vue-tsc / vite build / vitest / eslint 全部照常通过。
+  // 合并后务必执行：grep -n "path: '/model-plaza'" 确认只出现一次。
 
   // ==================== User Routes ====================
   {
@@ -834,6 +843,12 @@ router.beforeEach(async (to, _from, next) => {
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return
     }
+    // 注意：上游在此处还有一段读 model_plaza_enabled / model_plaza_require_auth 的
+    // 广场守卫。aicat 用自研广场（守卫见下方读 model_plaza_public_enabled 的那段），
+    // 上游那段每次同步都要删除——否则它会因 model_plaza_enabled 默认 false 而把
+    // 访客直接弹走，自研广场形同废掉。其中「后台模式下已登录非管理员也拦截」这条
+    // 有价值，已并入下方自研守卫。
+
     // Backend mode: block public pages for unauthenticated users (except login, key-usage, setup)
     if (appStore.backendModeEnabled && !authStore.isAuthenticated) {
       const isAllowed = isBackendModePublicRouteAllowed(to.path, authStore.hasPendingAuthSession)
@@ -860,6 +875,17 @@ router.beforeEach(async (to, _from, next) => {
         next({ path: '/login', query: { redirect: to.fullPath } })
         return
       }
+    }
+    // 后台模式下已登录的非管理员同样不可见（匿名由上方公共拦截处理，广场不在白名单）。
+    // 与后端 BackendModeUserGuard 对非管理员返回 403 保持同口径，避免页面白屏。
+    if (
+      to.path === '/model-plaza' &&
+      appStore.backendModeEnabled &&
+      authStore.isAuthenticated &&
+      !authStore.isAdmin
+    ) {
+      next('/login')
+      return
     }
     next()
     return
