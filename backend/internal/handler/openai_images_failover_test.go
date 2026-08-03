@@ -10,8 +10,10 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -63,6 +65,63 @@ type openAIImagesFailoverHTTPUpstream struct {
 	service.HTTPUpstream
 	mu         sync.Mutex
 	accountIDs []int64
+}
+
+type geminiImagesPartialTokenCache struct{}
+
+func (geminiImagesPartialTokenCache) GetAccessToken(context.Context, string) (string, error) {
+	return "vertex-token", nil
+}
+func (geminiImagesPartialTokenCache) SetAccessToken(context.Context, string, string, time.Duration) error {
+	return nil
+}
+func (geminiImagesPartialTokenCache) DeleteAccessToken(context.Context, string) error { return nil }
+func (geminiImagesPartialTokenCache) AcquireRefreshLock(context.Context, string, time.Duration) (bool, error) {
+	return true, nil
+}
+func (geminiImagesPartialTokenCache) ReleaseRefreshLock(context.Context, string) error { return nil }
+
+type geminiImagesPartialHTTPUpstream struct {
+	service.HTTPUpstream
+	mu         sync.Mutex
+	accountIDs []int64
+}
+
+func (u *geminiImagesPartialHTTPUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	call := len(u.accountIDs)
+	u.mu.Unlock()
+	status := http.StatusOK
+	body := `{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="}}]}}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3,"candidatesTokensDetails":[{"modality":"IMAGE","tokenCount":1290}]}}`
+	if call == 2 {
+		status = http.StatusUnauthorized
+		body = `{"error":{"code":401,"message":"account unavailable","status":"UNAUTHENTICATED"}}`
+	}
+	return &http.Response{
+		StatusCode: status,
+		Header: http.Header{
+			"Content-Type":      []string{"application/json"},
+			"X-Goog-Request-Id": []string{"gemini-partial"},
+		},
+		Body: io.NopCloser(bytes.NewBufferString(body)),
+	}, nil
+}
+
+func (u *geminiImagesPartialHTTPUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
+}
+
+type geminiImagesPartialUsageRepo struct {
+	service.UsageLogRepository
+	last *service.UsageLog
+}
+
+func (r *geminiImagesPartialUsageRepo) Create(_ context.Context, log *service.UsageLog) (bool, error) {
+	r.last = log
+	return true, nil
 }
 
 func (u *openAIImagesFailoverHTTPUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -200,4 +259,88 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	require.Len(t, events, 2)
 	require.Equal(t, "failover", events[0].Kind)
 	require.Equal(t, "failover", events[1].Kind)
+}
+
+func TestOpenAIGatewayHandlerImages_GeminiPartialNDoesNotFailOverAndBillsActualCount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(3131)
+	zeroPrice := 0.0
+	accounts := []service.Account{
+		{
+			ID: 11, Name: "gemini-image-1", Platform: service.PlatformGemini,
+			Type: service.AccountTypeServiceAccount, Status: service.StatusActive, Schedulable: true, Priority: 0,
+			Credentials: map[string]any{
+				"service_account_json": map[string]any{
+					"type": "service_account", "project_id": "vertex-project", "private_key_id": "kid",
+					"private_key": "cached-token-does-not-use-key", "client_email": "svc@vertex-project.iam.gserviceaccount.com",
+				},
+				"location": "global", "model_mapping": map[string]any{"Nano-Banana-Pro": "gemini-3-pro-image"},
+			},
+		},
+		{
+			ID: 12, Name: "gemini-image-2", Platform: service.PlatformGemini,
+			Type: service.AccountTypeServiceAccount, Status: service.StatusActive, Schedulable: true, Priority: 1,
+			Credentials: map[string]any{
+				"service_account_json": map[string]any{
+					"type": "service_account", "project_id": "vertex-project-2", "private_key_id": "kid-2",
+					"private_key": "cached-token-does-not-use-key", "client_email": "svc@vertex-project-2.iam.gserviceaccount.com",
+				},
+				"location": "global", "model_mapping": map[string]any{"Nano-Banana-Pro": "gemini-3-pro-image"},
+			},
+		},
+	}
+	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
+	usageRepo := &geminiImagesPartialUsageRepo{}
+	upstream := &geminiImagesPartialHTTPUpstream{}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	billingService := service.NewBillingService(cfg, nil)
+	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCache.Stop)
+	openAIService := service.NewOpenAIGatewayService(
+		accountRepo, usageRepo, nil, nil, nil, nil, nil, cfg, nil, nil,
+		billingService, nil, billingCache, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	platformService := service.NewGatewayService(
+		accountRepo, nil, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
+		billingService, nil, billingCache, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	tokenProvider := service.NewGeminiTokenProvider(accountRepo, geminiImagesPartialTokenCache{}, nil)
+	geminiService := service.NewGeminiMessagesCompatService(accountRepo, nil, nil, nil, tokenProvider, nil, upstream, nil, cfg)
+	h := NewOpenAIGatewayHandler(
+		openAIService, service.NewConcurrencyService(nil), billingCache,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg,
+	)
+	h.SetGeminiImagesDependencies(platformService, geminiService)
+	h.maxAccountSwitchesGemini = 10
+
+	body := []byte(`{"model":"Nano-Banana-Pro","prompt":"draw","n":2,"size":"auto"}`)
+	requestCtx := context.WithValue(context.Background(), ctxkey.ForcePlatform, service.PlatformGemini)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body)).WithContext(requestCtx)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		ID: 100, GroupID: &groupID,
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformGemini, Status: service.StatusActive,
+			AllowImageGeneration: true, RateMultiplier: 1, ImagePrice1K: &zeroPrice,
+		},
+		User: &service.User{ID: 101, Status: service.StatusActive, Balance: 100},
+	})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 101, Concurrency: 0})
+
+	h.Images(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, gjson.GetBytes(rec.Body.Bytes(), "data").Array(), 1)
+	require.Equal(t, []int64{11, 11}, upstream.calls(), "a partial n response must not switch accounts and regenerate completed images")
+	require.NotNil(t, usageRepo.last)
+	require.Equal(t, 1, usageRepo.last.ImageCount)
+	require.Equal(t, 7, usageRepo.last.InputTokens)
+	require.Equal(t, 3, usageRepo.last.OutputTokens)
+	require.Equal(t, 1290, usageRepo.last.ImageOutputTokens)
+	require.NotNil(t, usageRepo.last.ImageSize)
+	require.Equal(t, service.ImageBillingSize1K, *usageRepo.last.ImageSize)
 }

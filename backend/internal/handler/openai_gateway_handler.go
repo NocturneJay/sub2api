@@ -31,6 +31,8 @@ import (
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
 	gatewayService             *service.OpenAIGatewayService
+	platformGatewayService     *service.GatewayService
+	geminiCompatService        *service.GeminiMessagesCompatService
 	compositeResolver          *service.CompositeRouteResolver
 	billingCacheService        *service.BillingCacheService
 	apiKeyService              *service.APIKeyService
@@ -43,6 +45,7 @@ type OpenAIGatewayHandler struct {
 	concurrencyHelper          *ConcurrencyHelper
 	imageLimiter               *imageConcurrencyLimiter
 	maxAccountSwitches         int
+	maxAccountSwitchesGemini   int
 	cfg                        *config.Config
 }
 
@@ -229,10 +232,14 @@ func NewOpenAIGatewayHandler(
 ) *OpenAIGatewayHandler {
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 3
+	maxAccountSwitchesGemini := 3
 	if cfg != nil {
 		pingInterval = time.Duration(cfg.Concurrency.PingInterval) * time.Second
 		if cfg.Gateway.MaxAccountSwitches > 0 {
 			maxAccountSwitches = cfg.Gateway.MaxAccountSwitches
+		}
+		if cfg.Gateway.MaxAccountSwitchesGemini > 0 {
+			maxAccountSwitchesGemini = cfg.Gateway.MaxAccountSwitchesGemini
 		}
 	}
 	return &OpenAIGatewayHandler{
@@ -246,8 +253,22 @@ func NewOpenAIGatewayHandler(
 		concurrencyHelper:        NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		imageLimiter:             &imageConcurrencyLimiter{},
 		maxAccountSwitches:       maxAccountSwitches,
+		maxAccountSwitchesGemini: maxAccountSwitchesGemini,
 		cfg:                      cfg,
 	}
+}
+
+// SetGeminiImagesDependencies wires the multi-platform scheduler and Gemini
+// compatibility forwarder used by /v1/images/generations on Gemini groups.
+func (h *OpenAIGatewayHandler) SetGeminiImagesDependencies(
+	platformGatewayService *service.GatewayService,
+	geminiCompatService *service.GeminiMessagesCompatService,
+) {
+	if h == nil {
+		return
+	}
+	h.platformGatewayService = platformGatewayService
+	h.geminiCompatService = geminiCompatService
 }
 
 // SetCompositeRouteResolver wires the request router's composite resolver into

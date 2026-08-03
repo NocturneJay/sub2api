@@ -84,7 +84,7 @@ func RegisterGatewayRoutes(
 	}
 	imagesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI:
+		case service.PlatformOpenAI, service.PlatformGemini:
 			h.OpenAIGateway.Images(c)
 		case service.PlatformGrok:
 			h.OpenAIGateway.GrokImages(c)

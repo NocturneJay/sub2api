@@ -80,8 +80,13 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if resolvedModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok {
 		routingModel = resolvedModel
 	}
-	if !compositeTargetPlatformAllowed(c, apiKey, requestModel, service.PlatformOpenAI) {
+	imagePlatform := effectiveAPIKeyPlatform(c, apiKey)
+	if !compositeTargetPlatformAllowed(c, apiKey, requestModel, service.PlatformOpenAI, service.PlatformGemini) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
+	if imagePlatform == service.PlatformGemini && (h.platformGatewayService == nil || h.geminiCompatService == nil) {
+		h.errorResponse(c, http.StatusBadGateway, "api_error", "Gemini image compatibility service is not configured")
 		return
 	}
 
@@ -115,6 +120,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, routingModel)
+	schedulingModel := openAIImagesSchedulingModel(routingModel, channelMapping)
 
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
@@ -144,9 +150,15 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
-	requestCtx := service.WithOpenAIImageGenerationIntent(c.Request.Context())
+	if imagePlatform == service.PlatformGemini && sessionHash != "" {
+		sessionHash = "gemini-images:" + sessionHash
+	}
+	requestCtx := service.WithOpenAIProfitControlSuppressed(service.WithOpenAIImageGenerationIntent(c.Request.Context()))
 
 	maxAccountSwitches := h.maxAccountSwitches
+	if imagePlatform == service.PlatformGemini {
+		maxAccountSwitches = h.maxAccountSwitchesGemini
+	}
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
@@ -156,17 +168,38 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	jsonKeepaliveStarted := false
 	defer func() { stopJSONKeepalive() }()
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+	reportScheduleResult := func(account *service.Account, success bool, firstTokenMs *int) {
+		if imagePlatform != service.PlatformGemini && account != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(schedulingModel), success, firstTokenMs)
+		}
+	}
 
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
-			requestCtx,
-			apiKey.GroupID,
-			sessionHash,
-			routingModel,
-			failedAccountIDs,
-			parsed.RequiredCapability,
-		)
+		var selection *service.AccountSelectionResult
+		var scheduleDecision service.OpenAIAccountScheduleDecision
+		var err error
+		if imagePlatform == service.PlatformGemini {
+			selection, err = h.platformGatewayService.SelectAccountWithLoadAwareness(
+				requestCtx,
+				apiKey.GroupID,
+				sessionHash,
+				schedulingModel,
+				failedAccountIDs,
+				"",
+				subject.UserID,
+			)
+			scheduleDecision.Layer = "gemini-load-awareness"
+		} else {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForImages(
+				requestCtx,
+				apiKey.GroupID,
+				sessionHash,
+				schedulingModel,
+				failedAccountIDs,
+				parsed.RequiredCapability,
+			)
+		}
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai.images.account_select_aborted_client_disconnected", zap.Error(err))
@@ -177,7 +210,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, clientRequestModel, routingModel, service.PlatformOpenAI)
+				var diagnoser service.ModelAvailabilityDiagnoser = h.gatewayService
+				if imagePlatform == service.PlatformGemini {
+					diagnoser = h.platformGatewayService
+				}
+				cls := classifyNoAccountErrorFromGin(c, diagnoser, apiKey, schedulingModel, clientRequestModel, imagePlatform)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -196,7 +233,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, clientRequestModel, routingModel, service.PlatformOpenAI)
+			var diagnoser service.ModelAvailabilityDiagnoser = h.gatewayService
+			if imagePlatform == service.PlatformGemini {
+				diagnoser = h.platformGatewayService
+			}
+			cls := classifyNoAccountErrorFromGin(c, diagnoser, apiKey, schedulingModel, clientRequestModel, imagePlatform)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
 			}
@@ -218,11 +259,30 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
-		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		if imagePlatform != service.PlatformGemini {
+			sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		}
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		if imagePlatform == service.PlatformGemini && !service.SupportsGeminiOpenAIImages(account) {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
 
-		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		var accountReleaseFunc func()
+		slotResult := openAISlotAcquireOK
+		if imagePlatform == service.PlatformGemini {
+			var acquired bool
+			accountReleaseFunc, acquired = h.acquireGeminiImagesAccountSlot(c, selection, parsed.Stream, &streamStarted, reqLog)
+			if !acquired {
+				return
+			}
+		} else {
+			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		}
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// Images 调度不装利润门，此分支实际不可达；防御性排除重选并受同一否决上限约束。
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
@@ -248,6 +308,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
+			if imagePlatform == service.PlatformGemini {
+				return h.geminiCompatService.ForwardAsOpenAIImages(requestCtx, c, account, parsed, channelMapping.MappedModel)
+			}
 			return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
 		}()
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -271,7 +334,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), !retryableServerError, nil)
+					reportScheduleResult(account, !retryableServerError, nil)
 					logEvent := "openai.images.upstream_user_error"
 					if retryableServerError {
 						logEvent = "openai.images.upstream_server_error_after_flush"
@@ -287,7 +350,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), false, nil)
+					reportScheduleResult(account, false, nil)
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
@@ -321,7 +384,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 							continue
 						}
 					}
-					h.gatewayService.RecordOpenAIAccountSwitch()
+					if imagePlatform != service.PlatformGemini {
+						h.gatewayService.RecordOpenAIAccountSwitch()
+					}
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					if switchCount >= maxAccountSwitches {
@@ -329,7 +394,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						return
 					}
 					switchCount++
-					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
+					if imagePlatform != service.PlatformGemini && h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -341,7 +406,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), false, nil)
+				reportScheduleResult(account, false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -366,9 +431,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), true, result.FirstTokenMs)
+			reportScheduleResult(account, true, result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), true, nil)
+			reportScheduleResult(account, true, nil)
 		}
 
 		userAgent := c.GetHeader("User-Agent")
@@ -431,4 +496,69 @@ func (h *OpenAIGatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration
 
 func isMultipartImagesContentType(contentType string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/form-data")
+}
+
+func openAIImagesSchedulingModel(routingModel string, mapping service.ChannelMappingResult) string {
+	if mapped := strings.TrimSpace(mapping.MappedModel); mapped != "" {
+		return mapped
+	}
+	return strings.TrimSpace(routingModel)
+}
+
+func (h *OpenAIGatewayHandler) acquireGeminiImagesAccountSlot(
+	c *gin.Context,
+	selection *service.AccountSelectionResult,
+	reqStream bool,
+	streamStarted *bool,
+	reqLog *zap.Logger,
+) (func(), bool) {
+	if selection == nil || selection.Account == nil {
+		markOpsRoutingCapacityLimited(c)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
+		return nil, false
+	}
+	if selection.Acquired {
+		return wrapReleaseOnDone(c.Request.Context(), selection.ReleaseFunc), true
+	}
+	if selection.WaitPlan == nil {
+		markOpsRoutingCapacityLimited(c)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
+		return nil, false
+	}
+	waitCounted := false
+	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), selection.Account.ID, selection.WaitPlan.MaxWaiting)
+	if waitErr != nil {
+		reqLog.Warn("openai.images.gemini_account_wait_counter_increment_failed", zap.Int64("account_id", selection.Account.ID), zap.Error(waitErr))
+	} else if !canWait {
+		reqLog.Info("openai.images.gemini_account_wait_queue_full",
+			zap.Int64("account_id", selection.Account.ID),
+			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
+		)
+		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", *streamStarted)
+		return nil, false
+	} else {
+		waitCounted = true
+	}
+	releaseWait := func() {
+		if waitCounted {
+			h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), selection.Account.ID)
+			waitCounted = false
+		}
+	}
+	defer releaseWait()
+	release, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+		c,
+		selection.Account.ID,
+		selection.WaitPlan.MaxConcurrency,
+		selection.WaitPlan.Timeout,
+		reqStream,
+		streamStarted,
+	)
+	if err != nil {
+		reqLog.Warn("openai.images.gemini_account_slot_acquire_failed", zap.Int64("account_id", selection.Account.ID), zap.Error(err))
+		h.handleConcurrencyError(c, err, "account", *streamStarted)
+		return nil, false
+	}
+	releaseWait()
+	return wrapReleaseOnDone(c.Request.Context(), release), true
 }

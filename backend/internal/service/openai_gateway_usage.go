@@ -198,16 +198,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	videoMultiplier := resolveVideoRateMultiplier(pricingPolicyAPIKey, baseMultiplier)
 
 	var cost *CostBreakdown
-	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
-	if result.BillingModel != "" {
-		billingModel = strings.TrimSpace(result.BillingModel)
-	}
-	if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" && input.ChannelMappedModel != input.OriginalModel {
-		billingModel = input.ChannelMappedModel
-	}
-	if input.BillingModelSource == BillingModelSourceRequested && input.OriginalModel != "" {
-		billingModel = input.OriginalModel
-	}
+	billingModel := resolveOpenAIRecordUsageBillingModel(result, input.ChannelUsageFields)
 	billingModels := usageBillingModelCandidates(
 		billingModel,
 		result.BillingModel,
@@ -427,6 +418,23 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil
+}
+
+func resolveOpenAIRecordUsageBillingModel(result *OpenAIForwardResult, fields ChannelUsageFields) string {
+	if result == nil {
+		return ""
+	}
+	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
+	if result.BillingModel != "" {
+		billingModel = strings.TrimSpace(result.BillingModel)
+	}
+	if fields.BillingModelSource == BillingModelSourceChannelMapped && fields.ChannelMappedModel != "" && fields.ChannelMappedModel != fields.OriginalModel {
+		billingModel = fields.ChannelMappedModel
+	}
+	if fields.BillingModelSource == BillingModelSourceRequested && fields.OriginalModel != "" {
+		billingModel = fields.OriginalModel
+	}
+	return billingModel
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(

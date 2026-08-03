@@ -461,7 +461,16 @@ func isOpenAIImageGenerationModel(model string) bool {
 // IsGPTImageGenerationModel identifies the GPT native image-generation model family.
 func IsGPTImageGenerationModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
-	return strings.HasPrefix(model, "gpt-image-")
+	return model == "image-2" || strings.HasPrefix(model, "gpt-image-")
+}
+
+// IsGeminiImageGenerationModel identifies Gemini native image models and the
+// public Nano Banana aliases exposed through the OpenAI Images compatibility
+// endpoint. Provider selection remains group/context based, never model based.
+func IsGeminiImageGenerationModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "nano-banana-") ||
+		(strings.HasPrefix(model, "gemini-") && strings.Contains(model, "image"))
 }
 
 func isGrokImageGenerationModel(model string) bool {
@@ -473,7 +482,7 @@ func isGrokImageGenerationModel(model string) bool {
 
 func validateOpenAIImagesModel(model string) error {
 	model = strings.TrimSpace(model)
-	if isOpenAIImageGenerationModel(model) {
+	if isOpenAIImageGenerationModel(model) || IsGeminiImageGenerationModel(model) {
 		return nil
 	}
 	if model == "" {
@@ -1331,8 +1340,8 @@ func normalizeOpenAIImageBase64(raw string) string {
 			raw = raw[idx+1:]
 		}
 	}
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimRight(raw, "=") + strings.Repeat("=", (4-len(raw)%4)%4)
+	raw = strings.TrimRight(strings.TrimSpace(raw), "=")
+	raw += strings.Repeat("=", (4-len(raw)%4)%4)
 	if raw == "" {
 		return ""
 	}
