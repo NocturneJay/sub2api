@@ -163,6 +163,12 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if rateMultiplier, ok := parent.Value(ctxkey.ResolvedRateMultiplier).(float64); ok && rateMultiplier > 0 {
 		base = context.WithValue(base, ctxkey.ResolvedRateMultiplier, rateMultiplier)
 	}
+	// 渠道监控探测标记同样是请求级标量，必须跨过这道异步边界，否则用量行落库时
+	// 读到的是空白的 background context，标记恒为 false（该功能上线首版正是这样
+	// 静默失效的：监控照常跑、记录照常写，就是一条都标不上）。
+	if service.IsChannelMonitorProbe(parent) {
+		base = service.WithChannelMonitorProbe(base)
+	}
 	return base
 }
 
