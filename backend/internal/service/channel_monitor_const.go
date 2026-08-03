@@ -91,8 +91,16 @@ const (
 
 	// monitorAnthropicAPIVersion Anthropic Messages API 版本头。
 	monitorAnthropicAPIVersion = "2023-06-01"
-	// monitorChallengeMaxTokens 单次 challenge 请求的 max_tokens（足够回答个位数算术）。
-	monitorChallengeMaxTokens = 50
+	// monitorChallengeMaxTokens 单次 challenge 请求的 max_tokens。
+	//
+	// 原值 50，注释写着「足够回答个位数算术」——那是非 thinking 模型的假设。
+	// 推理模型会先花掉一大段思考 token，50 的预算在思考阶段就被耗尽，响应里
+	// 根本没有文本部分，表现为 `challenge mismatch (expected N, got "")`。
+	// 2026-08-03 线上 gemini-3.6-flash 实测 out=47（顶着 50 的上限）、抽取文本为空。
+	//
+	// 提高上限对已能在 50 token 内作答的模型没有任何影响——它们本就不会写满，
+	// 计费按实际生成量。只有推理模型会真的用到这段预算，而那正是让它们可用的前提。
+	monitorChallengeMaxTokens = 2048
 
 	// monitorRunOneBuffer runOne 的总超时缓冲（除请求超时与 ping 超时外的额外裕量）。
 	monitorRunOneBuffer = 10 * time.Second

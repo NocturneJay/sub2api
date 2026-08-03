@@ -209,7 +209,7 @@ var providerAdapters = map[string]providerAdapter{
 		buildHeaders: func(apiKey string) map[string]string {
 			return map[string]string{"x-goog-api-key": apiKey}
 		},
-		textPath: "candidates.0.content.parts.0.text",
+		extractText: extractGeminiMonitorText,
 	},
 }
 
@@ -322,6 +322,32 @@ func extractMonitorResponseText(adapter providerAdapter, respBytes []byte) strin
 		return adapter.extractText(respBytes)
 	}
 	return gjson.GetBytes(respBytes, adapter.textPath).String()
+}
+
+// extractGeminiMonitorText 从 Gemini 响应里取出模型的可见回答。
+//
+// 不能直接用 candidates.0.content.parts.0.text：推理模型会把思考过程也放进
+// parts，且通常排在最前面，带 "thought": true 标记。按下标取第一个 part 会拿到
+// 思考文本（或空串），challenge 比对必然失败。这里按 Anthropic 那侧
+// extractAnthropicMonitorText 的同一思路，跳过思考块只取可见文本。
+func extractGeminiMonitorText(respBytes []byte) string {
+	parts := gjson.GetBytes(respBytes, "candidates.0.content.parts")
+	if !parts.IsArray() {
+		return ""
+	}
+
+	collected := make([]string, 0, 1)
+	parts.ForEach(func(_, item gjson.Result) bool {
+		if item.Get("thought").Bool() {
+			return true
+		}
+		text := strings.TrimSpace(item.Get("text").String())
+		if text != "" {
+			collected = append(collected, text)
+		}
+		return true
+	})
+	return strings.TrimSpace(strings.Join(collected, ""))
 }
 
 func extractAnthropicMonitorText(respBytes []byte) string {

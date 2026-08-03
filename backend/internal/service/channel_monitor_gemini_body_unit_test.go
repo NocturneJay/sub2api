@@ -63,3 +63,46 @@ func TestMonitorGeminiBodyMatchesAccountTestShape(t *testing.T) {
 	require.Contains(t, first, "role")
 	require.Contains(t, first, "parts")
 }
+
+// TestExtractGeminiMonitorTextSkipsThoughtParts 钉死推理模型响应的文本抽取。
+//
+// 原实现用 candidates.0.content.parts.0.text 按下标取第一个 part。推理模型会把
+// 思考过程也放进 parts、且通常排在最前面并带 "thought": true，于是抽到的是思考
+// 文本或空串，challenge 比对必然失败，表现为
+// `challenge mismatch (expected N, got "")`。
+func TestExtractGeminiMonitorTextSkipsThoughtParts(t *testing.T) {
+	resp := []byte(`{"candidates":[{"content":{"parts":[
+		{"text":"Let me compute 23 plus 23 step by step...","thought":true},
+		{"text":"46"}
+	]}}]}`)
+	require.Equal(t, "46", extractGeminiMonitorText(resp))
+}
+
+func TestExtractGeminiMonitorTextPlainResponse(t *testing.T) {
+	// 非推理模型：只有一个普通 text part，行为与旧实现一致。
+	resp := []byte(`{"candidates":[{"content":{"parts":[{"text":" 46 "}]}}]}`)
+	require.Equal(t, "46", extractGeminiMonitorText(resp))
+}
+
+func TestExtractGeminiMonitorTextThoughtOnlyYieldsEmpty(t *testing.T) {
+	// 预算被思考耗尽、没有可见文本时必须返回空串，让上层判为 challenge mismatch，
+	// 而不是把思考内容当成答案去比对。
+	resp := []byte(`{"candidates":[{"content":{"parts":[
+		{"text":"thinking...","thought":true}
+	]}}]}`)
+	require.Empty(t, extractGeminiMonitorText(resp))
+}
+
+func TestExtractGeminiMonitorTextMalformed(t *testing.T) {
+	require.Empty(t, extractGeminiMonitorText([]byte(`{}`)))
+	require.Empty(t, extractGeminiMonitorText([]byte(`{"candidates":[]}`)))
+	require.Empty(t, extractGeminiMonitorText([]byte(`not json`)))
+}
+
+// TestMonitorChallengeMaxTokensFitsReasoningModels 锁住 token 预算。
+// 原值 50 对推理模型不够：2026-08-03 线上 gemini-3.6-flash 实测 out=47 顶满上限，
+// 思考阶段就耗尽预算、响应里没有文本部分。
+func TestMonitorChallengeMaxTokensFitsReasoningModels(t *testing.T) {
+	require.GreaterOrEqual(t, monitorChallengeMaxTokens, 1024,
+		"预算必须留够推理模型的思考量，否则响应里不会有可见文本")
+}
