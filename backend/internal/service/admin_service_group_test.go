@@ -1602,27 +1602,53 @@ func TestAdminService_CreateCompositeRoute_NormalizesAndPersists(t *testing.T) {
 	require.Equal(t, route, routeRepo.created)
 }
 
-// TestAdminService_CreateCompositeRoute_ExactEmptyUpstreamBackfillsPublicModel 锁定
-// 保守行为：exact 路由留空 upstream_model 仍回填 public_model（持久化/展示契约不变）。
-func TestAdminService_CreateCompositeRoute_ExactEmptyUpstreamBackfillsPublicModel(t *testing.T) {
+// TestAdminService_CreateCompositeRoute_RequiresTargetGroupAndBackfillsPublicModel
+// 同时锁定两条契约：
+//
+//  1. 启用的复合路由必须指定 target_group_id。这是 aicat 自 455ac9c58
+//     "require target-group routes for pricing" 起的刻意约束：没有目标分组就无法
+//     确定按哪个分组调度和定价，必须直接报错而不是放行。此前该保证没有任何用例覆盖。
+//  2. 保守行为不变：exact 路由留空 upstream_model 仍回填 public_model
+//     （持久化/展示契约）。
+//
+// 本用例改写自上游 v0.1.169 的 ExactEmptyUpstreamBackfillsPublicModel。上游没有
+// target_group_id 这一层，其原用例断言「不带目标分组也能建成」，与 aicat 的设计
+// 直接冲突；这里保留它真正想锁住的回填契约，改按 aicat 语义断言。
+func TestAdminService_CreateCompositeRoute_RequiresTargetGroupAndBackfillsPublicModel(t *testing.T) {
+	targetGroupID := int64(42)
 	groupRepo := &groupRepoStubForAdmin{
-		getByID: &Group{ID: 7, Platform: PlatformComposite},
+		getByIDByID: map[int64]*Group{
+			7:  {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+			42: {ID: 42, Platform: PlatformOpenAI, Status: StatusActive},
+		},
 	}
 	routeRepo := &compositeRouteRepoStubForAdmin{nextID: 99}
 	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
 
-	route, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+	_, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
 		PublicModel:    "openrouter/gpt-5",
 		MatchType:      CompositeRouteMatchExact,
 		TargetPlatform: PlatformOpenAI,
 		Endpoint:       CompositeRouteEndpointResponses,
 		Enabled:        true,
 	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "COMPOSITE_TARGET_GROUP_REQUIRED")
+
+	route, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel:   "openrouter/gpt-5",
+		MatchType:     CompositeRouteMatchExact,
+		TargetGroupID: &targetGroupID,
+		Endpoint:      CompositeRouteEndpointResponses,
+		Enabled:       true,
+	})
 
 	require.NoError(t, err)
 	require.NotNil(t, route)
 	require.Equal(t, CompositeRouteMatchExact, route.MatchType)
 	require.Equal(t, "openrouter/gpt-5", route.UpstreamModel)
+	// target_platform 由目标分组派生，调用方不需要也不应该自己指定。
+	require.Equal(t, PlatformOpenAI, route.TargetPlatform)
 }
 
 func TestAdminService_UpdateAndDeleteCompositeRouteRequireRouteOwnership(t *testing.T) {
