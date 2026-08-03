@@ -55,6 +55,7 @@ type GeminiMessagesCompatService struct {
 	antigravityGatewayService *AntigravityGatewayService
 	cfg                       *config.Config
 	responseHeaderFilter      *responseheaders.CompiledHeaderFilter
+	imageRetryBackoff         func(attempt int)
 }
 
 func (s *GeminiMessagesCompatService) readUpstreamErrorBody(resp *http.Response) []byte {
@@ -2919,7 +2920,7 @@ func asInt(v any) (int, bool) {
 	}
 }
 
-func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) {
+func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte, minimumResetAt ...time.Time) {
 	// 遵守自定义错误码策略：未命中则跳过所有限流处理
 	if !account.ShouldHandleErrorCode(statusCode) {
 		return
@@ -2937,11 +2938,35 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	projectID := strings.TrimSpace(account.GetCredential("project_id"))
 	isCodeAssist := account.IsGeminiCodeAssist()
 
+	var resetFloor *time.Time
+	if len(minimumResetAt) > 0 && !minimumResetAt[0].IsZero() {
+		resetFloor = &minimumResetAt[0]
+	}
+
 	resetAt := ParseGeminiRateLimitResetTime(body)
 	if resetAt == nil {
 		// 根据账号类型使用不同的默认重置时间
 		var ra time.Time
-		if isCodeAssist || oauthType == "google_one" {
+		if account.Type == AccountTypeServiceAccount {
+			if retryAt, ok := resolveRetryAfterResetTime(headers, time.Now()); ok {
+				ra = retryAt
+				if resetFloor != nil && resetFloor.After(ra) {
+					ra = *resetFloor
+				}
+				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account) rate limited by Retry-After until %v", account.ID, ra)
+			} else if resetFloor != nil {
+				ra = *resetFloor
+				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account) rate limited by an earlier retry hint until %v", account.ID, ra)
+			} else {
+				cooldown, enabled := s.gemini429FallbackCooldown(ctx, account)
+				if !enabled {
+					logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account) fallback cooldown disabled", account.ID)
+					return
+				}
+				ra = time.Now().Add(cooldown)
+				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account) rate limited, fallback cooldown=%v", account.ID, cooldown)
+			}
+		} else if isCodeAssist || oauthType == "google_one" {
 			// Gemini CLI / Google One: fallback cooldown by tier
 			cooldown := geminiCooldownForTier(tierID)
 			if s.rateLimitService != nil {
@@ -2964,15 +2989,52 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d rate limited, fallback to 5min", account.ID)
 			}
 		}
-		_ = s.accountRepo.SetRateLimited(ctx, account.ID, ra)
+		s.persistGeminiRateLimit(ctx, account.ID, ra)
 		return
 	}
 
 	// 使用解析到的重置时间
 	resetTime := time.Unix(*resetAt, 0)
-	_ = s.accountRepo.SetRateLimited(ctx, account.ID, resetTime)
+	if resetFloor != nil && resetFloor.After(resetTime) {
+		resetTime = *resetFloor
+	}
+	s.persistGeminiRateLimit(ctx, account.ID, resetTime)
 	logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d rate limited until %v (oauth_type=%s, tier=%s)",
 		account.ID, resetTime, oauthType, tierID)
+}
+
+func resolveExplicitGeminiRateLimitReset(headers http.Header, body []byte) (time.Time, bool) {
+	if resetAt := ParseGeminiRateLimitResetTime(body); resetAt != nil {
+		return time.Unix(*resetAt, 0), true
+	}
+	return resolveRetryAfterResetTime(headers, time.Now())
+}
+
+type geminiRateLimitExtendingRepository interface {
+	SetRateLimitedIfLater(ctx context.Context, id int64, resetAt time.Time) error
+}
+
+func (s *GeminiMessagesCompatService) gemini429FallbackCooldown(ctx context.Context, account *Account) (time.Duration, bool) {
+	if s != nil && s.rateLimitService != nil {
+		return s.rateLimitService.get429FallbackCooldown(ctx, account)
+	}
+	return time.Duration(defaultRateLimit429CooldownSeconds) * time.Second, true
+}
+
+func (s *GeminiMessagesCompatService) persistGeminiRateLimit(ctx context.Context, accountID int64, resetAt time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+
+	var err error
+	if repo, ok := s.accountRepo.(geminiRateLimitExtendingRepository); ok {
+		err = repo.SetRateLimitedIfLater(ctx, accountID, resetAt)
+	} else {
+		err = s.accountRepo.SetRateLimited(ctx, accountID, resetAt)
+	}
+	if err != nil {
+		logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d rate limit persistence failed: %v", accountID, err)
+	}
 }
 
 // ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳

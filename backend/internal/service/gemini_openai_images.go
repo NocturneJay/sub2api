@@ -241,6 +241,7 @@ func (s *GeminiMessagesCompatService) doGeminiOpenAIImagesRequest(
 	body []byte,
 ) (*geminiOpenAIImagesAttempt, error) {
 	var resp *http.Response
+	var observed429ResetAt *time.Time
 	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
 		upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(body))
 		if err != nil {
@@ -277,7 +278,9 @@ func (s *GeminiMessagesCompatService) doGeminiOpenAIImagesRequest(
 			respBody := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusTooManyRequests {
-				s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				if resetAt, ok := resolveExplicitGeminiRateLimitReset(resp.Header, respBody); ok && (observed429ResetAt == nil || resetAt.After(*observed429ResetAt)) {
+					observed429ResetAt = &resetAt
+				}
 			}
 			if attempt < geminiMaxRetries {
 				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -286,7 +289,7 @@ func (s *GeminiMessagesCompatService) doGeminiOpenAIImagesRequest(
 					UpstreamRequestID:  firstGeminiRequestID(resp.Header),
 					Kind:               "retry", Message: sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody))),
 				})
-				sleepGeminiBackoff(attempt)
+				s.sleepGeminiOpenAIImagesBackoff(attempt)
 				continue
 			}
 			resp = &http.Response{StatusCode: resp.StatusCode, Header: resp.Header.Clone(), Body: io.NopCloser(bytes.NewReader(respBody))}
@@ -308,7 +311,11 @@ func (s *GeminiMessagesCompatService) doGeminiOpenAIImagesRequest(
 			UpstreamStatusCode: resp.StatusCode, UpstreamRequestID: requestID,
 			Kind: "http_error", Message: upstreamMsg,
 		})
-		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		if resp.StatusCode == http.StatusTooManyRequests && observed429ResetAt != nil {
+			s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, *observed429ResetAt)
+		} else {
+			s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		}
 		if s.shouldFailoverGeminiUpstreamError(resp.StatusCode) {
 			return nil, &UpstreamFailoverError{
 				StatusCode: resp.StatusCode, ResponseBody: respBody,
@@ -348,6 +355,14 @@ func (s *GeminiMessagesCompatService) doGeminiOpenAIImagesRequest(
 		images: images, text: text, usage: extractGeminiUsage(respBody),
 		requestID: requestID, headers: resp.Header.Clone(),
 	}, nil
+}
+
+func (s *GeminiMessagesCompatService) sleepGeminiOpenAIImagesBackoff(attempt int) {
+	if s != nil && s.imageRetryBackoff != nil {
+		s.imageRetryBackoff(attempt)
+		return
+	}
+	sleepGeminiBackoff(attempt)
 }
 
 func geminiOpenAIImagesResponseID(body []byte) string {

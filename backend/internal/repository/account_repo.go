@@ -2137,9 +2137,9 @@ func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetA
 	return nil
 }
 
-// SetRateLimitedIfLater atomically extends an account-level rate limit. Grok
-// requests may finish concurrently, so an older response must not overwrite a
-// later reset boundary observed by another request or instance.
+// SetRateLimitedIfLater atomically extends an account-level rate limit. Requests
+// may finish concurrently, so an older response must not overwrite a later
+// reset boundary observed by another request or instance.
 func (r *accountRepository) SetRateLimitedIfLater(ctx context.Context, id int64, resetAt time.Time) error {
 	now := time.Now()
 	updated, err := r.client.Account.Update().

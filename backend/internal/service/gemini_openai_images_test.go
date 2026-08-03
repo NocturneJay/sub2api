@@ -48,7 +48,30 @@ type geminiImagesHTTPUpstreamStub struct {
 	responseStatus []int
 	responseMIME   []string
 	responseBodies []string
+	responseHeader []http.Header
 	omitRequestID  bool
+}
+
+type geminiImagesRateLimitRepoStub struct {
+	AccountRepository
+	setCalls    int
+	extendCalls int
+	accountID   int64
+	resetAt     time.Time
+}
+
+func (r *geminiImagesRateLimitRepoStub) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
+	r.setCalls++
+	r.accountID = id
+	r.resetAt = resetAt
+	return nil
+}
+
+func (r *geminiImagesRateLimitRepoStub) SetRateLimitedIfLater(_ context.Context, id int64, resetAt time.Time) error {
+	r.extendCalls++
+	r.accountID = id
+	r.resetAt = resetAt
+	return nil
 }
 
 func (s *geminiImagesHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
@@ -74,13 +97,21 @@ func (s *geminiImagesHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, 
 		]}}],
 		"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3,"candidatesTokensDetails":[{"modality":"IMAGE","tokenCount":1290}]}
 	}`
+	customResponseBody := false
 	if index := s.calls - 1; index < len(s.responseBodies) && strings.TrimSpace(s.responseBodies[index]) != "" {
 		responseBody = s.responseBodies[index]
+		customResponseBody = true
 	}
-	if status >= http.StatusBadRequest {
+	if status >= http.StatusBadRequest && !customResponseBody {
 		responseBody = `{"error":{"code":` + fmt.Sprint(status) + `,"message":"account unavailable","status":"UNAUTHENTICATED"}}`
 	}
 	headers := http.Header{"Content-Type": []string{"application/json"}}
+	if index := s.calls - 1; index < len(s.responseHeader) && s.responseHeader[index] != nil {
+		headers = s.responseHeader[index].Clone()
+		if headers.Get("Content-Type") == "" {
+			headers.Set("Content-Type", "application/json")
+		}
+	}
 	if !s.omitRequestID {
 		headers.Set("X-Goog-Request-Id", "vertex-request")
 	}
@@ -164,6 +195,177 @@ func TestSupportsGeminiOpenAIImagesRequiresVertexServiceAccount(t *testing.T) {
 	require.True(t, SupportsGeminiOpenAIImages(&Account{Platform: PlatformGemini, Type: AccountTypeServiceAccount}))
 	require.False(t, SupportsGeminiOpenAIImages(&Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}))
 	require.False(t, SupportsGeminiOpenAIImages(&Account{Platform: PlatformOpenAI, Type: AccountTypeServiceAccount}))
+}
+
+func TestGeminiVertex429WithoutResetHintUsesShortFallback(t *testing.T) {
+	repo := &geminiImagesRateLimitRepoStub{}
+	svc := &GeminiMessagesCompatService{accountRepo: repo}
+	account := geminiImagesServiceAccount()
+	before := time.Now()
+
+	svc.handleGeminiUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, []byte(`{
+		"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}
+	}`))
+	after := time.Now()
+
+	require.Zero(t, repo.setCalls)
+	require.Equal(t, 1, repo.extendCalls)
+	require.Equal(t, account.ID, repo.accountID)
+	require.False(t, repo.resetAt.Before(before.Add(5*time.Second)))
+	require.False(t, repo.resetAt.After(after.Add(5*time.Second)))
+}
+
+func TestGeminiVertex429HonorsExplicitResetHints(t *testing.T) {
+	tests := []struct {
+		name       string
+		headers    http.Header
+		body       string
+		assertTime func(t *testing.T, before, after, resetAt time.Time)
+	}{
+		{
+			name:    "retry after header",
+			headers: http.Header{"Retry-After": []string{"17"}},
+			body:    `{"error":{"code":429,"message":"Resource exhausted"}}`,
+			assertTime: func(t *testing.T, before, after, resetAt time.Time) {
+				require.False(t, resetAt.Before(before.Add(17*time.Second)))
+				require.False(t, resetAt.After(after.Add(17*time.Second)))
+			},
+		},
+		{
+			name: "quota reset delay",
+			body: `{"error":{"code":429,"details":[{"metadata":{"quotaResetDelay":"12.345s"}}]}}`,
+			assertTime: func(t *testing.T, before, _ time.Time, resetAt time.Time) {
+				require.WithinDuration(t, before.Add(13*time.Second), resetAt, 2*time.Second)
+			},
+		},
+		{
+			name: "daily quota",
+			body: `{"error":{"code":429,"message":"quota per day exceeded"}}`,
+			assertTime: func(t *testing.T, before, _ time.Time, resetAt time.Time) {
+				require.WithinDuration(t, geminiDailyResetTime(before), resetAt, time.Second)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &geminiImagesRateLimitRepoStub{}
+			svc := &GeminiMessagesCompatService{accountRepo: repo}
+			before := time.Now()
+			svc.handleGeminiUpstreamError(context.Background(), geminiImagesServiceAccount(), http.StatusTooManyRequests, tt.headers, []byte(tt.body))
+			after := time.Now()
+
+			require.Zero(t, repo.setCalls)
+			require.Equal(t, 1, repo.extendCalls)
+			tt.assertTime(t, before, after, repo.resetAt)
+		})
+	}
+}
+
+func TestGeminiOpenAIImagesRetrySuccessDoesNotPersistIntermediate429(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &geminiImagesRateLimitRepoStub{}
+	upstream := &geminiImagesHTTPUpstreamStub{responseStatus: []int{http.StatusTooManyRequests, http.StatusOK}}
+	svc := &GeminiMessagesCompatService{
+		accountRepo:       repo,
+		tokenProvider:     &GeminiTokenProvider{tokenCache: &fixedGeminiTokenCache{token: "vertex-token"}},
+		httpUpstream:      upstream,
+		cfg:               &config.Config{},
+		imageRetryBackoff: func(int) {},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, nil)
+
+	result, err := svc.ForwardAsOpenAIImages(context.Background(), c, geminiImagesServiceAccount(), &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "Nano-Banana-Pro",
+		Prompt:   "draw",
+		N:        1,
+	}, "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, upstream.calls)
+	require.Zero(t, repo.setCalls)
+	require.Zero(t, repo.extendCalls)
+}
+
+func TestGeminiOpenAIImagesFinal429PersistsRateLimitOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &geminiImagesRateLimitRepoStub{}
+	upstream := &geminiImagesHTTPUpstreamStub{responseStatus: []int{
+		http.StatusTooManyRequests,
+		http.StatusTooManyRequests,
+		http.StatusTooManyRequests,
+		http.StatusTooManyRequests,
+		http.StatusTooManyRequests,
+	}}
+	svc := &GeminiMessagesCompatService{
+		accountRepo:       repo,
+		tokenProvider:     &GeminiTokenProvider{tokenCache: &fixedGeminiTokenCache{token: "vertex-token"}},
+		httpUpstream:      upstream,
+		cfg:               &config.Config{},
+		imageRetryBackoff: func(int) {},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, nil)
+	before := time.Now()
+
+	result, err := svc.ForwardAsOpenAIImages(context.Background(), c, geminiImagesServiceAccount(), &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "Nano-Banana-Pro",
+		Prompt:   "draw",
+		N:        1,
+	}, "")
+	after := time.Now()
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, geminiMaxRetries, upstream.calls)
+	require.Zero(t, repo.setCalls)
+	require.Equal(t, 1, repo.extendCalls)
+	require.False(t, repo.resetAt.Before(before.Add(5*time.Second)))
+	require.False(t, repo.resetAt.After(after.Add(5*time.Second)))
+}
+
+func TestGeminiOpenAIImagesFinal429KeepsStrongestEarlierResetHint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &geminiImagesRateLimitRepoStub{}
+	statuses := make([]int, geminiMaxRetries)
+	bodies := make([]string, geminiMaxRetries)
+	for i := range statuses {
+		statuses[i] = http.StatusTooManyRequests
+		bodies[i] = `{"error":{"code":429,"message":"Resource exhausted"}}`
+	}
+	bodies[0] = `{"error":{"code":429,"details":[{"metadata":{"quotaResetDelay":"120s"}}]}}`
+	upstream := &geminiImagesHTTPUpstreamStub{responseStatus: statuses, responseBodies: bodies}
+	svc := &GeminiMessagesCompatService{
+		accountRepo:       repo,
+		tokenProvider:     &GeminiTokenProvider{tokenCache: &fixedGeminiTokenCache{token: "vertex-token"}},
+		httpUpstream:      upstream,
+		cfg:               &config.Config{},
+		imageRetryBackoff: func(int) {},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, nil)
+	before := time.Now()
+
+	result, err := svc.ForwardAsOpenAIImages(context.Background(), c, geminiImagesServiceAccount(), &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "Nano-Banana-Pro",
+		Prompt:   "draw",
+		N:        1,
+	}, "")
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, geminiMaxRetries, upstream.calls)
+	require.Zero(t, repo.setCalls)
+	require.Equal(t, 1, repo.extendCalls)
+	require.WithinDuration(t, before.Add(120*time.Second), repo.resetAt, 2*time.Second)
 }
 
 func TestBuildGeminiOpenAIImagesRequestBodyMapsOutputOptions(t *testing.T) {
