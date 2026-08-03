@@ -40,3 +40,31 @@ func TestUsageRecordContext_DoesNotInventChannelMonitorProbe(t *testing.T) {
 	// parent 为 nil 时直接返回 base，同样不得带上标记。
 	require.False(t, service.IsChannelMonitorProbe(usageRecordContext(nil, context.Background())))
 }
+
+// TestEnqueueOpsErrorLogStampsChannelMonitorFromContext 锁住错误日志的标记接线。
+//
+// 与用量行同一道理：错误日志也走队列 + worker，worker 跑在与请求无关的 context 上。
+// 所以标记必须在入队时（仍在请求 goroutine 内）从 ctx 读出、写进 entry 载荷，
+// 而不是留在 context 里等 worker 去读——那样永远读不到。
+// enqueueOpsErrorLog 是唯一入队口，在那里盖章即可覆盖全部 5 个调用点。
+//
+// 这里真调 enqueueOpsErrorLog（而不是复刻它的逻辑），否则测的只是测试自己。
+// 用容量足够的测试队列接住 entry，入队后直接检查载荷上的标记。
+func TestEnqueueOpsErrorLogStampsChannelMonitorFromContext(t *testing.T) {
+	resetOpsErrorLoggerStateForTest(t)
+	opsErrorLogOnce.Do(func() {})
+
+	opsErrorLogMu.Lock()
+	opsErrorLogQueue = make(chan opsErrorLogJob, 4)
+	opsErrorLogMu.Unlock()
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	probe := &service.OpsInsertErrorLogInput{ErrorPhase: "upstream", ErrorType: "upstream_error"}
+	enqueueOpsErrorLog(service.WithChannelMonitorProbe(context.Background()), ops, probe)
+	require.True(t, probe.IsChannelMonitor, "探测请求必须在入队时被盖章")
+
+	plain := &service.OpsInsertErrorLogInput{ErrorPhase: "upstream", ErrorType: "upstream_error"}
+	enqueueOpsErrorLog(context.Background(), ops, plain)
+	require.False(t, plain.IsChannelMonitor, "普通请求不得被凭空盖章")
+}

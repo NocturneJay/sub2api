@@ -211,10 +211,16 @@ func flushOpsErrorLogBatch(batch []opsErrorLogJob) {
 	opsErrorLogProcessed.Add(processed)
 }
 
-func enqueueOpsErrorLog(ops *service.OpsService, entry *service.OpsInsertErrorLogInput) {
+// enqueueOpsErrorLog 是错误日志的唯一入队口。
+//
+// ctx 必须是请求 context（或由其派生）：渠道监控探测标记在这里读出来、写进 entry
+// 载荷，再随 entry 入队。入队后的 worker 跑在与请求无关的 context 上，届时再读
+// 就永远读不到 —— 用量行那边正是因为把标记留在 context 里而静默失效过一整轮。
+func enqueueOpsErrorLog(ctx context.Context, ops *service.OpsService, entry *service.OpsInsertErrorLogInput) {
 	if ops == nil || entry == nil {
 		return
 	}
+	entry.IsChannelMonitor = service.IsChannelMonitorProbe(ctx)
 	entry.UserAgent = normalizeOpsPersistentUserAgent(entry.UserAgent)
 	if entry.ErrorBody != "" {
 		originalBody := entry.ErrorBody
@@ -973,7 +979,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				}
 			}
 
-			enqueueOpsErrorLog(ops, entry)
+			enqueueOpsErrorLog(c.Request.Context(), ops, entry)
 			return
 		}
 
@@ -1106,7 +1112,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			entry.ClientIP = &clientIP
 		}
 
-		enqueueOpsErrorLog(ops, entry)
+		enqueueOpsErrorLog(c.Request.Context(), ops, entry)
 	}
 }
 
@@ -1252,7 +1258,7 @@ func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int, 
 		entry.ClientIP = &clientIP
 	}
 
-	enqueueOpsErrorLog(ops, entry)
+	enqueueOpsErrorLog(c.Request.Context(), ops, entry)
 }
 
 // opsDurationMsSince 计算请求总耗时(毫秒)。不足 1ms 记为 1,与

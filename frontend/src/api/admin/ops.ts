@@ -1107,6 +1107,10 @@ export type OpsErrorListQueryParams = {
   status_codes?: string
   status_codes_other?: string
 
+  // 排除渠道监控健康检查产生的错误记录。仅 /admin/ops/errors 列表接口支持；
+  // 统计接口不接受该参数（监控失败也是真实发生的上游故障，健康度口径不随它变动）。
+  exclude_channel_monitor?: boolean
+
   // 服务端排序,列白名单见后端 opsErrorLogsOrderBy(created_at/model/status_code)
   sort_by?: string
   sort_order?: 'asc' | 'desc'

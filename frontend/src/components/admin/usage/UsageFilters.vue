@@ -163,8 +163,8 @@
           <Select v-model="filters.group_id" :options="groupOptions" searchable @change="emitChange" />
         </div>
 
-        <!-- 排除渠道监控（用量明细专用；只过滤下方列表，不影响上方统计与图表） -->
-        <div v-if="mode === 'usage'" class="w-full sm:w-auto sm:self-end">
+        <!-- 排除渠道监控（用量明细 / 错误请求；只过滤下方列表，不影响上方统计与图表） -->
+        <div v-if="mode === 'usage' || mode === 'errors'" class="w-full sm:w-auto sm:self-end">
           <label
             class="flex cursor-pointer items-center gap-2 py-2 text-sm text-gray-700 dark:text-gray-300"
             :title="t('admin.usage.excludeChannelMonitorHint')"

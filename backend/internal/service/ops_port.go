@@ -131,6 +131,12 @@ type OpsInsertErrorLogInput struct {
 	// 有效(未删除)key 报错时快照的 key 脱敏前缀(前 8 位)。
 	// 落库快照而非读时 JOIN:key 之后被删(key 列被 tombstone 覆盖)仍保留当时前缀。
 	APIKeyPrefix string
+
+	// IsChannelMonitor 标记该条错误由渠道监控的健康检查产生，而非用户真实请求。
+	// 在中间件（请求上下文内）读取后放进任务载荷，不依赖 context 跨越入库队列
+	// —— 用量行那边就是因为把标记放 ctx 而静默失效过。
+	// 仅供管理端「错误请求」列表按需排除，不影响任何统计口径。
+	IsChannelMonitor bool
 }
 
 type OpsInsertSystemMetricsInput struct {

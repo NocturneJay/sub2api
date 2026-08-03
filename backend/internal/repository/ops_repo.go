@@ -58,9 +58,10 @@ INSERT INTO ops_error_logs (
   resolved,
   resolved_at,
   created_at,
-  api_key_prefix
+  api_key_prefix,
+  is_channel_monitor
 ) VALUES (
-  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41
+  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42
 )`
 
 func NewOpsRepository(db *sql.DB) service.OpsRepository {
@@ -173,6 +174,7 @@ func opsInsertErrorLogArgs(input *service.OpsInsertErrorLogInput) []any {
 		opsNullTime(input.ResolvedAt),
 		input.CreatedAt,
 		opsNullString(input.APIKeyPrefix),
+		input.IsChannelMonitor,
 	}
 }
 
@@ -1032,6 +1034,11 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 			args = append(args, m)
 			clauses = append(clauses, "COALESCE(e.requested_model, e.model, '') = $"+itoa(len(args)))
 		}
+	}
+	if filter.ExcludeChannelMonitor {
+		// 列为 NOT NULL DEFAULT FALSE，但沿用 COALESCE 写法与相邻过滤保持一致，
+		// 也顺带兼容尚未跑到 901 迁移的历史查询计划。
+		clauses = append(clauses, "COALESCE(e.is_channel_monitor, false) = false")
 	}
 	if filter.ExcludeCountTokens {
 		clauses = append(clauses, "COALESCE(e.is_count_tokens, false) = false")

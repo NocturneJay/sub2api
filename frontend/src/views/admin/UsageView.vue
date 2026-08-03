@@ -811,6 +811,8 @@ const loadAdminErrors = async () => {
       phase: filters.value.error_phase || undefined,
       category: filters.value.error_category || undefined,
       status_codes: filters.value.status_code != null ? String(filters.value.status_code) : undefined,
+      // 与用量明细同口径：只过滤下方列表。错误页的统计走独立接口、不读这个值。
+      exclude_channel_monitor: filters.value.exclude_channel_monitor || undefined,
       sort_by: errSortBy.value,
       sort_order: errSortOrder.value,
     })

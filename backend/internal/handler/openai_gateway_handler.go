@@ -3234,7 +3234,7 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 	if apiKey.User != nil {
 		meta.UserID = apiKey.User.ID
 	}
-	enqueueOpsErrorLog(h.opsService, buildCyberSessionBlockedOpsEntry(meta))
+	enqueueOpsErrorLog(c.Request.Context(), h.opsService, buildCyberSessionBlockedOpsEntry(meta))
 	// 已落专属日志,通知 ops 中间件跳过对 403 响应体的二次落库(防双写)。
 	c.Set(opsCyberSessionBlockedRecordedKey, true)
 }
@@ -3372,7 +3372,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 			gwSvc.MarkCyberSessionBlocked(ctx, cyberBlockKey)
 		}
 		if opsSvc != nil {
-			enqueueOpsErrorLog(opsSvc, buildCyberPolicyOpsErrorEntry(opsMeta, mark))
+			enqueueOpsErrorLog(ctx, opsSvc, buildCyberPolicyOpsErrorEntry(opsMeta, mark))
 		}
 	}()
 }

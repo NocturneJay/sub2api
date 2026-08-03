@@ -99,6 +99,12 @@ type OpsErrorLogDetail struct {
 
 	// Bound (non-deleted) key prefix, snapshotted at error time.
 	APIKeyPrefix string `json:"api_key_prefix,omitempty"`
+
+	// IsChannelMonitor 标记该条错误由渠道监控的健康检查产生，而非用户真实请求。
+	// 在中间件（请求上下文内）读取后放进任务载荷，不依赖 context 跨越入库队列
+	// —— 用量行那边就是因为把标记放 ctx 而静默失效过。
+	// 仅供管理端「错误请求」列表按需排除，不影响任何统计口径。
+	IsChannelMonitor bool `json:"is_channel_monitor"`
 }
 
 type OpsErrorLogFilter struct {
@@ -134,6 +140,11 @@ type OpsErrorLogFilter struct {
 
 	// ExcludeCountTokens drops count_tokens probe errors (is_count_tokens=true).
 	ExcludeCountTokens bool
+
+	// ExcludeChannelMonitor 排除渠道监控健康检查产生的错误记录。
+	// 监控通过本站网关发真实请求，失败时会写进错误看板并混在用户真实故障里。
+	// 只影响明细列表，不影响任何统计口径 —— 监控失败也是真实发生的上游故障。
+	ExcludeChannelMonitor bool
 
 	// IncludeRecoveredUpstream explicitly exempts provider-health phases
 	// (upstream and account_auth) from the status>=400 guard. Ops provider

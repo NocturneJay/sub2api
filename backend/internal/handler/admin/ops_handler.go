@@ -121,6 +121,17 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 	// buildOpsErrorLogsWhere 以 COALESCE(requested_model, model) 比对。
 	filter.Model = strings.TrimSpace(c.Query("model"))
 
+	// 排除渠道监控健康检查产生的错误。只作用于本列表接口，不传给任何统计接口 ——
+	// 监控失败也是真实发生的上游故障，健康度口径不应随这个开关变动。
+	if raw := strings.TrimSpace(c.Query("exclude_channel_monitor")); raw != "" {
+		parsed, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			response.BadRequest(c, "Invalid exclude_channel_monitor value, use true or false")
+			return
+		}
+		filter.ExcludeChannelMonitor = parsed
+	}
+
 	// 请求错误语义:client-visible status>=400 守卫恒生效（未设
 	// IncludeRecoveredUpstream 时 phase=upstream 不再绕过守卫），故
 	// phase=upstream 作为普通过滤条件保留——此前这里清空该值，导致

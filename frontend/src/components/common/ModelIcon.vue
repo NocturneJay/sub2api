@@ -178,7 +178,7 @@ const iconKey = computed(() => {
   // Google Gemini
   if (modelLower.includes('gemini') || modelLower.includes('gemma') ||
       modelLower.includes('learnlm') || modelLower.includes('imagen-') ||
-      modelLower.includes('veo-')) return 'gemini'
+      modelLower.includes('veo-') || modelLower.includes('nano-banana')) return 'gemini'
 
   // Zhipu GLM
   if (modelLower.includes('glm') || modelLower.includes('chatglm') ||
