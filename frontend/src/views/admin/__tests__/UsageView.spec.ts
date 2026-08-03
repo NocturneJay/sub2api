@@ -538,3 +538,64 @@ describe('admin UsageView ranking tab', () => {
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 5 }), expect.anything())
   })
 })
+
+
+describe('admin UsageView exclude channel monitor', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
+    list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockReset().mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      average_duration_ms: 0,
+    })
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+    getById.mockReset()
+  })
+
+  afterEach(() => {
+    Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
+    vi.useRealTimers()
+  })
+
+  // 该开关只隐藏明细列表里的渠道监控记录；顶部费用、图表与用户排行必须保持
+  // 完整账目口径——监控是真实花掉的钱。这条用例锁住「传给列表、不传给统计」。
+  it('passes exclude_channel_monitor to the list but never to stats', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+
+    list.mockClear()
+    getStats.mockClear()
+
+    ;(wrapper.vm as any).filters.exclude_channel_monitor = true
+    ;(wrapper.vm as any).applyFilters()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ exclude_channel_monitor: true }),
+      expect.anything(),
+    )
+    expect(getStats).toHaveBeenCalled()
+    for (const call of getStats.mock.calls) {
+      expect(call[0]).not.toHaveProperty('exclude_channel_monitor')
+    }
+  })
+
+  it('omits exclude_channel_monitor entirely when not enabled', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalled()
+    for (const call of list.mock.calls) {
+      expect(call[0].exclude_channel_monitor).toBeUndefined()
+    }
+    void wrapper
+  })
+})

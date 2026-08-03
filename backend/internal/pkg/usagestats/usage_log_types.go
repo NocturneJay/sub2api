@@ -280,6 +280,12 @@ type UsageLogFilters struct {
 	BillingMode       string
 	StartTime         *time.Time
 	EndTime           *time.Time
+	// ExcludeChannelMonitor 排除渠道监控健康检查产生的记录。
+	// 监控通过本站网关发真实请求，会在 usage_logs 里留下记录并混在用户真实用量里；
+	// 这些记录靠保留 User-Agent 识别（见 service.ChannelMonitorUserAgent，
+	// 由 middleware.ChannelMonitorProbe 校验一次性随机数后才允许保留该 UA）。
+	// 只影响明细列表，不影响任何统计与计费口径——监控是真实花掉的钱。
+	ExcludeChannelMonitor bool
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

@@ -399,8 +399,13 @@ const loadStats = async (force = false) => {
   try {
     const requestType = filters.value.request_type
     const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
+    // exclude_channel_monitor 只作用于下方明细列表，不能传给统计接口：
+    // 渠道监控是真实花掉的钱，顶部的费用、图表与用户排行必须保持完整账目口径。
+    // 这里显式剔除，而不是依赖后端忽略未知参数——否则将来后端一旦支持该参数，
+    // 统计口径会跟着静默改变。
+    const { exclude_channel_monitor: _excluded, ...statsFilters } = filters.value
     const s = await adminAPI.usage.getStats({
-      ...filters.value,
+      ...statsFilters,
       stream: legacyStream === null ? undefined : legacyStream,
       ...(force ? { nocache: 1 } : {}),
     })

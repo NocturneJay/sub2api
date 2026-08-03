@@ -56,6 +56,11 @@ func SetupRouter(
 	refreshFrameOrigins() // 启动时初始化
 
 	// 应用中间件
+	// 渠道监控探测标记的校验与清洗必须排在最前：下游的 RequestLogger、
+	// SessionBindingContext（把 UA 注入 request context 供审计与会话绑定使用）
+	// 以及各网关 handler 都直接读 User-Agent 头，只有先清洗掉冒用者，
+	// 它们看到的才是同一个可信值。
+	r.Use(middleware2.ChannelMonitorProbe())
 	r.Use(middleware2.RequestLogger())
 	// 将客户端 IP + UA 注入 request context，供 token 签发/会话绑定/审计日志统一读取。
 	// 解析模式按请求快照：兼容开关开启时信任原始转发头，关闭时使用 server.trusted_proxies。

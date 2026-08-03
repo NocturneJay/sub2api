@@ -563,6 +563,9 @@ export default {
       billingModeImage: 'Image',
       billingModeVideo: 'Video',
       allBillingModes: 'All Billing Modes',
+      excludeChannelMonitor: 'Exclude channel monitor',
+      excludeChannelMonitorHint:
+        'Channel monitor health checks are real requests through this gateway, so they are recorded as usage. Checking this hides them from the detail list below only; the cost totals, charts and user ranking above are unaffected — monitoring is real spend. Applies only to records created after this feature went live.',
       ipAddress: 'IP',
       clickToViewBalance: 'Click to view balance history',
       failedToLoadUser: 'Failed to load user info',

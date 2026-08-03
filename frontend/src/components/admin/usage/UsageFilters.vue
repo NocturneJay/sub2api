@@ -163,6 +163,21 @@
           <Select v-model="filters.group_id" :options="groupOptions" searchable @change="emitChange" />
         </div>
 
+        <!-- 排除渠道监控（用量明细专用；只过滤下方列表，不影响上方统计与图表） -->
+        <div v-if="mode === 'usage'" class="w-full sm:w-auto sm:self-end">
+          <label
+            class="flex cursor-pointer items-center gap-2 py-2 text-sm text-gray-700 dark:text-gray-300"
+            :title="t('admin.usage.excludeChannelMonitorHint')"
+          >
+            <input
+              type="checkbox"
+              v-model="excludeChannelMonitor"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+            />
+            <span>{{ t('admin.usage.excludeChannelMonitor') }}</span>
+          </label>
+        </div>
+
       </div>
 
       <!-- Right: actions -->
@@ -306,6 +321,16 @@ const billingModeOptions = ref<SelectOption[]>([
   { value: 'image', label: t('admin.usage.billingModeImage') },
   { value: 'video', label: t('admin.usage.billingModeVideo') }
 ])
+
+// 渠道监控排除开关。用可写 computed 直接读写 filters，与其它筛选项走同一条
+// change 通路；undefined 视为未勾选，避免历史 URL / 本地状态里缺这个键时报错。
+const excludeChannelMonitor = computed<boolean>({
+  get: () => filters.value.exclude_channel_monitor === true,
+  set: (value) => {
+    filters.value.exclude_channel_monitor = value ? true : undefined
+    emit('change')
+  }
+})
 
 const emitChange = () => emit('change')
 

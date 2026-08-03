@@ -560,6 +560,9 @@ export default {
       billingModeImage: '按次(图片)',
       billingModeVideo: '按次(视频)',
       allBillingModes: '全部计费模式',
+      excludeChannelMonitor: '排除渠道监控',
+      excludeChannelMonitorHint:
+        '渠道监控的健康检查是通过本站网关发的真实请求，也会记进用量。勾选后仅从下方明细列表中隐藏这些记录；上方的费用、图表与用户排行不受影响——监控是真实花掉的钱。仅对启用本功能之后产生的记录生效。',
       ipAddress: 'IP',
       clickToViewBalance: '点击查看充值记录',
       failedToLoadUser: '加载用户信息失败',

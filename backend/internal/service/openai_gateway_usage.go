@@ -281,16 +281,19 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	usageLog := &UsageLog{
-		UserID:              user.ID,
-		APIKeyID:            apiKey.ID,
-		AccountID:           account.ID,
-		RequestID:           requestID,
-		Model:               result.Model,
-		RequestedModel:      requestedModel,
-		UpstreamModel:       optionalTrimmedStringPtr(result.UpstreamModel),
-		ServiceTier:         result.ServiceTier,
-		ReasoningEffort:     result.ReasoningEffort,
-		InboundEndpoint:     optionalTrimmedStringPtr(input.InboundEndpoint),
+		UserID:          user.ID,
+		APIKeyID:        apiKey.ID,
+		AccountID:       account.ID,
+		RequestID:       requestID,
+		Model:           result.Model,
+		RequestedModel:  requestedModel,
+		UpstreamModel:   optionalTrimmedStringPtr(result.UpstreamModel),
+		ServiceTier:     result.ServiceTier,
+		ReasoningEffort: result.ReasoningEffort,
+		InboundEndpoint: optionalTrimmedStringPtr(input.InboundEndpoint),
+		// 渠道监控探测标记：由网关中间件校验一次性随机数后写入 ctx。
+		// 仅用于管理端「使用记录」的排除筛选，不参与统计与计费。
+		IsChannelMonitor:    IsChannelMonitorProbe(ctx),
 		UpstreamEndpoint:    optionalTrimmedStringPtr(input.UpstreamEndpoint),
 		InputTokens:         actualInputTokens,
 		OutputTokens:        result.Usage.OutputTokens,

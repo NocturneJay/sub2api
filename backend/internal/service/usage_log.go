@@ -173,6 +173,12 @@ type UsageLog struct {
 	// SessionID is the explicit client-provided request correlation identifier
 	// (e.g. the session_id / X-Session-Id headers). Nil when the client sent no
 	// valid session header. It is never derived from prompt_cache_key or content.
+	// IsChannelMonitor 标记该记录由渠道监控的健康检查产生，而非用户真实用量。
+	// 由网关中间件校验一次性随机数后写入 request context，再在此落库；
+	// 仅供管理端「使用记录」按需排除，不参与任何统计与计费口径。
+	// 存量记录恒为 false —— 标记只对启用该能力之后的请求生效。
+	IsChannelMonitor bool
+
 	SessionID *string
 
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）

@@ -113,6 +113,18 @@ func (h *UsageHandler) List(c *gin.Context) {
 	requestID := strings.TrimSpace(c.Query("request_id"))
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
 
+	// 排除渠道监控健康检查产生的记录。只作用于明细列表，不传给统计接口——
+	// 监控是真实花掉的钱，账目口径不应随这个开关变动。
+	excludeChannelMonitor := false
+	if raw := strings.TrimSpace(c.Query("exclude_channel_monitor")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid exclude_channel_monitor value, use true or false")
+			return
+		}
+		excludeChannelMonitor = parsed
+	}
+
 	var requestType *int16
 	var stream *bool
 	if requestTypeStr := strings.TrimSpace(c.Query("request_type")); requestTypeStr != "" {
@@ -173,20 +185,21 @@ func (h *UsageHandler) List(c *gin.Context) {
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}
 	filters := usagestats.UsageLogFilters{
-		UserID:            userID,
-		APIKeyID:          apiKeyID,
-		AccountID:         accountID,
-		GroupID:           groupID,
-		RequestID:         requestID,
-		Model:             model,
-		ModelFilterSource: usagestats.ModelSourceRequested,
-		RequestType:       requestType,
-		Stream:            stream,
-		BillingType:       billingType,
-		BillingMode:       billingMode,
-		StartTime:         startTime,
-		EndTime:           endTime,
-		ExactTotal:        exactTotal,
+		UserID:                userID,
+		APIKeyID:              apiKeyID,
+		AccountID:             accountID,
+		GroupID:               groupID,
+		RequestID:             requestID,
+		Model:                 model,
+		ModelFilterSource:     usagestats.ModelSourceRequested,
+		RequestType:           requestType,
+		Stream:                stream,
+		BillingType:           billingType,
+		BillingMode:           billingMode,
+		ExcludeChannelMonitor: excludeChannelMonitor,
+		StartTime:             startTime,
+		EndTime:               endTime,
+		ExactTotal:            exactTotal,
 	}
 
 	records, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, filters)

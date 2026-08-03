@@ -287,6 +287,19 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 		return "", "", 0, err
 	}
 	headers := mergeHeaders(adapter.buildHeaders(apiKey), opts)
+	// 打上渠道监控探测标记，使管理端「使用记录」能把健康检查产生的记录与用户真实
+	// 用量区分开。签发失败或注册表已满时不带该头，本次探测降级为一条普通记录。
+	// 详见 channel_monitor_probe.go。
+	//
+	// 只加这一个专用头，绝不碰 User-Agent：管理员可以给监控配自定义 UA
+	// （生产上 anthropic 那条监控就配了 claude-cli 的 UA），而 UA 既可能被上游
+	// 校验，也参与本站自己的客户端识别（checkClaudeCodeRestriction）。
+	// 改写它会改变该监控的实际行为。
+	//
+	// 放在 mergeHeaders 之后：管理员自定义的 ExtraHeaders 不得覆盖或伪造该头。
+	if nonce := IssueChannelMonitorProbeNonce(); nonce != "" {
+		headers[ChannelMonitorProbeHeader] = nonce
+	}
 	full := joinURL(endpoint, adapter.buildPath(model))
 	respBytes, status, err := postRawJSON(ctx, full, body, headers)
 	if err != nil {

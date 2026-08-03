@@ -1059,11 +1059,14 @@ func (s *GatewayService) buildRecordUsageLog(
 		ChannelID:             optionalInt64Ptr(input.ChannelID),
 		ModelMappingChain:     optionalTrimmedStringPtr(input.ModelMappingChain),
 		UserAgent:             optionalTrimmedStringPtr(input.UserAgent),
-		IPAddress:             optionalTrimmedStringPtr(input.IPAddress),
-		SessionID:             optionalTrimmedStringPtr(input.SessionID),
-		GroupID:               apiKey.GroupID,
-		SubscriptionID:        optionalSubscriptionID(subscription),
-		CreatedAt:             time.Now(),
+		// 渠道监控探测标记：由网关中间件校验一次性随机数后写入 ctx。
+		// 仅用于管理端「使用记录」的排除筛选，不参与统计与计费。
+		IsChannelMonitor: IsChannelMonitorProbe(ctx),
+		IPAddress:        optionalTrimmedStringPtr(input.IPAddress),
+		SessionID:        optionalTrimmedStringPtr(input.SessionID),
+		GroupID:          apiKey.GroupID,
+		SubscriptionID:   optionalSubscriptionID(subscription),
+		CreatedAt:        time.Now(),
 	}
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
