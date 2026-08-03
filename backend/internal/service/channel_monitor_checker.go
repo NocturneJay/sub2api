@@ -194,7 +194,13 @@ var providerAdapters = map[string]providerAdapter{
 		buildBody: func(_, prompt string) ([]byte, error) {
 			return json.Marshal(map[string]any{
 				"contents": []map[string]any{
-					{"parts": []map[string]any{{"text": prompt}}},
+					// role 必填，不能省。公开 Gemini API（generativelanguage）单轮请求
+					// 缺省 role 会默认按 user 处理，所以漏写也能通过；但 Vertex AI 强制
+					// 校验，会直接返回
+					//   400 INVALID_ARGUMENT: Please use a valid role: user, model.
+					// 于是同一个分组里 Vertex Service Account 账号的监控恒为 error，
+					// 而账号测试却是通过的 —— 因为 account_test_service.go 一直有带 role。
+					{"role": "user", "parts": []map[string]any{{"text": prompt}}},
 				},
 				"generationConfig": map[string]any{"maxOutputTokens": monitorChallengeMaxTokens},
 			})
