@@ -122,6 +122,69 @@ func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDown
 	require.Contains(t, rec.Body.String(), "data: [DONE]")
 }
 
+func TestForwardAsRawChatCompletions_NormalizesDuplicateTerminalSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"grok-4.5","messages":[{"role":"user","content":"Reply with exactly OK"}],"stream":true}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl","object":"chat.completion.chunk","model":"gpt-5.5","choices":[{"index":0,"delta":{"reasoning_content":"The user asked for OK.\n"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl","object":"chat.completion.chunk","model":"gpt-5.5","choices":[{"index":0,"delta":{"content":"OK","role":"assistant"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"response-id","object":"chat.completion","model":"grok-4.5","choices":[{"index":0,"message":{"role":"assistant","content":"OK","reasoning_content":"The user asked for OK.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":200,"completion_tokens":61,"total_tokens":261}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_grok_duplicate_snapshot"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := rawChatCompletionsTestAccount()
+	account.Platform = PlatformGrok
+
+	result, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 200, result.Usage.InputTokens)
+	require.Equal(t, 61, result.Usage.OutputTokens)
+
+	responseBody := rec.Body.String()
+	require.Equal(t, 1, strings.Count(responseBody, `"content":"OK"`))
+	require.NotContains(t, responseBody, `"message"`)
+	require.Contains(t, responseBody, `"object":"chat.completion.chunk"`)
+	require.Contains(t, responseBody, `"delta":{}`)
+	require.Contains(t, responseBody, `"finish_reason":"stop"`)
+	require.Contains(t, responseBody, `"usage":{"prompt_tokens":200,"completion_tokens":61,"total_tokens":261}`)
+	require.Contains(t, responseBody, "data: [DONE]")
+}
+
+func TestRawChatStreamDeltaState_PreservesTerminalMessageWithUnstreamedContent(t *testing.T) {
+	t.Parallel()
+
+	state := newRawChatStreamDeltaState()
+	deltaLine := `data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}`
+	got, normalized := state.normalizeTerminalSnapshotLine(deltaLine)
+	require.False(t, normalized)
+	require.Equal(t, deltaLine, got)
+
+	terminalLine := `data: {"object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"partial and rest"},"finish_reason":"stop"}]}`
+	got, normalized = state.normalizeTerminalSnapshotLine(terminalLine)
+	require.False(t, normalized)
+	require.Equal(t, terminalLine, got)
+}
+
 func TestForwardAsRawChatCompletions_PreservesMappedGPT56MaxEffort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash"
 	"net/http"
 	"strings"
 	"time"
@@ -263,6 +266,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
+	deltaState := newRawChatStreamDeltaState()
 
 	writeLine := func(line string) {
 		if clientDisconnected {
@@ -311,6 +315,13 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					firstTokenMs = &elapsed
 				}
 			}
+		}
+		if normalizedLine, normalized := deltaState.normalizeTerminalSnapshotLine(line); normalized {
+			line = normalizedLine
+			logger.L().Debug("openai chat_completions raw: normalized duplicate terminal snapshot",
+				zap.Int64("account_id", account.ID),
+				zap.String("request_id", requestID),
+			)
 		}
 
 		writeLine(line)
@@ -367,6 +378,125 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
 	}, nil
+}
+
+type rawChatStreamDeltaState struct {
+	content          map[int64]*rawChatStreamDeltaDigest
+	reasoningContent map[int64]*rawChatStreamDeltaDigest
+}
+
+type rawChatStreamDeltaDigest struct {
+	hash hash.Hash
+	size int
+}
+
+func newRawChatStreamDeltaState() *rawChatStreamDeltaState {
+	return &rawChatStreamDeltaState{
+		content:          make(map[int64]*rawChatStreamDeltaDigest),
+		reasoningContent: make(map[int64]*rawChatStreamDeltaDigest),
+	}
+}
+
+// normalizeTerminalSnapshotLine removes a non-streaming message snapshot when
+// the same text was already delivered through deltas earlier in the stream.
+func (s *rawChatStreamDeltaState) normalizeTerminalSnapshotLine(line string) (string, bool) {
+	payload, ok := extractOpenAISSEDataLine(line)
+	if !ok || !gjson.Valid(payload) {
+		return line, false
+	}
+
+	choices := gjson.Get(payload, "choices")
+	if !choices.Exists() || !choices.IsArray() {
+		return line, false
+	}
+
+	updated := payload
+	normalized := false
+	for arrayIndex, choice := range choices.Array() {
+		choiceIndex := choice.Get("index").Int()
+		if delta := choice.Get("delta"); delta.Exists() && delta.IsObject() {
+			s.observeDelta(choiceIndex, delta)
+			continue
+		}
+
+		message := choice.Get("message")
+		if strings.TrimSpace(choice.Get("finish_reason").String()) == "" ||
+			!message.Exists() || !message.IsObject() ||
+			!s.messageDuplicatesDeltas(choiceIndex, message) {
+			continue
+		}
+
+		var err error
+		updated, err = sjson.Delete(updated, fmt.Sprintf("choices.%d.message", arrayIndex))
+		if err != nil {
+			return line, false
+		}
+		updated, err = sjson.SetRaw(updated, fmt.Sprintf("choices.%d.delta", arrayIndex), "{}")
+		if err != nil {
+			return line, false
+		}
+		normalized = true
+	}
+
+	if !normalized {
+		return line, false
+	}
+	updated, err := sjson.Set(updated, "object", "chat.completion.chunk")
+	if err != nil {
+		return line, false
+	}
+	return "data: " + updated, true
+}
+
+func (s *rawChatStreamDeltaState) observeDelta(choiceIndex int64, delta gjson.Result) {
+	if content := delta.Get("content"); content.Exists() && content.Type == gjson.String {
+		addRawChatStreamDelta(s.content, choiceIndex, content.String())
+	}
+	if reasoning := delta.Get("reasoning_content"); reasoning.Exists() && reasoning.Type == gjson.String {
+		addRawChatStreamDelta(s.reasoningContent, choiceIndex, reasoning.String())
+	}
+}
+
+func addRawChatStreamDelta(digests map[int64]*rawChatStreamDeltaDigest, choiceIndex int64, value string) {
+	if value == "" {
+		return
+	}
+	digest := digests[choiceIndex]
+	if digest == nil {
+		digest = &rawChatStreamDeltaDigest{hash: sha256.New()}
+		digests[choiceIndex] = digest
+	}
+	_, _ = digest.hash.Write([]byte(value))
+	digest.size += len(value)
+}
+
+func rawChatStreamDeltaMatches(digest *rawChatStreamDeltaDigest, value string) bool {
+	if digest == nil || value == "" || digest.size != len(value) {
+		return false
+	}
+	sum := sha256.Sum256([]byte(value))
+	return bytes.Equal(digest.hash.Sum(nil), sum[:])
+}
+
+func (s *rawChatStreamDeltaState) messageDuplicatesDeltas(choiceIndex int64, message gjson.Result) bool {
+	if message.Get("tool_calls").Exists() || message.Get("function_call").Exists() {
+		return false
+	}
+
+	duplicate := false
+	if content := message.Get("content"); content.Exists() && content.Type == gjson.String && content.String() != "" {
+		if !rawChatStreamDeltaMatches(s.content[choiceIndex], content.String()) {
+			return false
+		}
+		duplicate = true
+	}
+	if reasoning := message.Get("reasoning_content"); reasoning.Exists() && reasoning.Type == gjson.String && reasoning.String() != "" {
+		if !rawChatStreamDeltaMatches(s.reasoningContent[choiceIndex], reasoning.String()) {
+			return false
+		}
+		duplicate = true
+	}
+	return duplicate
 }
 
 // ensureOpenAIChatStreamUsage 确保 raw Chat Completions 流式请求会让上游返回 usage。
