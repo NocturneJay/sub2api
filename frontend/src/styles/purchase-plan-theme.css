@@ -12,7 +12,8 @@
                                             → Ultra Composite 月卡
       金卡 [data-plan-price="450"]        → GPT PRO 满配 + Claude Max20x 周M
       银卡 [data-plan-price="115"]/"175"  → PRO Lite + Claude 周L
-      其余套餐保持官方默认(绿/橙顶条)。
+      其余套餐走「默认皮肤」段(按 data-plan-platform 六色通用),
+      不再是官方原样——见下面「默认皮肤」注释。
    —— 注意:套餐改价后要同步改这里的数字;若将来两个同价套餐
       需要区分,可叠加 [data-plan-platform="anthropic"] 或
       [data-plan-name*="关键字"] 细分。
@@ -33,26 +34,142 @@
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
 }
 
-/* ================= 默认绿卡降调(OpenAI 入门档) =================
-   官方默认绿太抢眼,压过银卡;整体调成淡薄荷绿。
-   ⚠️ 本段必须排在银卡/金卡段之前:115/450 也是 OpenAI 卡,
-   靠后面的档位皮肤同名属性"后写的赢"来覆盖本段。 */
-[data-plan-platform="openai"][data-plan-platform] > div:first-child {
-  background: linear-gradient(90deg, #d1fae5 0%, #a7f3d0 45%, #6ee7b7 100%);
+/* ================= 默认皮肤(未分档位的套餐,六个平台通用) =========
+   官方默认皮肤只把主题色用在"边框 + 顶条 + 价格 + 图标 + 按钮"上,
+   卡面写死 bg-white、额度面板写死 bg-gray-50——主题色一点都进不到
+   卡片内部;而银/金/钻三档皮肤都把主题色铺满卡面和内胆。并排一放,
+   默认卡就显得像"没上完色",这是结构差异不是配色差异。
+   本段按 data-plan-platform 给六个平台各开一条色彩通道,再用同一套
+   公式补上:卡面薄雾、额度面板、模型标签、顶条与按钮。
+
+   ⚠️ 本段必须排在银/金/钻三段之前:115/175/450/Ultra 同样带
+   data-plan-platform,靠后面的档位皮肤"后写的赢"来覆盖本段。
+   ⚠️ 暗色模式一律走「继承的自定义属性」,绝不写 .dark 前缀的规则。
+      原因:Tailwind 的 dark: 变体编译成 .dark\:bg-dark-800:is(.dark *)
+      = (0,2,0),本段卡面规则用双写属性同样是 (0,2,0),靠"后写的赢"
+      就已经压过它;而银/金两档的卡面也只有 (0,2,0),一旦这里补一条
+      .dark 前缀规则就变成 (0,3,0),会反过来把金卡/银卡在暗色下的
+      香槟金与铂银刷成平台色——钻石卡因为选择器本身就是 (0,3,0)
+      才侥幸不受影响。把明暗差异塞进 :root / .dark 上的变量,规则
+      本身保持 (0,2,0),明暗两套都不动档位皮肤的优先级。
+   ⚠️ 顶条与按钮不加 !important——与文件开头的流光规则同理,留出
+      将来加动画的余地。 */
+
+/* 明暗两套配比:只有取值不同,选择器优先级不参与竞争 */
+:root {
+  --aicat-skin-w1: 0.11;
+  --aicat-skin-w2: 0.045;
+  --aicat-skin-w3: 0.06;
+  --aicat-skin-surface: rgba(255, 255, 255, 0.97);
+  --aicat-skin-panel: 0.09;
+  --aicat-skin-panel-ring: 0.15;
+  --aicat-skin-chip: 0.16;
 }
 
-[data-plan-platform="openai"] .text-2xl.font-extrabold {
-  color: #047857 !important;
+.dark {
+  --aicat-skin-w1: 0.22;
+  --aicat-skin-w2: 0.10;
+  --aicat-skin-w3: 0.14;
+  --aicat-skin-surface: rgba(30, 41, 59, 0.97);
+  --aicat-skin-panel: 0.15;
+  --aicat-skin-panel-ring: 0.22;
+  --aicat-skin-chip: 0.26;
 }
 
-[data-plan-platform="openai"] svg {
-  color: #34d399 !important;
+/* 平台色彩通道:--aicat-skin 是 rgba() 用的 RGB 三元组(500 档),
+   --aicat-skin-btn-a/b/c 是顶条与按钮三段渐变的停靠色(700/500/600)。
+   未知或空平台不设变量,由各处 var() 的兜底色(primary teal)接管。 */
+[data-plan-platform="openai"] {
+  --aicat-skin: 16, 185, 129;
+  --aicat-skin-btn-a: #047857;
+  --aicat-skin-btn-b: #10b981;
+  --aicat-skin-btn-c: #059669;
 }
 
-[data-plan-platform="openai"][data-plan-platform] button.w-full {
-  background: linear-gradient(120deg, #ecfdf5 0%, #d1fae5 55%, #a7f3d0 100%);
-  color: #047857 !important;
-  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.30);
+[data-plan-platform="anthropic"] {
+  --aicat-skin: 249, 115, 22;
+  --aicat-skin-btn-a: #c2410c;
+  --aicat-skin-btn-b: #f97316;
+  --aicat-skin-btn-c: #ea580c;
+}
+
+[data-plan-platform="antigravity"] {
+  --aicat-skin: 168, 85, 247;
+  --aicat-skin-btn-a: #7e22ce;
+  --aicat-skin-btn-b: #a855f7;
+  --aicat-skin-btn-c: #9333ea;
+}
+
+[data-plan-platform="gemini"] {
+  --aicat-skin: 59, 130, 246;
+  --aicat-skin-btn-a: #1d4ed8;
+  --aicat-skin-btn-b: #3b82f6;
+  --aicat-skin-btn-c: #2563eb;
+}
+
+[data-plan-platform="grok"] {
+  --aicat-skin: 113, 113, 122;
+  --aicat-skin-btn-a: #27272a;
+  --aicat-skin-btn-b: #52525b;
+  --aicat-skin-btn-c: #3f3f46;
+}
+
+[data-plan-platform="composite"] {
+  --aicat-skin: 6, 182, 212;
+  --aicat-skin-btn-a: #0e7490;
+  --aicat-skin-btn-b: #06b6d4;
+  --aicat-skin-btn-c: #0891b2;
+}
+
+/* 卡面:主题色薄雾斜向过渡到底色,替代写死的 bg-white / dark:bg-dark-800。
+   双写属性抬到 (0,2,0):压得过 Tailwind,压不过银/金档(同为 (0,2,0)
+   但排在后面)——这个平局关系正是本段能被档位皮肤覆盖的前提。 */
+[data-plan-platform][data-plan-platform] {
+  background: linear-gradient(
+    152deg,
+    rgba(var(--aicat-skin, 20, 184, 166), var(--aicat-skin-w1)) 0%,
+    rgba(var(--aicat-skin, 20, 184, 166), var(--aicat-skin-w2)) 34%,
+    var(--aicat-skin-surface) 66%,
+    rgba(var(--aicat-skin, 20, 184, 166), var(--aicat-skin-w3)) 100%
+  );
+  border-color: rgba(var(--aicat-skin, 20, 184, 166), 0.32);
+}
+
+/* 额度信息面板:中性灰换成主题色内胆,并补一圈同色内描边。
+   (0,3,0) 压过 Tailwind 的 dark: 变体;银/金档同名规则带 !important,
+   照旧压得过这里。 */
+[data-plan-platform] .rounded-lg.bg-gray-50 {
+  background: rgba(var(--aicat-skin, 20, 184, 166), var(--aicat-skin-panel));
+  box-shadow: inset 0 0 0 1px rgba(var(--aicat-skin, 20, 184, 166), var(--aicat-skin-panel-ring));
+}
+
+/* 面板里的模型范围标签:跟着内胆一起上色,别再是灰块 */
+[data-plan-platform] .bg-gray-200\/80 {
+  background: rgba(var(--aicat-skin, 20, 184, 166), var(--aicat-skin-chip));
+}
+
+/* 顶条:统一成与档位皮肤同款的三段渐变,替代官方两段 */
+[data-plan-platform][data-plan-platform] > div:first-child {
+  background: linear-gradient(
+    90deg,
+    var(--aicat-skin-btn-a, #0f766e) 0%,
+    var(--aicat-skin-btn-b, #14b8a6) 52%,
+    var(--aicat-skin-btn-c, #0d9488) 100%
+  );
+}
+
+/* 按钮:同一套三段渐变 + 主题色投影,与卡面薄雾拉开层次。
+   原先 OpenAI 单独被降成"淡薄荷幽灵按钮",卡面上色后会糊在一起,
+   这里连同其余五个平台一起收进统一公式。 */
+[data-plan-platform][data-plan-platform] button.w-full {
+  background: linear-gradient(
+    120deg,
+    var(--aicat-skin-btn-a, #0f766e) 0%,
+    var(--aicat-skin-btn-b, #14b8a6) 55%,
+    var(--aicat-skin-btn-c, #0d9488) 100%
+  );
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(var(--aicat-skin, 20, 184, 166), 0.26);
 }
 
 /* ---------- 皮肤卡公共骨架:内容压在光泽层之上 ---------- */
