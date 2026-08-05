@@ -41,7 +41,13 @@ describe('admin system rollback API', () => {
 
     const result = await rollback('0.1.146')
 
-    expect(post).toHaveBeenCalledWith('/admin/system/rollback', { version: '0.1.146' })
+    // 第三个参数是 35b5edb24 加的长超时（15 分钟）。这条用例关心的是请求体形状，
+    // 所以只钉「带了一个数值超时」，超时值本身可调。
+    expect(post).toHaveBeenCalledWith(
+      '/admin/system/rollback',
+      { version: '0.1.146' },
+      expect.objectContaining({ timeout: expect.any(Number) })
+    )
     expect(result.need_restart).toBe(true)
   })
 
@@ -50,6 +56,10 @@ describe('admin system rollback API', () => {
 
     await rollback()
 
-    expect(post).toHaveBeenCalledWith('/admin/system/rollback', undefined)
+    expect(post).toHaveBeenCalledWith(
+      '/admin/system/rollback',
+      undefined,
+      expect.objectContaining({ timeout: expect.any(Number) })
+    )
   })
 })
