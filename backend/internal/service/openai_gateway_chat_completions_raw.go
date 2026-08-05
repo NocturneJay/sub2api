@@ -316,12 +316,21 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				}
 			}
 		}
-		if normalizedLine, normalized := deltaState.normalizeTerminalSnapshotLine(line); normalized {
-			line = normalizedLine
-			logger.L().Debug("openai chat_completions raw: normalized duplicate terminal snapshot",
-				zap.Int64("account_id", account.ID),
-				zap.String("request_id", requestID),
-			)
+		// 只对 Grok 做终止快照归一化。该问题是 Grok 特有的（重复的终止快照），
+		// 而归一化本身会删掉终止帧里的 message 对象，对其它平台是净损失：
+		// 同一个 raw Chat Completions 直转路径上还跑着 DeepSeek / Kimi / GLM / Qwen
+		// 等 API Key 账号，它们没有这个问题，却要承担被误删字段的风险。
+		//
+		// 本文件既有的六处 Grok 专属逻辑（82/123/145/179/210/230 行）都显式判了平台，
+		// 这里保持一致。
+		if account.Platform == PlatformGrok {
+			if normalizedLine, normalized := deltaState.normalizeTerminalSnapshotLine(line); normalized {
+				line = normalizedLine
+				logger.L().Debug("openai chat_completions raw: normalized duplicate terminal snapshot",
+					zap.Int64("account_id", account.ID),
+					zap.String("request_id", requestID),
+				)
+			}
 		}
 
 		writeLine(line)

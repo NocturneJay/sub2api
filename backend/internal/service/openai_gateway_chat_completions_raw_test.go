@@ -737,3 +737,59 @@ func largeRawChatCompletionsBody() []byte {
 		strings.Repeat("x", openAISilentRefusalMinRequestBodyBytes) +
 		`"}],"stream":true}`)
 }
+
+// TestForwardAsRawChatCompletions_LeavesNonGrokTerminalSnapshotIntact 钉死终止快照
+// 归一化的平台范围。
+//
+// 重复终止快照是 Grok 特有的问题，而归一化会删掉终止帧里的整个 message 对象。
+// 同一条 raw Chat Completions 直转路径上还跑着 DeepSeek / Kimi / GLM / Qwen 等
+// API Key 账号——它们没有这个问题，却会因为归一化而丢掉 message 里未参与比对的
+// 字段（refusal / annotations / audio / tool_calls 等）。
+//
+// 引入该归一化的提交标题写的是 fix(grok)，但调用处没判平台；本文件既有的六处
+// Grok 专属逻辑都显式判了。这条用例锁住「非 Grok 必须原样透传」。
+func TestForwardAsRawChatCompletions_LeavesNonGrokTerminalSnapshotIntact(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"deepseek-v4","messages":[{"role":"user","content":"Reply with exactly OK"}],"stream":true}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	// 与 Grok 那条用例同构的终止快照，另外带一个未参与比对的 annotations 字段。
+	terminal := `data: {"id":"response-id","object":"chat.completion","model":"deepseek-v4","choices":[{"index":0,"message":{"role":"assistant","content":"OK","reasoning_content":"The user asked for OK.\n","annotations":[{"type":"url_citation","url":"https://example.com"}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":200,"completion_tokens":61,"total_tokens":261}}`
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl","object":"chat.completion.chunk","model":"deepseek-v4","choices":[{"index":0,"delta":{"reasoning_content":"The user asked for OK.\n"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl","object":"chat.completion.chunk","model":"deepseek-v4","choices":[{"index":0,"delta":{"content":"OK","role":"assistant"},"finish_reason":null}]}`,
+		"",
+		terminal,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_non_grok_snapshot"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := rawChatCompletionsTestAccount()
+	account.Platform = PlatformOpenAI // 非 Grok
+
+	result, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	out := rec.Body.String()
+	// 终止帧必须原样透传：message 对象、annotations 都不能被删。
+	require.Contains(t, out, `"message"`, "非 Grok 平台不得删除终止帧的 message 对象")
+	require.Contains(t, out, `"annotations"`, "未参与比对的字段不得被静默丢弃")
+	require.Contains(t, out, `"object":"chat.completion"`, "非 Grok 平台不得改写 object 字段")
+	require.NotContains(t, out, `"delta":{}`, "非 Grok 平台不应出现归一化产生的空 delta")
+}
