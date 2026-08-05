@@ -828,3 +828,55 @@ func stringValueFromJSON(t *testing.T, body []byte, keys ...string) string {
 	require.True(t, ok)
 	return value
 }
+
+// TestHandleGeminiUpstreamErrorIgnoresExpiredResetFloor 钉死 Vertex 限流的过期
+// hint 处理。
+//
+// minimumResetAt（resetFloor）是**第一次** 429 时观察到的重置时刻，但要等整轮重试
+// 全部失败后才用得上：退避 1+2+4+8≈15s，图片生成每次还要 10~30s。届时一个
+// quotaResetDelay="1s" 之类的短 hint 早已过期。
+//
+// 写一个已过期的时刻等于「完全不限流」而不是「限流到那时」：
+// SetRateLimitedIfLater 的条件是 RateLimitResetAtIsNil() OR RateLimitResetAtLT(resetAt)，
+// 账号当前未限流时不校验时间、写入照样成功；随后 IsRateLimited() 走
+// time.Now().Before(*RateLimitResetAt) 判为 false，账号立刻又能被调度，继续猛打
+// 已经耗尽配额的 Vertex project —— 而日志看上去还像是已经处理了。
+//
+// 既有的 TestGeminiOpenAIImagesFinal429KeepsStrongestEarlierResetHint 用
+// imageRetryBackoff: func(int) {} 把退避置空，时间从不流逝，因此覆盖不到过期场景。
+func TestHandleGeminiUpstreamErrorIgnoresExpiredResetFloor(t *testing.T) {
+	repo := &geminiImagesRateLimitRepoStub{}
+	svc := &GeminiMessagesCompatService{accountRepo: repo, cfg: &config.Config{}}
+	account := &Account{ID: 4242, Type: AccountTypeServiceAccount, Platform: PlatformGemini}
+
+	// 最终 429 的响应体与响应头都不含可解析的重置时刻，
+	// 只带一个「早已过期」的 floor —— 正是重试耗时把它熬过期的那种情形。
+	expired := time.Now().Add(-90 * time.Second)
+	body := []byte(`{"error":{"code":429,"message":"Resource exhausted"}}`)
+
+	svc.handleGeminiUpstreamError(context.Background(), account, http.StatusTooManyRequests,
+		http.Header{}, body, expired)
+
+	require.Equal(t, 1, repo.extendCalls, "应当仍然写入限流（走兜底冷却）")
+	require.Equal(t, int64(4242), repo.accountID)
+	require.True(t, repo.resetAt.After(time.Now()),
+		"绝不能写入已过期的时刻：那等于完全不限流，账号会立刻被重新调度并继续打爆配额（实际写入 %v）", repo.resetAt)
+}
+
+// TestHandleGeminiUpstreamErrorHonorsFutureResetFloor 反向用例：floor 仍在未来时
+// 必须被采纳，不能因为上一条修复而把有效的 hint 一并丢掉。
+func TestHandleGeminiUpstreamErrorHonorsFutureResetFloor(t *testing.T) {
+	repo := &geminiImagesRateLimitRepoStub{}
+	svc := &GeminiMessagesCompatService{accountRepo: repo, cfg: &config.Config{}}
+	account := &Account{ID: 4243, Type: AccountTypeServiceAccount, Platform: PlatformGemini}
+
+	future := time.Now().Add(10 * time.Minute)
+	body := []byte(`{"error":{"code":429,"message":"Resource exhausted"}}`)
+
+	svc.handleGeminiUpstreamError(context.Background(), account, http.StatusTooManyRequests,
+		http.Header{}, body, future)
+
+	require.Equal(t, 1, repo.extendCalls)
+	require.WithinDuration(t, future, repo.resetAt, time.Second,
+		"未过期的 floor 必须被采纳")
+}

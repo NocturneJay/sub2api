@@ -2954,7 +2954,19 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 					ra = *resetFloor
 				}
 				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account) rate limited by Retry-After until %v", account.ID, ra)
-			} else if resetFloor != nil {
+			} else if resetFloor != nil && resetFloor.After(time.Now()) {
+				// 必须校验 resetFloor 仍在未来。它是**第一次** 429 时观察到的时刻，
+				// 而这里要等整轮重试（退避 1+2+4+8≈15s，图片生成每次还要 10~30s）
+				// 全部失败后才用得上，届时它往往已经过期。
+				//
+				// 写一个已过期的时刻等于「完全不限流」而不是「限流到那时」：
+				// SetRateLimitedIfLater 的条件是 RateLimitResetAtIsNil() OR
+				// RateLimitResetAtLT(resetAt)，账号当前未限流（字段为 NULL）时不校验
+				// 时间、写入照样成功；随后 IsRateLimited() 走
+				// time.Now().Before(*RateLimitResetAt) 判为 false，账号立刻又能被调度，
+				// 继续猛打已经耗尽配额的 Vertex project——而日志看上去还像是已经处理了。
+				//
+				// 过期就当没有这个 hint，落到下面的兜底冷却分支。
 				ra = *resetFloor
 				logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d (Vertex service account) rate limited by an earlier retry hint until %v", account.ID, ra)
 			} else {
