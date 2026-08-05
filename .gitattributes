@@ -20,3 +20,7 @@ backend/migrations/*.sql text eol=lf
 
 # Dockerfile
 Dockerfile text eol=lf
+
+# CSS：订阅卡皮肤 (frontend/src/styles/purchase-plan-theme.css) 与运维侧的权威
+# 副本需要逐字节比对，工作区一旦被 core.autocrlf 转成 CRLF 就会对不上。
+*.css text eol=lf
