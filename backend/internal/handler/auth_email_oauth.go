@@ -60,6 +60,11 @@ func (h *AuthHandler) CompleteGoogleOAuthRegistration(c *gin.Context) {
 }
 
 func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
+	if !h.requireActionCaptchaForOAuthLoginStart(c) {
+		return
+	}
+	// requestHost 是 aicat 侧的 api-cn 分流：同一 provider 在 api-cn.* 与
+	// api.* 下要回调到不同的 redirect_url，故签名比上游多一个参数。
 	cfg, err := h.getEmailOAuthConfig(c.Request.Context(), provider, c.Request.Host)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -97,7 +102,7 @@ func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
 		response.ErrorFrom(c, infraerrors.InternalServer("OAUTH_BUILD_URL_FAILED", "failed to build oauth authorization url").WithCause(err))
 		return
 	}
-	c.Redirect(http.StatusFound, authURL)
+	respondOAuthStart(c, authURL)
 }
 
 func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {

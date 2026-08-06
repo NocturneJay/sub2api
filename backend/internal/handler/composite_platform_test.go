@@ -102,6 +102,69 @@ func TestCompositeTargetPlatformResolvedAllowsConcreteGroupWithoutResolution(t *
 	require.True(t, compositeTargetPlatformResolved(c, apiKey, "llama-4-maverick"))
 }
 
+// 上游原版断言的是「复合**父**分组上的 MaxReasoningEffort 生效」。aicat 自
+// 38a96eaa6 起父分组只是路由壳，推理上限跟委托后的子分组走（理由见
+// composite_platform.go 上的注释），故这里改为断言子分组口径：父分组配了值也
+// 不生效，子分组配的才生效。
+func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parentGroup := &service.Group{
+		Platform:           service.PlatformComposite,
+		MaxReasoningEffort: "low", // 父分组上的值必须**不**生效
+		ReasoningEffortMappings: []service.ReasoningEffortMapping{
+			{From: "max", To: "minimal"},
+		},
+	}
+	targetGroup := &service.Group{
+		Platform:           service.PlatformOpenAI,
+		MaxReasoningEffort: "medium",
+		ReasoningEffortMappings: []service.ReasoningEffortMapping{
+			{From: "max", To: "xhigh"},
+		},
+	}
+	apiKey := &service.APIKey{Group: parentGroup}
+	body := []byte(`{"reasoning":{"effort":"max"}}`)
+
+	openAICtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	openAICtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	openAICtx.Request = openAICtx.Request.WithContext(service.WithResolvedTargetPlatform(openAICtx.Request.Context(), service.PlatformOpenAI))
+	got, changed := applyOpenAIReasoningEffortPolicyForGroup(openAICtx, apiKey, targetGroup, body)
+	require.True(t, changed)
+	require.JSONEq(t, `{"reasoning":{"effort":"medium"}}`, string(got))
+
+	bindOpenAIReasoningEffortPolicyForMessagesRequest(openAICtx, apiKey, targetGroup, []byte(`{"output_config":{"effort":"max"}}`))
+	bound, changed := service.ApplyOpenAIReasoningEffortPolicyFromContext(openAICtx.Request.Context(), body)
+	require.True(t, changed)
+	require.JSONEq(t, `{"reasoning":{"effort":"medium"}}`, string(bound))
+
+	// output_config.effort 缺省时不绑定策略：Messages 桥自己会合成一个默认
+	// effort，绑上上限会连那个默认值一起改掉。
+	omittedCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	omittedCtx.Request = httptest.NewRequest("POST", "/v1/messages", nil)
+	omittedCtx.Request = omittedCtx.Request.WithContext(service.WithResolvedTargetPlatform(omittedCtx.Request.Context(), service.PlatformOpenAI))
+	bindOpenAIReasoningEffortPolicyForMessagesRequest(omittedCtx, apiKey, targetGroup, []byte(`{"model":"gpt-5"}`))
+	omitted, changed := service.ApplyOpenAIReasoningEffortPolicyFromContext(omittedCtx.Request.Context(), body)
+	require.False(t, changed)
+	require.Equal(t, body, omitted)
+
+	// 委托到非 OpenAI 子分组时不生效。
+	grokCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	grokCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	grokCtx.Request = grokCtx.Request.WithContext(service.WithResolvedTargetPlatform(grokCtx.Request.Context(), service.PlatformGrok))
+	got, changed = applyOpenAIReasoningEffortPolicyForGroup(grokCtx, apiKey, &service.Group{Platform: service.PlatformGrok}, body)
+	require.False(t, changed)
+	require.Equal(t, body, got)
+
+	// 关键差异用例：只有父分组配了上限、子分组没配 —— 上游口径会把 effort
+	// 压成 low，aicat 口径必须**原样放行**。
+	parentOnlyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	parentOnlyCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	parentOnlyCtx.Request = parentOnlyCtx.Request.WithContext(service.WithResolvedTargetPlatform(parentOnlyCtx.Request.Context(), service.PlatformOpenAI))
+	got, changed = applyOpenAIReasoningEffortPolicyForGroup(parentOnlyCtx, apiKey, &service.Group{Platform: service.PlatformOpenAI}, body)
+	require.False(t, changed)
+	require.Equal(t, body, got)
+}
+
 func TestClientRequestedModelUsesCompositePublicModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

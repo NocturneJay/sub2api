@@ -29,9 +29,13 @@ func TestAdminService_CreateCompositeGroupRejectsAccountCopy(t *testing.T) {
 	svc := &adminServiceImpl{groupRepo: groupRepo}
 
 	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
-		Name:                     "Composite",
-		Platform:                 PlatformComposite,
-		RateMultiplier:           1,
+		Name:               "Composite",
+		Platform:           PlatformComposite,
+		RateMultiplier:     1,
+		MaxReasoningEffort: "medium",
+		ReasoningEffortMappings: []ReasoningEffortMapping{
+			{From: "max", To: "xhigh"},
+		},
 		CopyAccountsFromGroupIDs: []int64{10, 20, 10},
 	})
 
@@ -49,8 +53,12 @@ func TestAdminService_UpdateCompositeGroupRejectsAccountCopyBeforeWrite(t *testi
 		},
 	}
 	svc := &adminServiceImpl{groupRepo: groupRepo}
+	maxReasoningEffort := "low"
+	reasoningEffortMappings := []ReasoningEffortMapping{{From: "max", To: "high"}}
 
 	group, err := svc.UpdateGroup(context.Background(), 99, &UpdateGroupInput{
+		MaxReasoningEffort:       &maxReasoningEffort,
+		ReasoningEffortMappings:  &reasoningEffortMappings,
 		CopyAccountsFromGroupIDs: []int64{10, 20},
 	})
 

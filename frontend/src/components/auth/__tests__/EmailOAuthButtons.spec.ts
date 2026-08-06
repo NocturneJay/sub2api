@@ -6,10 +6,6 @@ const routeState = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
 }))
 
-const locationState = vi.hoisted(() => ({
-  current: { href: 'http://localhost/register?aff=AFF123' } as { href: string },
-}))
-
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
 }))
@@ -32,16 +28,11 @@ vi.mock('@/utils/affiliateDevice', () => ({
 describe('EmailOAuthButtons', () => {
   beforeEach(() => {
     routeState.query = { redirect: '/billing?plan=pro', aff: 'AFF123' }
-    locationState.current = { href: 'http://localhost/register?aff=AFF123' }
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: locationState.current,
-    })
     window.localStorage.clear()
     window.sessionStorage.clear()
   })
 
-  it('passes the affiliate code to the email oauth start URL', async () => {
+  it('emits the GitHub OAuth request with redirect and affiliate parameters', async () => {
     const wrapper = mount(EmailOAuthButtons, {
       props: {
         githubEnabled: true,
@@ -57,11 +48,49 @@ describe('EmailOAuthButtons', () => {
 
     await wrapper.get('button').trigger('click')
 
-    expect(locationState.current.href).toBe(
-      '/api/v1/auth/oauth/github/start?redirect=%2Fbilling%3Fplan%3Dpro&aff_code=AFF123&affiliate_device_id=fp2-test-device'
-    )
+    // affiliate_device_id 是 aicat 自研的邀请返利设备标识。上游这轮把这里从
+    // 直接跳转改成了 emit('start')，断言形态跟着改，但该字段必须仍在 params 里。
+    expect(wrapper.emitted('start')).toEqual([[
+      {
+        provider: 'github',
+        params: {
+          redirect: '/billing?plan=pro',
+          aff_code: 'AFF123',
+          affiliate_device_id: 'fp2-test-device'
+        }
+      }
+    ]])
     expect(window.sessionStorage.getItem('oauth_aff_code')).toBe('AFF123')
     expect(window.sessionStorage.getItem('email_oauth_pending_provider')).toBe('github')
+  })
+
+  it('emits the Google provider without navigating directly', async () => {
+    const originalHref = window.location.href
+    const wrapper = mount(EmailOAuthButtons, {
+      props: {
+        githubEnabled: false,
+        googleEnabled: true,
+      },
+      global: {
+        stubs: {
+          GitHubMark: true,
+          GoogleMark: true,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('click')
+
+    expect(wrapper.emitted('start')?.[0]?.[0]).toEqual({
+      provider: 'google',
+      params: {
+        redirect: '/billing?plan=pro',
+        aff_code: 'AFF123',
+        // 同 GitHub 用例：aicat 自研的邀请返利设备标识两个 provider 都要带。
+        affiliate_device_id: 'fp2-test-device'
+      }
+    })
+    expect(window.location.href).toBe(originalHref)
   })
 
   it('uses a full-width descriptive button when only GitHub is enabled', () => {
