@@ -32,8 +32,16 @@ func newChannelMonitorUsageLog(isMonitor bool) *service.UsageLog {
 // 顺序严格一致，加列时任何一处漏改都会让所有列静默错位——那是最难排查的一类故障。
 // is_channel_monitor 排在 session_id 之前，即倒数第三个（created_at 最后）。
 func TestPrepareUsageLogInsert_ChannelMonitorArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 58,
-		"arg-type table must include is_channel_monitor")
+	// 这里**刻意不写死总列数**。原来断言的是 58，上游 v0.1.172 在第 8/9 位插了
+	// upstream_response_model / upstream_model_mismatch 之后就被顶偏，成了合并时
+	// 必然要手改的一处噪声（v0.1.171、v0.1.172 连续两轮都中）。
+	//
+	// 改为断言真正要守的那条不变式：arg 表与 SELECT 列清单必须等长（SELECT 多一个
+	// id）。上游加列时两边一起变、断言自动跟随；而任何**只改一边**的疏漏——正是
+	// usageLogInsertArgTypes 头部注释警告的「所有列静默错位」——依然会被抓住。
+	selectColumnCount := len(strings.Split(usageLogSelectColumns, ","))
+	require.Equal(t, selectColumnCount, len(usageLogInsertArgTypes)+1,
+		"arg-type table and usageLogSelectColumns must stay in lockstep (SELECT has the extra id column)")
 	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-3],
 		"is_channel_monitor arg type must be boolean")
 

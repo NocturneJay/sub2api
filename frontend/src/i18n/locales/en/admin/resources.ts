@@ -566,6 +566,10 @@ export default {
       excludeChannelMonitor: 'Exclude channel monitor',
       excludeChannelMonitorHint:
         'Channel monitor health checks are real requests through this gateway, so they are recorded as usage. Checking this hides them from the detail list below only; the cost totals, charts and user ranking above are unaffected — monitoring is real spend. Applies only to records created after this feature went live.',
+	  upstreamModelAudit: 'Upstream model audit',
+	  allUpstreamModelAudit: 'All response model states',
+	  upstreamModelMismatchOnly: 'Mismatched only',
+	  upstreamModelMatchedOnly: 'Matched only',
       ipAddress: 'IP',
       clickToViewBalance: 'Click to view balance history',
       failedToLoadUser: 'Failed to load user info',

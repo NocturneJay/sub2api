@@ -153,7 +153,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if imagePlatform == service.PlatformGemini && sessionHash != "" {
 		sessionHash = "gemini-images:" + sessionHash
 	}
-	requestCtx := service.WithOpenAIProfitControlSuppressed(service.WithOpenAIImageGenerationIntent(c.Request.Context()))
+	// 三层都要：ImagesEndpoint 是上游 v0.1.172 新增的来源标记（图片模型被发到
+	// Codex 文本端点触发 400 时不再误写模型冷却，靠它区分来源）；
+	// ProfitControlSuppressed 是 aicat 侧的——图片路径不装利润门。
+	requestCtx := service.WithOpenAIProfitControlSuppressed(
+		service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context())),
+	)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	if imagePlatform == service.PlatformGemini {

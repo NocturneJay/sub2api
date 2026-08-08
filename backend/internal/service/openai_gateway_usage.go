@@ -270,18 +270,30 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if input.OriginalModel != "" {
 		requestedModel = input.OriginalModel
 	}
+	sentModel := upstreamSentModel(result.Model, result.UpstreamModel)
+	if result.UpstreamResponseModelConflict {
+		logger.L().Warn("upstream_response_model_conflict",
+			zap.String("platform", account.Platform),
+			zap.Int64("account_id", account.ID),
+			zap.String("request_id", requestID),
+			zap.String("sent_model", sentModel),
+			zap.String("selected_response_model", strings.TrimSpace(result.UpstreamResponseModel)),
+		)
+	}
 
 	usageLog := &UsageLog{
-		UserID:          user.ID,
-		APIKeyID:        apiKey.ID,
-		AccountID:       account.ID,
-		RequestID:       requestID,
-		Model:           result.Model,
-		RequestedModel:  requestedModel,
-		UpstreamModel:   optionalTrimmedStringPtr(result.UpstreamModel),
-		ServiceTier:     result.ServiceTier,
-		ReasoningEffort: result.ReasoningEffort,
-		InboundEndpoint: optionalTrimmedStringPtr(input.InboundEndpoint),
+		UserID:                user.ID,
+		APIKeyID:              apiKey.ID,
+		AccountID:             account.ID,
+		RequestID:             requestID,
+		Model:                 result.Model,
+		RequestedModel:        requestedModel,
+		UpstreamModel:         optionalTrimmedStringPtr(result.UpstreamModel),
+		UpstreamResponseModel: optionalTrimmedStringPtr(result.UpstreamResponseModel),
+		UpstreamModelMismatch: upstreamModelMismatch(sentModel, result.UpstreamResponseModel),
+		ServiceTier:           result.ServiceTier,
+		ReasoningEffort:       result.ReasoningEffort,
+		InboundEndpoint:       optionalTrimmedStringPtr(input.InboundEndpoint),
 		// 渠道监控探测标记：由网关中间件校验一次性随机数后写入 ctx。
 		// 仅用于管理端「使用记录」的排除筛选，不参与统计与计费。
 		IsChannelMonitor:    IsChannelMonitorProbe(ctx),

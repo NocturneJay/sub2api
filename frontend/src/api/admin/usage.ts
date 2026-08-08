@@ -87,6 +87,7 @@ export interface AdminUsageQueryParams extends UsageQueryParams {
   // 排除渠道监控健康检查产生的记录。仅用量明细列表接口支持；
   // 统计接口不接受该参数（监控是真实花掉的钱，账目口径不随它变动）。
   exclude_channel_monitor?: boolean
+  upstream_model_mismatch?: boolean
   sort_by?: string
   sort_order?: 'asc' | 'desc'
   // 错误请求 tab 专属筛选(仅传给错误列表接口;共用同一 filters 对象)
@@ -126,6 +127,7 @@ export async function getStats(params: {
   model?: string
   request_type?: UsageRequestType
   stream?: boolean
+  upstream_model_mismatch?: boolean
   period?: string
   start_date?: string
   end_date?: string

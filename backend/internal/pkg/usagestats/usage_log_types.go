@@ -274,17 +274,21 @@ type UsageLogFilters struct {
 	RequestID string
 	Model     string
 	// ModelFilterSource controls how Model is matched. Empty preserves raw usage_logs.model semantics.
-	ModelFilterSource string
-	RequestType       *int16
-	Stream            *bool
-	BillingType       *int8
-	BillingMode       string
-	StartTime         *time.Time
-	EndTime           *time.Time
+	ModelFilterSource     string
+	RequestType           *int16
+	Stream                *bool
+	BillingType           *int8
+	BillingMode           string
+	UpstreamModelMismatch *bool
+	StartTime             *time.Time
+	EndTime               *time.Time
 	// ExcludeChannelMonitor 排除渠道监控健康检查产生的记录。
-	// 监控通过本站网关发真实请求，会在 usage_logs 里留下记录并混在用户真实用量里；
-	// 这些记录靠保留 User-Agent 识别（见 service.ChannelMonitorUserAgent，
-	// 由 middleware.ChannelMonitorProbe 校验一次性随机数后才允许保留该 UA）。
+	// 监控通过本站网关发真实请求，会在 usage_logs 里留下记录并混在用户真实用量里。
+	// 识别靠的是**专用列** usage_logs.is_channel_monitor：监控请求带一次性随机数
+	// 请求头 X-Sub2API-Monitor-Probe，网关中间件校验消费后写 request context，再经
+	// usageRecordContext() 搬运到异步记账。**不是靠 User-Agent** —— 那个设计被
+	// TestRunCheckForModel_MergeMode_UserFieldsWinButDenyListProtects 否掉了：
+	// 管理员可为监控配自定义 UA，UA 还参与 checkClaudeCodeRestriction 的客户端识别。
 	// 只影响明细列表，不影响任何统计与计费口径——监控是真实花掉的钱。
 	ExcludeChannelMonitor bool
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
