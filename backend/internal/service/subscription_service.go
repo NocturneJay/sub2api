@@ -13,7 +13,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/dgraph-io/ristretto"
 	"golang.org/x/sync/singleflight"
 )
@@ -381,8 +380,10 @@ func (s *SubscriptionService) withSubscriptionUpdateTx(ctx context.Context, fn f
 
 func renewedSubscriptionTerm(existingSub *UserSubscription, notes string, startsAt, expiresAt time.Time) *UserSubscription {
 	renewed := *existingSub
-	// 日窗口按日历日对齐（0 点刷新）；周/月窗口按订阅期限对齐（锚点为新周期起点）。
-	dailyWindowStart := timezone.StartOfDay(startsAt)
+	// aicat 分歧：日窗口与周/月一样按**期限对齐滚动**，锚点即新周期起点，
+	// 不取当天 0 点（理由见 user_subscription.go 的 automaticDailyWindowStartAt）。
+	// 仍保留上游拆开的两个变量与两参数仓储签名，把分歧限制在“传什么值”这一层。
+	dailyWindowStart := startsAt
 	periodicWindowStart := startsAt
 	renewed.StartsAt = startsAt
 	renewed.ExpiresAt = expiresAt
@@ -861,9 +862,9 @@ func (s *SubscriptionService) checkAndActivateWindowAt(ctx context.Context, sub 
 		return nil
 	}
 
-	// 日窗口锚定当天 0 点（日历日语义）；周/月窗口锚定首次使用时刻（期限对齐语义，
-	// 锚点不得早于 StartsAt，否则最后一个不完整周期会重复发放额度，见 issue #5051）。
-	return s.userSubRepo.ActivateWindows(ctx, sub.ID, timezone.StartOfDay(now), now)
+	// aicat 分歧：日窗口同样锚定首次使用时刻（24 小时滚动），不取当天 0 点。
+	// 周/月锚点不得早于 StartsAt，否则最后一个不完整周期会重复发放额度（issue #5051）。
+	return s.userSubRepo.ActivateWindows(ctx, sub.ID, now, now)
 }
 
 // AdminResetQuota manually resets the daily, weekly, and/or monthly usage windows.
@@ -876,9 +877,9 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 		return nil, err
 	}
 	now := s.now()
-	// 日窗口锚点取当天 0 点：手动重置只清空用量，不改变“每天 0 点刷新”的节奏。
-	// 周/月窗口保持锚定重置时刻（期限对齐滚动窗口语义）。
-	if err := s.userSubRepo.ResetUsageWindows(ctx, sub.ID, resetDaily, resetWeekly, resetMonthly, timezone.StartOfDay(now), now); err != nil {
+	// aicat 分歧：手动重置即发放一份新额度，因此日窗口锚点跟着移到重置时刻——
+	// 下一份自然是 24 小时之后。上游取当天 0 点是为了维持“每天 0 点刷新”的节奏。
+	if err := s.userSubRepo.ResetUsageWindows(ctx, sub.ID, resetDaily, resetWeekly, resetMonthly, now, now); err != nil {
 		return nil, err
 	}
 	// Invalidate L1 ristretto cache. Ristretto's Del() is asynchronous by design,
@@ -897,7 +898,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 	now := s.now()
 	needsInvalidateCache := false
 
-	// 日窗口重置（每天 0 点刷新，按日历日对齐）
+	// 日窗口重置（aicat：24 小时滚动，见 automaticDailyWindowStartAt）
 	if windowStart, ok := sub.automaticDailyWindowStartAt(now); ok {
 		expectedWindowStart := sub.DailyWindowStart
 		if err := s.userSubRepo.ResetDailyUsage(ctx, sub.ID, expectedWindowStart, windowStart); err != nil {

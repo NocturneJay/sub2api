@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,7 +50,8 @@ func TestDelayedFirstUseAnchorsMonthlyWindowAtActivation(t *testing.T) {
 	require.NoError(t, svc.CheckAndActivateWindow(context.Background(), sub))
 
 	require.Equal(t, activatedAt, repo.periodicStart)
-	require.Equal(t, timezone.StartOfDay(activatedAt), repo.dailyStart)
+	// aicat 分歧：日窗口锚定首次使用时刻，与周/月一致。
+	require.Equal(t, activatedAt, repo.dailyStart)
 	monthlyWindowStart := repo.periodicStart
 	resetAt, ok := sub.automaticWindowStartAt(&monthlyWindowStart, 30*24*time.Hour, activatedAt.Add(30*24*time.Hour))
 	require.True(t, ok)
