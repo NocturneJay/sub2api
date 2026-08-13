@@ -21,8 +21,13 @@
           class="sidebar-brand-title transition-opacity hover:opacity-80"
           @click="handleMenuItemClick(homePath)"
         >
-          <img src="/brand/cat-magic-wordmark.webp" alt="猫咪魔法" class="sidebar-wordmark dark:hidden" />
-          <img src="/brand/cat-magic-wordmark-dark.webp" alt="" class="sidebar-wordmark hidden dark:block" />
+          <img
+            v-if="!isDark"
+            src="/brand/cat-magic-wordmark.webp"
+            alt="猫咪魔法"
+            class="sidebar-wordmark"
+          />
+          <img v-else src="/brand/cat-magic-wordmark-dark.webp" alt="猫咪魔法" class="sidebar-wordmark" />
         </router-link>
         <!-- Version Badge -->
         <VersionBadge :version="siteVersion" />
@@ -987,9 +992,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sidebar-logo {
-  flex: 0 0 2.75rem;
-  width: 2.75rem;
-  height: 2.75rem;
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
 }
 
 .sidebar-header-collapsed {

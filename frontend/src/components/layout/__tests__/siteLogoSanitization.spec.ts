@@ -15,6 +15,8 @@ describe('site_logo sanitization', () => {
     expect(sidebarSource).toContain('src="/brand/cat-magic-logo.webp"')
     expect(sidebarSource).toContain('src="/brand/cat-magic-wordmark.webp"')
     expect(sidebarSource).toContain('src="/brand/cat-magic-wordmark-dark.webp"')
+    expect(sidebarSource).toContain('v-if="!isDark"')
+    expect(sidebarSource).toContain('<img v-else src="/brand/cat-magic-wordmark-dark.webp"')
     expect(existsSync(resolve(dir, '../../../../public/brand/cat-magic-logo.webp'))).toBe(true)
     expect(existsSync(resolve(dir, '../../../../public/brand/cat-magic-wordmark.webp'))).toBe(true)
     expect(existsSync(resolve(dir, '../../../../public/brand/cat-magic-wordmark-dark.webp'))).toBe(true)
