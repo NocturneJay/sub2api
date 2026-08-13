@@ -63,13 +63,39 @@
         </button>
       </div>
       <p v-if="hint" class="text-xs text-gray-500 dark:text-gray-400">{{ hint }}</p>
+      <div v-if="allowUrl && mode === 'image'" class="space-y-1.5 pt-1">
+        <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+          {{ urlLabel }}
+        </label>
+        <div class="flex items-center gap-2">
+          <input
+            v-model="urlValue"
+            type="url"
+            inputmode="url"
+            autocomplete="url"
+            class="input min-w-0 flex-1 font-mono text-xs"
+            :placeholder="urlPlaceholder"
+            @keydown.enter.prevent="applyUrl"
+          />
+          <button
+            type="button"
+            data-testid="apply-image-url"
+            class="btn btn-secondary btn-sm flex-shrink-0"
+            @click="applyUrl"
+          >
+            <Icon name="check" size="sm" class="mr-1.5" :stroke-width="2" />
+            {{ t('common.confirm') }}
+          </button>
+        </div>
+        <p v-if="urlHint" class="text-xs text-gray-500 dark:text-gray-400">{{ urlHint }}</p>
+      </div>
       <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
@@ -84,6 +110,10 @@ const props = withDefaults(defineProps<{
   removeLabel?: string
   hint?: string
   maxSize?: number // bytes
+  allowUrl?: boolean
+  urlLabel?: string
+  urlPlaceholder?: string
+  urlHint?: string
 }>(), {
   mode: 'image',
   size: 'md',
@@ -91,6 +121,10 @@ const props = withDefaults(defineProps<{
   removeLabel: '',
   hint: '',
   maxSize: 300 * 1024,
+  allowUrl: false,
+  urlLabel: '',
+  urlPlaceholder: '',
+  urlHint: '',
 })
 
 const emit = defineEmits<{
@@ -98,6 +132,7 @@ const emit = defineEmits<{
 }>()
 
 const error = ref('')
+const urlValue = ref(props.modelValue.startsWith('data:image/') ? '' : props.modelValue)
 
 const resolvedUploadLabel = computed(() => props.uploadLabel || t('common.upload'))
 const resolvedRemoveLabel = computed(() => props.removeLabel || t('common.remove'))
@@ -111,6 +146,39 @@ const sanitizedValue = computed(() =>
 const previewSizeClass = computed(() => props.size === 'sm' ? 'h-14 w-14' : 'h-20 w-20')
 const innerSizeClass = computed(() => props.size === 'sm' ? 'h-7 w-7' : 'h-12 w-12')
 const placeholderSizeClass = computed(() => props.size === 'sm' ? 'h-5 w-5' : 'h-8 w-8')
+
+watch(
+  () => props.modelValue,
+  (value) => {
+    urlValue.value = value.startsWith('data:image/') ? '' : value
+  }
+)
+
+function normalizeImageUrl(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return trimmed
+  }
+
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'https:' ? parsed.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+function applyUrl() {
+  error.value = ''
+  const normalized = normalizeImageUrl(urlValue.value)
+  if (!normalized) {
+    error.value = t('common.invalidImageUrl')
+    return
+  }
+
+  urlValue.value = normalized
+  emit('update:modelValue', normalized)
+}
 
 function handleUpload(event: Event) {
   const input = event.target as HTMLInputElement
@@ -143,6 +211,7 @@ function handleUpload(event: Event) {
     }
     reader.onload = (e) => {
       emit('update:modelValue', e.target?.result as string)
+      urlValue.value = ''
     }
     reader.readAsDataURL(file)
   }

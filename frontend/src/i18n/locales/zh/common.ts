@@ -14,6 +14,7 @@ export default {
     create: '创建',
     update: '更新',
     confirm: '确认',
+    invalidImageUrl: '请输入以 / 开头的站内图片路径或完整的 HTTPS 图片地址',
     reset: '重置',
     search: '搜索',
     filter: '筛选',

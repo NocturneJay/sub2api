@@ -292,6 +292,14 @@ const SelectStub = defineComponent({
       type: String,
       default: "",
     },
+    allowUrl: {
+      type: Boolean,
+      default: false,
+    },
+    urlPlaceholder: {
+      type: String,
+      default: "",
+    },
   },
   emits: ["update:modelValue", "change"],
   setup(props, { emit }) {
@@ -346,6 +354,17 @@ const ImageUploadStub = defineComponent({
       type: String,
       default: "",
     },
+    // 必须声明，否则 render 里的 props.allowUrl / props.urlPlaceholder 恒为
+    // undefined（未声明的 prop 落到 attrs 而非 props），data-allow-url 会渲染成
+    // 字符串 "undefined"，任何基于它的断言都是假绿。
+    allowUrl: {
+      type: Boolean,
+      default: false,
+    },
+    urlPlaceholder: {
+      type: String,
+      default: "",
+    },
   },
   setup(props) {
     return () =>
@@ -355,6 +374,8 @@ const ImageUploadStub = defineComponent({
         "data-upload-label": props.uploadLabel,
         "data-remove-label": props.removeLabel,
         "data-placeholder": props.placeholder,
+        "data-allow-url": String(props.allowUrl),
+        "data-url-placeholder": props.urlPlaceholder,
       });
   },
 });

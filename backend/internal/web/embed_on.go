@@ -208,6 +208,15 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 		return
 	}
 
+	// ⚠️ 安全依赖，勿改：json.Marshal 默认开启 HTMLEscape，会把左右尖括号和与号
+	// 一律输出成 Unicode 转义序列，使注入的内容无法闭合外层的 script 标签。
+	// 这是 site_logo / site_name 等**管理员可控字符串**
+	// 被注入到页面内联 script 块时的唯一防线——后端写入侧对它们没有任何校验
+	// （见 internal/service/setting_update.go 的 SettingKeySiteLogo 一行）。
+	//
+	// 切勿改成 json.Encoder + SetEscapeHTML(false)（本仓库已有 3 处这么写，
+	// 很容易被顺手照搬过来）：那样会直接产生存储型 XSS，而且注入的 script 标签
+	// 会带上合法的 CSP nonce，script-src 'self' + nonce 拦不住。
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		// Fallback: serve without injection

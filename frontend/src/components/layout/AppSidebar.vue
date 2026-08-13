@@ -8,21 +8,21 @@
   >
     <!-- Logo/Brand -->
     <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
-      <!-- Custom Logo or Default Logo -->
       <router-link
         :to="homePath"
-        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
+        class="sidebar-logo flex items-center justify-center overflow-hidden rounded-lg bg-white transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
       >
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        <img src="/brand/cat-magic-logo.webp" alt="猫咪魔法" class="h-full w-full object-cover" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
           :to="homePath"
-          class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+          class="sidebar-brand-title transition-opacity hover:opacity-80"
           @click="handleMenuItemClick(homePath)"
         >
-          {{ siteName }}
+          <img src="/brand/cat-magic-wordmark.webp" alt="猫咪魔法" class="sidebar-wordmark dark:hidden" />
+          <img src="/brand/cat-magic-wordmark-dark.webp" alt="" class="sidebar-wordmark hidden dark:block" />
         </router-link>
         <!-- Version Badge -->
         <VersionBadge :version="siteVersion" />
@@ -194,7 +194,6 @@ import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
-import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
@@ -256,10 +255,7 @@ const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboar
 const expandedGroups = ref<Set<string>>(new Set())
 
 // Site settings from appStore (cached, no flicker)
-const siteName = computed(() => appStore.siteName)
-const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteVersion = computed(() => appStore.siteVersion)
-const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -991,8 +987,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sidebar-logo {
-  flex: 0 0 2.25rem;
-  min-width: 2.25rem;
+  flex: 0 0 2.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
 }
 
 .sidebar-header-collapsed {
@@ -1021,10 +1018,20 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-brand-title {
-  display: block;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 1.45rem;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.sidebar-wordmark {
+  display: block;
+  width: auto;
+  max-width: 8.75rem;
+  height: 1.35rem;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .sidebar-link-collapsed {

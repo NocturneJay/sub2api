@@ -14,6 +14,7 @@ export default {
     create: 'Create',
     update: 'Update',
     confirm: 'Confirm',
+    invalidImageUrl: 'Enter a same-site image path starting with / or a complete HTTPS image URL',
     reset: 'Reset',
     search: 'Search',
     filter: 'Filter',

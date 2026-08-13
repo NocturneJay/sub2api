@@ -6600,6 +6600,10 @@
                   :remove-label="t('admin.settings.site.remove')"
                   :hint="t('admin.settings.site.logoHint')"
                   :max-size="300 * 1024"
+                  allow-url
+                  :url-label="t('admin.settings.site.logoUrl')"
+                  :url-placeholder="t('admin.settings.site.logoUrlPlaceholder')"
+                  :url-hint="t('admin.settings.site.logoUrlHint')"
                 />
               </div>
 
