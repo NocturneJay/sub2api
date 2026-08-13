@@ -60,7 +60,9 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 		// (openai_account_scheduler.isAccountRequestCompatible): empty
 		// model_mapping accepts everything; otherwise the explicit / wildcard
 		// mapping must match.
-		if accounts[i].IsModelSupported(requestedModel) {
+		// aicat：与选号侧一致地接受渠道映射后的别名，否则修好调度之后这里仍会把
+		// 「有账号支持映射后模型」误判成 404 model_not_found。
+		if accountSupportsRoutedModel(ctx, requestedModel, accounts[i].IsModelSupported) {
 			diag.HasModelSupport = true
 			return diag
 		}

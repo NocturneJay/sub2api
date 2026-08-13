@@ -363,7 +363,8 @@ func isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx context.Context
 			return false
 		}
 	}
-	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
+	// aicat：渠道映射后的模型别名同样算支持，见 channel_routing_alias.go。
+	if requestedModel != "" && !accountSupportsRoutedModel(ctx, requestedModel, account.IsModelSupported) {
 		return false
 	}
 	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {

@@ -181,6 +181,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	// aicat：把渠道映射后的模型名作为选号别名挂进请求 ctx，让调度器与「无可用账号」
+	// 错因分类都认它。上游只用映射改写 body，选号仍用原始名，账号白名单写映射后名字时
+	// 会直接 404。详见 service/channel_routing_alias.go。
+	c.Request = c.Request.WithContext(service.WithChannelRoutingAlias(c.Request.Context(), channelMapping, reqModel))
 
 	// 设置 max_tokens=1 + haiku 探测请求标识到 context 中
 	// 必须在 SetClaudeCodeClientContext 之前设置，因为 ClaudeCodeValidator 需要读取此标识进行绕过判断

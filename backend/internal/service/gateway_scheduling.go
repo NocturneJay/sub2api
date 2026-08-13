@@ -2588,7 +2588,12 @@ func (s *GatewayService) isModelSupportedByAccountWithContext(ctx context.Contex
 		}
 		return true
 	}
-	return s.isModelSupportedByAccount(account, requestedModel)
+	// aicat：渠道映射后的模型别名同样算支持，见 channel_routing_alias.go。
+	// 放在这里而不是 isModelSupportedByAccount 里，是因为别名要读 ctx；本函数是
+	// Gateway 侧 14 个选号判定点唯一的带 ctx 收口。
+	return accountSupportsRoutedModel(ctx, requestedModel, func(model string) bool {
+		return s.isModelSupportedByAccount(account, model)
+	})
 }
 
 // isModelSupportedByAccount 根据账户平台检查模型支持（无 context，用于非 Antigravity 平台）

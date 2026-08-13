@@ -102,6 +102,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
+	// aicat：渠道映射后的模型名作为选号别名，见 service/channel_routing_alias.go。
+	requestCtx = service.WithChannelRoutingAlias(requestCtx, channelMapping, reqModel)
+	c.Request = c.Request.WithContext(requestCtx)
 
 	// Claude Code only restriction:
 	// /v1/responses is never a Claude Code endpoint.

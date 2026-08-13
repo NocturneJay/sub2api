@@ -85,6 +85,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	}
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	// aicat：把渠道映射后的模型名作为选号别名挂进请求 ctx，让调度器与「无可用账号」
+	// 错因分类都认它。上游只用映射改写 body，选号仍用原始名，账号白名单写映射后名字时
+	// 会直接 404。详见 service/channel_routing_alias.go。
+	c.Request = c.Request.WithContext(service.WithChannelRoutingAlias(c.Request.Context(), channelMapping, reqModel))
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())

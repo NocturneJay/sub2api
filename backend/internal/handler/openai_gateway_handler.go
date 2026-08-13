@@ -469,6 +469,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	// aicat：把渠道映射后的模型名作为选号别名挂进请求 ctx，让调度器与「无可用账号」
+	// 错因分类都认它。上游只用映射改写 body，选号仍用原始名，账号白名单写映射后名字时
+	// 会直接 404。详见 service/channel_routing_alias.go。
+	c.Request = c.Request.WithContext(service.WithChannelRoutingAlias(c.Request.Context(), channelMapping, reqModel))
 	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
 	seedOpenAIForwardImageIntentHint(c, channelMapping.Mapped, imageIntent)
 
@@ -1085,6 +1089,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMappingMsg, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	// aicat：渠道映射后的模型名作为选号别名，见 service/channel_routing_alias.go。
+	c.Request = c.Request.WithContext(service.WithChannelRoutingAlias(c.Request.Context(), channelMappingMsg, reqModel))
 	mappedBodyForMessages := newOpenAIModelMappedBodyCache(body, h.gatewayService.ReplaceModelInBody)
 
 	// 绑定错误透传服务，允许 service 层在非 failover 错误场景复用规则。
@@ -1881,6 +1887,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
+	// aicat：渠道映射后的模型名作为选号别名，见 service/channel_routing_alias.go。
+	// WS 首轮选号走 ctx（不是 c.Request.Context()），故在这里改写 ctx 本身。
+	ctx = service.WithChannelRoutingAlias(ctx, channelMappingWS, reqModel)
 
 	var currentUserRelease func()
 	var currentAccountRelease func()

@@ -1753,7 +1753,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	}) {
 		return false, "shadow_parent_unhealthy"
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	// aicat：渠道映射后的模型别名同样算支持，见 channel_routing_alias.go。
+	if req.RequestedModel != "" &&
+		!accountSupportsRoutedModel(ctx, req.RequestedModel, account.IsModelSupported) {
 		return false, "model_not_supported"
 	}
 	if req.GroupID != nil && s != nil && s.service != nil &&
