@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -849,6 +850,21 @@ func isOpenAIRemoteCompactionV2Request(c *gin.Context, body []byte) bool {
 	if !valid || !stream || c == nil || c.Request == nil {
 		return false
 	}
+	if hasOpenAIRemoteCompactionV2Feature(c) {
+		return true
+	}
+
+	// Newer Codex Desktop builds can signal native remote compaction solely
+	// through a streaming compaction_trigger body. Treat that official-client
+	// wire as v2 even when the beta header is absent, otherwise the request is
+	// incorrectly promoted to the legacy /responses/compact endpoint.
+	return openai.IsCodexOfficialClientRequestStrict(c.GetHeader("User-Agent"))
+}
+
+func hasOpenAIRemoteCompactionV2Feature(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
 	for _, header := range c.Request.Header.Values("x-codex-beta-features") {
 		for _, feature := range strings.Split(header, ",") {
 			if strings.TrimSpace(feature) == "remote_compaction_v2" {
@@ -867,6 +883,9 @@ func (h *OpenAIGatewayHandler) normalizeOpenAIResponsesCompactRequest(c *gin.Con
 	isCompactRequest := service.IsOpenAIResponsesCompactPathForTest(c)
 	if !isCompactRequest && isBareOpenAIResponsesPath(c) && service.HasCompactionTriggerInInput(body) {
 		if isOpenAIRemoteCompactionV2Request(c, body) {
+			if !hasOpenAIRemoteCompactionV2Feature(c) {
+				reqLog.Info("codex.remote_compact.inferred_v2_body_signal")
+			}
 			return body, true
 		}
 		c.Request.URL.Path = strings.TrimRight(c.Request.URL.Path, "/") + "/compact"

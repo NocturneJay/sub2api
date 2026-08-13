@@ -77,6 +77,33 @@ func TestNormalizeOpenAIResponsesCompactRequest_RemoteV2PathAliasesStayOnRespons
 	}
 }
 
+func TestNormalizeOpenAIResponsesCompactRequest_OfficialCodexBodySignalInfersRemoteV2(t *testing.T) {
+	h := &OpenAIGatewayHandler{}
+	body := []byte(`{"model":"gpt-5.6-sol","stream":true,"input":[{"type":"compaction_trigger"}]}`)
+	c := newCompactBodySignalTestContext(t, "/v1/responses", body)
+	c.Request.Header.Set("User-Agent", "Codex Desktop/0.147.0-alpha.6.6 (Windows 10.0.26200; x86_64)")
+
+	normalized, ok := h.normalizeOpenAIResponsesCompactRequest(c, zap.NewNop(), body)
+	require.True(t, ok)
+	require.Equal(t, "/v1/responses", c.Request.URL.Path)
+	require.Equal(t, body, normalized)
+	require.True(t, gjson.GetBytes(normalized, "stream").Bool())
+	require.False(t, isOpenAIRemoteCompactPath(c))
+}
+
+func TestNormalizeOpenAIResponsesCompactRequest_NonCodexBodySignalWithoutFeatureUsesLegacyBridge(t *testing.T) {
+	h := &OpenAIGatewayHandler{}
+	body := []byte(`{"model":"gpt-5.6-sol","stream":true,"input":[{"type":"compaction_trigger"}]}`)
+	c := newCompactBodySignalTestContext(t, "/v1/responses", body)
+	c.Request.Header.Set("User-Agent", "third-party-client/1.0")
+
+	normalized, ok := h.normalizeOpenAIResponsesCompactRequest(c, zap.NewNop(), body)
+	require.True(t, ok)
+	require.Equal(t, "/v1/responses/compact", c.Request.URL.Path)
+	require.False(t, gjson.GetBytes(normalized, "stream").Exists())
+	require.True(t, isOpenAIRemoteCompactPath(c))
+}
+
 func TestNormalizeOpenAIResponsesCompactRequest_BodySignalTrailingSlashPromoted(t *testing.T) {
 	h := &OpenAIGatewayHandler{}
 	body := []byte(`{"model":"gpt-5.5","input":[{"type":"compaction_trigger"}]}`)
