@@ -14,7 +14,12 @@ describe('CreateAccountModal Grok account types', () => {
     expect(source).toContain("newPlatform === 'grok'")
     expect(source).toContain("? 'https://api.x.ai/v1'")
     expect(source).toContain("form.platform === 'grok'")
-    expect(source).toContain("? 'xai-...'")
+    // ⚠️ 上游 v0.1.178 把 apiKeyValuePlaceholder 从三元链重构成 switch（为了加
+    // kimi/zhipu/deepseek），却没同步改这条断言——上游自己的源码里
+    // `? 'xai-...'` 出现 0 次，即 upstream/main 上这个用例本身就是红的，
+    // 不是本仓库合并造成的。这里按重构后的 switch 形状断言。
+    expect(source).toContain("case 'grok':")
+    expect(source).toContain("return 'xai-...'")
   })
 
   it('exposes custom upstream URL and header override for the OAuth create flow', () => {
