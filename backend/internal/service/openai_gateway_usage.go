@@ -211,7 +211,13 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		result.UpstreamModel,
 		result.Model,
 	)
-	billingModels = s.filterCNProviderBillingModelCandidates(ctx, account, apiKey, billingModels)
+	// aicat：这个过滤器内部会做定价查表（resolveOpenAIChannelPricing），因此必须用
+	// pricingAPIKey（委托后的子分组），与紧随其后的 calculateOpenAIRecordUsageCost 同源。
+	// 上游原文传的是 apiKey（复合父分组）：那样 billingPricingGroup 会因
+	// apiKey.Group.ID != billingPricingGroupID(ctx) 而返回 nil，子分组上配的
+	// **分组级逐模型价卡**查不到 → claude-* 候选被整批丢弃 → billingModels 变空 →
+	// 落到 pricing_missing 的零成本记账。运营者配了价，账单却是 $0，且全程无报错。
+	billingModels = s.filterCNProviderBillingModelCandidates(ctx, account, pricingAPIKey, billingModels)
 	serviceTier := ""
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
@@ -265,16 +271,22 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		result.ImageCount > 0 || result.VideoCount > 0 || result.WebSearchCalls > 0 ||
 			result.AudioUsage != nil || result.SearchCount > 0,
 	); responseModel != "" && !strings.EqualFold(responseModel, baselineBillingModel) {
-		if identified, responseChannelPriced := s.hasIdentifiedOpenAIResponsePricing(ctx, responseModel, apiKey); identified {
-			responseModels := s.filterCNProviderBillingModelCandidates(ctx, account, apiKey, usageBillingModelCandidates(responseModel))
+		// aicat：本分支的四处定价查表必须同源，一律用 pricingAPIKey（委托后的子分组）。
+		// 与 Anthropic 侧 gateway_usage_billing.go 的同款分支保持一致（那边已有相同注释）。
+		// 无委托时 compositeDelegatedPricingAPIKey 原样返回 apiKey，所以对非复合流量
+		// 完全是空操作；只有复合分组会被纠正——此前它用父分组查表，
+		// 会让 GroupID(子分组) 与 Group(父分组) 跨维度混用，
+		// 正是 billingPricingGroup 注释明令禁止的组合。
+		if identified, responseChannelPriced := s.hasIdentifiedOpenAIResponsePricing(ctx, responseModel, pricingAPIKey); identified {
+			responseModels := s.filterCNProviderBillingModelCandidates(ctx, account, pricingAPIKey, usageBillingModelCandidates(responseModel))
 			responseCost, responseErr := s.calculateOpenAIRecordUsageCost(
-				ctx, result, apiKey, responseModels, multiplier, imageMultiplier,
+				ctx, result, pricingAPIKey, responseModels, multiplier, imageMultiplier,
 				videoMultiplier, baseMultiplier, tokens, serviceTier, longContextBillingGate, pricingAt,
 			)
 			// 基线定价源以 baselineBillingModel 为准：它正是 calculateOpenAIRecordUsageCost
 			// 内部做渠道定价判断时使用的模型，且"首候选有渠道价"必然意味着首候选就是实际
 			// 定价基准（有渠道价就一定能算出价，循环不会落到后续候选）。
-			baselineChannelPriced := s.resolveOpenAIChannelPricing(ctx, baselineBillingModel, apiKey) != nil
+			baselineChannelPriced := s.resolveOpenAIChannelPricing(ctx, baselineBillingModel, pricingAPIKey) != nil
 			if responseErr == nil && responseModelBillingAdoptable(cost, responseCost, baselineChannelPriced, responseChannelPriced) {
 				logResponseModelBillingApplied("service.openai_gateway", account, result.RequestID,
 					baselineBillingModel, responseModel, cost, responseCost)

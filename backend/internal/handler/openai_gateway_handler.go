@@ -104,12 +104,17 @@ func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bo
 
 // resolveOpenAIMessagesDispatchMappedModel 同样收**委托后的子分组**。
 //
-// 上游 v0.1.178 在这里加了一段「composite 解析到 grok/CN 就返回空」的 ctx 查询，
-// 那是因为它传的是复合父分组：父分组 Platform 是 composite，会一路落到
-// ResolveMessagesDispatchModel 末尾的 gpt-5.x 默认分支，发给 grok/CN 上游必错。
-// aicat 传的是子分组，ResolveMessagesDispatchModel 内部本就按 g.Platform 分了
-// grok 分支（返回 xai 跨客户端映射）和 CN 分支（返回空），因此那段外层判断在这里
-// 既多余又有害——照搬会把 grok 的 xai 映射一并掐掉。
+// 上游 v0.1.178 在这里加了一段「composite 解析到 grok/CN 就返回空」的 ctx 查询。
+// 它修的是真问题：上游传的是复合父分组，父分组 Platform 是 composite，会一路落到
+// ResolveMessagesDispatchModel 末尾的 gpt-5.x 默认分支（实测
+// composite.ResolveMessagesDispatchModel("claude-sonnet-4-5-…") = "gpt-5.3-codex"），
+// 把 openai 专属默认值发给 grok/CN 上游必错。
+//
+// aicat 传的是子分组，同一个风险由 ResolveMessagesDispatchModel 内部按 g.Platform
+// 分的 grok / CN 分支兜住，所以那段外层判断在这里是**多余**的：它的前置条件
+// `Platform == composite` 在委托解析后恒为 false，照搬进来只是死代码。
+// （早先这里写过"照搬有害、会掐掉 grok 的 xai 映射"，那是错的——守卫根本进不去
+// grok 分支。保留这段更正，免得下次同步时又按错误理由做决定。）
 func resolveOpenAIMessagesDispatchMappedModel(group *service.Group, requestedModel string) string {
 	if group == nil {
 		return ""

@@ -10,13 +10,15 @@ package handler
 // 的入参写成 (c *gin.Context, apiKey *APIKey)，读的是**复合父分组**，因此需要额外用
 // ensureCompositeTargetPlatform + ResolvedTargetPlatformFromContext 把目标平台猜/查出来。
 // aicat 这两个函数收的是**委托解析后的子分组**（见 §3 复合路由设计冲突），复合分组的
-// 情形天然由"子分组平台"这一条覆盖，无需 ctx 二次查询；而且 aicat 的
+// 情形天然由"子分组平台"这一条覆盖，上游那段 ctx 二次查询在这里是死代码
+// （其前置条件 Platform == composite 在委托解析后恒为 false）；而且 aicat 的
 // ensureCompositeTargetPlatform 是空实现（路由中间件是唯一权威，不按模型名猜平台），
 // 上游那两个依赖它的用例在这里根本立不住，故按 aicat 语义重写。
 
 import (
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -65,11 +67,13 @@ func TestAllowOpenAICompatibleMessagesDispatch_CompositeDelegatedSubgroups(t *te
 // 委托到 CN 子分组时，Group 级调度映射（gpt-5.x 默认值是 openai 专属）不得注入，
 // 模型改写完全交给账号级 model_mapping。
 //
-// ⚠️ grok 与 CN 在这里**行为不同**，别照抄上游把 grok 一起断言成空：
-// ResolveMessagesDispatchModel 内部对 grok 有专门分支，返回 xai 跨客户端映射。
-// 上游那版之所以对 grok 也返回空，是因为它传的是复合父分组（Platform=composite），
-// 压根进不去 grok 分支；aicat 传子分组，会正常拿到 xai 映射。
+// ⚠️ grok 分支依赖**进程级全局** xai.RuntimeModelMappingOptions().EnableCrossClientMap
+// （默认 false）。必须显式设置 + t.Cleanup 还原，否则用例的结果取决于同包其它用例
+// 有没有先把这个全局打开——本用例最初就漏了 setup，表现为「隔离跑红、整包跑绿」的
+// 顺序依赖。同包正确写法见 openai_gateway_handler_test.go 的
+// grok_group_maps_claude_cli_model_to_grok_default。
 func TestResolveOpenAIMessagesDispatchMappedModel_DelegatedCNSkipsGroupMapping(t *testing.T) {
+	// CN 三家与全局开关无关：ResolveMessagesDispatchModel 的 CN 分支直接返回空。
 	for _, platform := range []string{
 		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek,
 	} {
@@ -78,7 +82,27 @@ func TestResolveOpenAIMessagesDispatchMappedModel_DelegatedCNSkipsGroupMapping(t
 			"platform=%s 不得注入分组级调度映射", platform)
 	}
 
-	require.NotEmpty(t,
-		resolveOpenAIMessagesDispatchMappedModel(&service.Group{Platform: service.PlatformGrok}, "claude-sonnet-4-5-20250929"),
-		"grok 走 xai 跨客户端映射，不应为空")
+	grok := &service.Group{Platform: service.PlatformGrok}
+
+	t.Run("grok_without_cross_client_map_stays_empty", func(t *testing.T) {
+		original := xai.RuntimeModelMappingOptions()
+		t.Cleanup(func() { xai.SetRuntimeModelMappingOptions(original) })
+		xai.SetRuntimeModelMappingOptions(xai.ModelMappingOptions{EnableCrossClientMap: false})
+
+		require.Empty(t,
+			resolveOpenAIMessagesDispatchMappedModel(grok, "claude-sonnet-4-5-20250929"),
+			"默认配置下 grok 不做跨客户端映射，应为空")
+	})
+
+	t.Run("grok_with_cross_client_map_uses_xai_mapping", func(t *testing.T) {
+		original := xai.RuntimeModelMappingOptions()
+		t.Cleanup(func() { xai.SetRuntimeModelMappingOptions(original) })
+		xai.SetRuntimeModelMappingOptions(xai.ModelMappingOptions{EnableCrossClientMap: true})
+
+		// 开关打开后走 xai 跨客户端映射，而**不是** openai 专属的 gpt-5.x 默认值——
+		// 这才是 grok 与 CN 的真正区别所在。
+		mapped := resolveOpenAIMessagesDispatchMappedModel(grok, "claude-sonnet-4-5-20250929")
+		require.NotEmpty(t, mapped)
+		require.NotContains(t, mapped, "gpt-", "grok 不得拿到 openai 专属默认值")
+	})
 }
