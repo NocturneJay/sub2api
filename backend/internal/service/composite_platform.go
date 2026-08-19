@@ -265,7 +265,8 @@ func (s *GatewayService) applyCompositeTargetGroup(ctx context.Context, composit
 
 func isConcreteRequestPlatform(platform string) bool {
 	switch platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
+		PlatformKimi, PlatformZhipu, PlatformDeepseek:
 		return true
 	default:
 		return false

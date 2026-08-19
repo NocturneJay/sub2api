@@ -30,7 +30,21 @@ func TestCompositeGroupSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
 		platforms = append(platforms, platform)
 	}
 	require.ElementsMatch(t,
-		[]string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok},
+		[]string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek},
 		platforms,
 	)
+}
+
+func TestCompositeConcretePlatformsIncludeCNProviders(t *testing.T) {
+	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek} {
+		// CN 三家是合法的具体目标平台（可作为复合路由的委托目标）——采纳上游断言。
+		require.True(t, isConcreteRequestPlatform(platform))
+
+		// 但**不采纳**上游那条 `canCopyAccountsFromGroupPlatform(PlatformComposite, platform) == true`：
+		// 复合分组禁止复制账号是 aicat 的设计分歧（账号归属具体子分组，复合分组只是
+		// 路由壳），canCopyAccountsFromGroupPlatform 对 composite 目标一律返回 false。
+		// 这里反向钉死，防止同步上游时被改回去（CI 另有 "cannot copy accounts" ×2 断言）。
+		require.False(t, canCopyAccountsFromGroupPlatform(PlatformComposite, platform),
+			"复合分组不得从 %s 复制账号", platform)
+	}
 }

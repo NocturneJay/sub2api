@@ -48,17 +48,38 @@ func TestCompositeTargetPlatformAllowedRejectsUnroutedKnownModel(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestOpenAICompatibleTextTargetRejectsUnroutedCompositeGrokModel(t *testing.T) {
+func TestOpenAICompatibleTextTargetRejectsUnroutedCompositeProviders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	for _, path := range []string{"/v1/messages", "/v1/chat/completions"} {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		c.Request = httptest.NewRequest("POST", path, nil)
-		apiKey := &service.APIKey{Group: &service.Group{Platform: service.PlatformComposite}}
+	// 模型表取自上游 v0.1.178（覆盖 grok + CN 三家）；但断言方向与上游相反：
+	// 上游那版 TestOpenAICompatibleTextTargetAllowsCompositeProviders 断言这些模型
+	// 会被放行并「解析出」平台，靠的正是 aicat 刻意删除的 DetectModelPlatform 猜名兜底。
+	// aicat 口径：复合分组未配置路由 = fail closed，既不放行也不解析出平台。
+	models := []string{"grok-4.3", "kimi-k2-thinking", "glm-5.2", "deepseek-v3.2"}
+	for _, path := range []string{"/v1/messages", "/v1/chat/completions", "/v1/responses", "/v1/responses/input_tokens", "/v1/messages/count_tokens"} {
+		for _, model := range models {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", path, nil)
+			apiKey := &service.APIKey{Group: &service.Group{Platform: service.PlatformComposite}}
 
-		require.False(t, openAICompatibleTextTargetAllowed(c, apiKey, "grok-4.3"), "path=%s", path)
-		_, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
-		require.False(t, ok, "path=%s", path)
+			require.False(t, openAICompatibleTextTargetAllowed(c, apiKey, model), "path=%s model=%s", path, model)
+			_, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+			require.False(t, ok, "path=%s model=%s", path, model)
+		}
+	}
+}
+
+// WS ingress 对 CN 账号既过不了 transport 过滤、HTTP 桥也没有 Responses 转换，
+// 放行只会把明确的策略拒绝换成 "no available account"，因此 WS 白名单保持 openai+grok。
+// 本用例与路由哲学无关，原样采纳上游。
+func TestResponsesWebSocketCompositePlatformGuardKeepsOpenAIAndGrokOnly(t *testing.T) {
+	require.True(t, isResponsesWebSocketCompositePlatform(service.PlatformOpenAI))
+	require.True(t, isResponsesWebSocketCompositePlatform(service.PlatformGrok))
+	for _, platform := range []string{
+		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek,
+		service.PlatformAnthropic, service.PlatformGemini,
+	} {
+		require.False(t, isResponsesWebSocketCompositePlatform(platform), "platform=%s", platform)
 	}
 }
 

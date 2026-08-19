@@ -98,7 +98,7 @@ func NewGroupHandler(adminService service.AdminService, dashboardService *servic
 type CreateGroupRequest struct {
 	Name                      string                        `json:"name" binding:"required"`
 	Description               string                        `json:"description"`
-	Platform                  string                        `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
+	Platform                  string                        `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok kimi zhipu deepseek composite"`
 	RateMultiplier            float64                       `json:"rate_multiplier"`
 	IsExclusive               bool                          `json:"is_exclusive"`
 	SubscriptionType          string                        `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
@@ -166,7 +166,7 @@ type CreateGroupRequest struct {
 type UpdateGroupRequest struct {
 	Name                      string                         `json:"name"`
 	Description               *string                        `json:"description"`
-	Platform                  string                         `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
+	Platform                  string                         `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok kimi zhipu deepseek composite"`
 	RateMultiplier            *float64                       `json:"rate_multiplier"`
 	IsExclusive               *bool                          `json:"is_exclusive"`
 	Status                    string                         `json:"status" binding:"omitempty,oneof=active inactive"`
@@ -236,7 +236,9 @@ type CompositeRouteRequest struct {
 	MatchType   string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
 	// TargetPlatform is retained for wire compatibility and is always derived
 	// from the required concrete target group by the service.
-	TargetPlatform string   `json:"target_platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok"`
+	// 上游本轮把 CN 三家（kimi/zhipu/deepseek）加进枚举，采纳；但**不采纳它的
+	// `required`**——aicat 的必填项是 TargetGroupID，平台由目标分组派生。
+	TargetPlatform string   `json:"target_platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok kimi zhipu deepseek"`
 	TargetGroupID  *int64   `json:"target_group_id" binding:"required,gt=0"`
 	RateMultiplier *float64 `json:"rate_multiplier" binding:"omitempty"`
 	UpstreamModel  string   `json:"upstream_model"`

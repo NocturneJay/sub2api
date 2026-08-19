@@ -53,6 +53,17 @@ The public `/v1/models` response is also route-bound. Exact routes expose their
 public alias. Prefix routes expose matching models available from their target
 group. Models without a route are not advertised.
 
+Codex Alpha Search and Live requests use the `responses` route domain. Live
+requests resolve the model from `session.model`, including multipart `session`
+payloads, and apply the configured `upstream_model` before dispatch.
+Codex model manifest requests reuse the existing OpenAI account selection and
+failover path within the Composite group.
+
+<!-- 上游此处有一节 "## Built-In Detection"，介绍按模型名猜平台的 DetectModelPlatform
+     兜底。aicat 刻意删除了该函数（路由必须委托到具体 target_group_id，猜出来的平台
+     无法确定按哪个分组调度和计费），故不移植该节。下面 "Limits" 一节里
+     "Detector-based fallback for unconfigured models" 已明确列为不提供。 -->
+
 ## Setup Example
 
 To sell one subscription that supports OpenAI and Claude:

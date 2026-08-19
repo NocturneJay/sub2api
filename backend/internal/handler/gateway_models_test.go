@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -341,8 +342,14 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 	openAIGroupID := int64(331)
 	geminiGroupID := int64(332)
 	antigravityGroupID := int64(333)
+	kimiGroupID := int64(334)
+	zhipuGroupID := int64(335)
+	deepseekGroupID := int64(336)
 	h := newGatewayModelsHandlerForTest(
 		&gatewayModelsAccountRepoStub{},
+		// aicat 的 compositeAvailableModels 是**按路由**枚举的，不是按账号平台猜的，
+		// 所以这里给 CN 三家补的是路由而不是上游那份 byGroup 账号表。
+		// 断言（本测试末尾）仍是上游那条：CN 自定义模型必须出现在复合模型列表里。
 		service.CompositeModelRoute{
 			GroupID: groupID, PublicModel: "gpt-5.5", MatchType: service.CompositeRouteMatchExact,
 			TargetPlatform: service.PlatformOpenAI, TargetGroupID: &openAIGroupID, Enabled: true,
@@ -355,6 +362,18 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 			GroupID: groupID, PublicModel: "ag-custom-model", MatchType: service.CompositeRouteMatchExact,
 			TargetPlatform: service.PlatformAntigravity, TargetGroupID: &antigravityGroupID, Enabled: true,
 		},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "kimi-custom", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformKimi, TargetGroupID: &kimiGroupID, Enabled: true,
+		},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "glm-custom", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformZhipu, TargetGroupID: &zhipuGroupID, Enabled: true,
+		},
+		service.CompositeModelRoute{
+			GroupID: groupID, PublicModel: "deepseek-custom", MatchType: service.CompositeRouteMatchExact,
+			TargetPlatform: service.PlatformDeepseek, TargetGroupID: &deepseekGroupID, Enabled: true,
+		},
 	)
 
 	rec := httptest.NewRecorder()
@@ -366,7 +385,7 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 			Platform: service.PlatformComposite,
 			ModelsListConfig: service.GroupModelsListConfig{
 				Enabled: true,
-				Models:  []string{"gemini-2.5-flash", "missing-model", "ag-custom-model", "gpt-5.5"},
+				Models:  []string{"gemini-2.5-flash", "missing-model", "ag-custom-model", "gpt-5.5", "kimi-custom", "glm-custom", "deepseek-custom"},
 			},
 		},
 	})
@@ -377,7 +396,7 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.Equal(t, []string{"gemini-2.5-flash", "ag-custom-model", "gpt-5.5"}, modelIDsForTest(got.Data))
+	require.Equal(t, []string{"gemini-2.5-flash", "ag-custom-model", "gpt-5.5", "kimi-custom", "glm-custom", "deepseek-custom"}, modelIDsForTest(got.Data))
 }
 
 func TestGatewayModels_CompositePrefixRouteExpandsOnlyTargetGroupModels(t *testing.T) {
@@ -432,6 +451,62 @@ func TestGatewayModels_CompositePrefixRouteExpandsOnlyTargetGroupModels(t *testi
 	require.NotContains(t, ids, "gemini-2.5-flash")
 	require.NotContains(t, ids, "grok-4.3")
 	require.NotContains(t, ids, "text-embedding-3")
+}
+
+// CN 供应商没有静态默认模型列表：composite 下无映射的可调度 CN 账号不得把
+// defaultModelIDsForPlatform default 分支的 Claude 列表挂到 CN 平台名下。
+// aicat 口径改写（原上游用例名 TestGatewayModels_CompositeUnmappedCNAccountsContributeNoDefaults）：
+// 上游那版给复合分组只挂账号、不配路由，然后断言模型列表里**含** "gpt-5.5"——
+// 即「未映射账号回退到所属平台的默认模型」。aicat 刻意消除了这种按平台猜的回退：
+// 复合分组的模型列表完全由路由决定，没有路由就什么都不暴露（fail closed）。
+// 因此这里把断言方向倒过来，锁死 fail-closed 行为；CN 供应商不该贡献默认模型这一点
+// 由此天然成立，也在 compositeAvailableModels 的 IsCNProvider 守卫里另有防线。
+func TestGatewayModels_CompositeWithoutRoutesExposesNoModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(35)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{ID: 1, Platform: service.PlatformOpenAI},
+					{ID: 2, Platform: service.PlatformKimi},
+					{ID: 3, Platform: service.PlatformZhipu},
+					{ID: 4, Platform: service.PlatformDeepseek},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: groupID, Platform: service.PlatformComposite},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	ids := modelIDsForTest(got.Data)
+	require.NotContains(t, ids, "gpt-5.5", "无路由的复合分组不得按账号平台回填默认模型")
+	require.NotContains(t, ids, "claude-sonnet-4-6")
+}
+
+// 独立 CN 分组沿用 default 分支的 Claude 默认列表（Claude Code 客户端请求的
+// 就是这些模型名并经账号 model_mapping 转换），composite 支持不得改变该回退。
+func TestDefaultModelIDsForPlatform_CNProvidersKeepClaudeDefaults(t *testing.T) {
+	want := make([]string, 0, len(claude.DefaultModels))
+	for _, model := range claude.DefaultModels {
+		want = append(want, model.ID)
+	}
+	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
+		require.Equal(t, want, defaultModelIDsForPlatform(platform), "platform=%s", platform)
+	}
 }
 
 func TestGatewayModels_CustomModelsListKeepsConcreteModelAllowedByWildcardMapping(t *testing.T) {
@@ -751,4 +826,18 @@ func modelIDsForTest(models []gatewayModelItemForTest) []string {
 		ids = append(ids, model.ID)
 	}
 	return ids
+}
+
+// 采纳自上游 v0.1.178：defaultModelIDsForPlatform 是个纯函数，与「复合路由必须
+// 委托到目标分组」的分歧无关，因此可以原样移植。
+// （上游同轮的 TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly
+//
+//	则不移植——它断言的是「未映射账号回退到所属平台默认模型」，正是 aicat 刻意
+//	消除的按平台猜行为。）
+func TestDefaultModelIDsForCompositeIncludesAntigravityDefaults(t *testing.T) {
+	antigravityIDs := defaultModelIDsForPlatform(service.PlatformAntigravity)
+	require.NotEmpty(t, antigravityIDs)
+
+	compositeIDs := defaultModelIDsForPlatform(service.PlatformComposite)
+	require.Contains(t, compositeIDs, antigravityIDs[0])
 }

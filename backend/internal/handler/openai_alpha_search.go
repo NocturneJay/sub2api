@@ -30,6 +30,9 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
+	// aicat：复合父分组只是路由壳，必须看**委托解析后的**目标平台，而不是
+	// apiKey.Group.Platform（上游那版对 composite 一律放行、把判断推到后面）。
+	// 三处 /alpha/search 注册全部挂了 compositeTarget 中间件，此处必然已解析。
 	requestPlatform := apiKey.Group.Platform
 	if resolvedPlatform, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); resolved {
 		requestPlatform = resolvedPlatform
@@ -79,6 +82,10 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		return
 	}
 	requestedModel := strings.TrimSpace(modelResult.String())
+	if !compositeTargetPlatformAllowed(c, apiKey, requestedModel, service.PlatformOpenAI) {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search only supports OpenAI models for Composite groups")
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", requestedModel))
 	setOpsRequestContext(c, requestedModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))

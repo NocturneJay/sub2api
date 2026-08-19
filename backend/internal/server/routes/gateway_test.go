@@ -94,7 +94,7 @@ func TestGatewayRoutesOpenAIAlphaSearchPathsAreRegistered(t *testing.T) {
 	}
 }
 
-func TestGatewayRoutesAlphaSearchRejectsNonOpenAIGroup(t *testing.T) {
+func TestGatewayRoutesAlphaSearchRejectsUnsupportedGroup(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformGrok)
 	req := httptest.NewRequest(http.MethodPost, "/v1/alpha/search", strings.NewReader(`{"model":"gpt-5.6-sol"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -103,6 +103,9 @@ func TestGatewayRoutesAlphaSearchRejectsNonOpenAIGroup(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
+	// aicat 的判定看**委托解析后的目标平台**必须是 openai（上游那版对 composite
+	// 一律放行、把判断推后），因此文案是 "OpenAI groups" 而非上游的
+	// "OpenAI and Composite groups"。
 	require.Contains(t, w.Body.String(), "only available for OpenAI groups")
 }
 

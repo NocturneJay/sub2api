@@ -30,6 +30,11 @@
   html {
     @apply scroll-smooth antialiased;
     text-autospace: no-autospace;
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
   }
 
   body {

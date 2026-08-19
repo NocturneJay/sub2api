@@ -1166,6 +1166,10 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	}
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
+	// aicat：复合可用模型是**按路由**枚举的，不是按平台猜的——路由必须绑定
+	// target_group_id，未绑定的一律不出现在列表里。上游那版遍历 8 个平台、对
+	// schedulable 的平台回填静态默认列表，正是被刻意消除的「猜」。
+	// 上游本轮关于 CN 供应商的那条洞见有效，已下移到 prefix 分支采纳。
 	addModel := func(model string) {
 		model = strings.TrimSpace(model)
 		if model == "" {
@@ -1188,7 +1192,11 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 		case service.CompositeRouteMatchPrefix:
 			targetGroupID := *route.TargetGroupID
 			targetModels := h.gatewayService.GetAvailableModels(ctx, &targetGroupID, route.TargetPlatform)
-			if len(targetModels) == 0 {
+			// CN 供应商（kimi/zhipu/deepseek）没有静态默认模型列表：
+			// defaultModelIDsForPlatform 的 default 分支返回的是 Claude 列表，
+			// 回退会把 Claude 模型错登记到 CN 目标分组名下。该判断取自上游
+			// v0.1.178 对同一问题的处理，这里按路由维度施加。
+			if len(targetModels) == 0 && !service.IsCNProvider(route.TargetPlatform) {
 				targetModels = defaultModelIDsForPlatform(route.TargetPlatform)
 			}
 			for _, model := range targetModels {
@@ -1404,7 +1412,7 @@ func defaultModelIDsForPlatform(platform string) []string {
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
-		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
 			for _, id := range defaultModelIDsForPlatform(concretePlatform) {
 				if _, ok := seen[id]; ok {
 					continue
