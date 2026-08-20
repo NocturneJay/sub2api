@@ -15,9 +15,10 @@ describe('CreateAccountModal Grok account types', () => {
     expect(source).toContain("? 'https://api.x.ai/v1'")
     expect(source).toContain("form.platform === 'grok'")
     // ⚠️ 上游 v0.1.178 把 apiKeyValuePlaceholder 从三元链重构成 switch（为了加
-    // kimi/zhipu/deepseek），却没同步改这条断言——上游自己的源码里
-    // `? 'xai-...'` 出现 0 次，即 upstream/main 上这个用例本身就是红的，
-    // 不是本仓库合并造成的。这里按重构后的 switch 形状断言。
+    // kimi/zhipu/deepseek），却没同步改这条断言；上游在 v0.1.179 的
+    // f917d19d3 自己修成了下面这条「模板绑定」断言。两条都留：
+    // 绑定断言守「computed 确实接到了模板上」，switch 断言守「grok 分支还在」。
+    expect(source).toContain(':placeholder="apiKeyValuePlaceholder"')
     expect(source).toContain("case 'grok':")
     expect(source).toContain("return 'xai-...'")
   })

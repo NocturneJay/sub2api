@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 
 // 上游 v0.1.178 这个用例断言 GroupsView 里存在 compositeRoutePlatformOptions
 // （一个"按平台选路由目标"的下拉，含 Kimi / Zhipu GLM / DeepSeek）。
@@ -35,5 +36,14 @@ describe('GroupsView Composite route options', () => {
     // 反向断言：上游那个按平台选的 computed 不得被同步回来——它与
     // 「必须委托到具体目标分组」相冲突，且会变成无人引用的死代码。
     expect(source).not.toContain('const compositeRoutePlatformOptions')
+  })
+
+  // 上游 v0.1.179 把这个用例整体换成了对共享平台目录的断言。那条断言与
+  // aicat 的 UI 形状无关（目录是筛选器/表单共用的），保留下来仍有价值：
+  // 它守的是「CN 三家在共享目录里算具体平台」，而具体平台正是可作为委托目标的前提。
+  it('keeps Kimi, Zhipu GLM, and DeepSeek in the shared concrete-platform catalog', () => {
+    expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(
+      expect.arrayContaining(['kimi', 'zhipu', 'deepseek'])
+    )
   })
 })
