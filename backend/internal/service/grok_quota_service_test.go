@@ -715,10 +715,32 @@ func TestGrokQuotaServiceProbeUsageReturnsRateLimitedSnapshot(t *testing.T) {
 	require.Zero(t, repo.tempUnschedCalls)
 }
 
+// ⚠️ QueryQuota 成功后会 fire-and-forget 一个 scheduleGrokObservedModelsSync
+// （grok_observed_models.go:34），对 Grok OAuth 账号在后台再打一次
+// GET /v1/models —— 也走同一个 httpUpstream。于是「断言上游请求条数」的用例
+// 就变成了和后台 goroutine 抢时间：
+//   - 隔离跑 / 机器空闲 → goroutine 还没跑完就 snapshot()，看到 3 条，绿；
+//   - 整包并行跑 / CI 容器负载高 → goroutine 先跑完，看到 4 条，红。
+//
+// 2026-08-20 同步 v0.1.179 时在 Linux CI 上撞到（本地 Windows 整包绿），
+// 表现为 TestGrokQuotaServiceQueryQuotaFreeFallsBackToGrok45
+// "should have 3 item(s), but has 4"。被测生产代码没问题——异步预热本来就是
+// 设计意图；是用例把一个异步系统当同步快照断言了。
+//
+// 该调度用**进程级**的 grokObservedModelsFlight（sync.Map）做去重：已存在条目
+// 时直接 return。因此这里显式占位 + t.Cleanup 还原，把后台请求钉死为不发生，
+// 用例就与调度时序无关了。占位必须在 QueryQuota 之前完成。
+func blockGrokObservedModelsSync(t *testing.T, accountID int64) {
+	t.Helper()
+	grokObservedModelsFlight.Store(accountID, struct{}{})
+	t.Cleanup(func() { grokObservedModelsFlight.Delete(accountID) })
+}
+
 func TestGrokQuotaServiceQueryQuotaFreeFallsBackToGrok45(t *testing.T) {
 	t.Parallel()
 
 	account := healthyGrokQuotaOAuthAccount(51)
+	blockGrokObservedModelsSync(t, account.ID)
 	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
 		accountsByID: map[int64]*Account{account.ID: account},
 	}}
@@ -764,6 +786,7 @@ func TestGrokQuotaServiceQueryQuotaPaidBillingSkipsActiveProbe(t *testing.T) {
 	t.Parallel()
 
 	account := healthyGrokQuotaOAuthAccount(52)
+	blockGrokObservedModelsSync(t, account.ID)
 	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
 		accountsByID: map[int64]*Account{account.ID: account},
 	}}
@@ -792,6 +815,7 @@ func TestGrokQuotaServiceQueryQuotaCustomPaidMonthlyLimitSkipsActiveProbe(t *tes
 	t.Parallel()
 
 	account := healthyGrokQuotaOAuthAccount(57)
+	blockGrokObservedModelsSync(t, account.ID)
 	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
 		accountsByID: map[int64]*Account{account.ID: account},
 	}}
