@@ -177,9 +177,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	jsonKeepaliveStarted := false
 	defer func() { stopJSONKeepalive() }()
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
-	reportScheduleResult := func(account *service.Account, success bool, firstTokenMs *int) {
+	// aicat：保留 Gemini 平台不上报的门（Gemini 图片账号不在 OpenAI 调度器里），
+	// 以及 schedulingModel（渠道映射后的调度名，上游用的 requestModel 不含渠道映射）；
+	// 模型解析与健康观察（observedErr）采上游 v0.1.182 的新签名。
+	reportScheduleResult := func(account *service.Account, result *service.OpenAIForwardResult, success bool, firstTokenMs *int, observedErr ...error) {
 		if imagePlatform != service.PlatformGemini && account != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(schedulingModel), success, firstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, schedulingModel, false, result), success, firstTokenMs, observedErr...)
 		}
 	}
 
@@ -343,7 +346,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
-					reportScheduleResult(account, !retryableServerError, nil)
+					if retryableServerError {
+						reportScheduleResult(account, result, false, nil, err)
+					} else {
+						reportScheduleResult(account, result, true, nil)
+					}
 					logEvent := "openai.images.upstream_user_error"
 					if retryableServerError {
 						logEvent = "openai.images.upstream_server_error_after_flush"
@@ -359,7 +366,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					reportScheduleResult(account, false, nil)
+					reportScheduleResult(account, result, false, nil, err)
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
@@ -376,19 +383,21 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						return
 					}
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
+						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
+						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
+							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
 							reqLog.Warn("openai.images.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
 								zap.Int("retry_limit", retryLimit),
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+								zap.Duration("retry_delay", retryDelay),
 							)
 							select {
 							case <-requestCtx.Done():
 								return
-							case <-time.After(sameAccountRetryDelay):
+							case <-time.After(retryDelay):
 							}
 							continue
 						}
@@ -415,7 +424,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					)
 					continue
 				}
-				reportScheduleResult(account, false, nil)
+				reportScheduleResult(account, result, false, nil, err)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -440,9 +449,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			reportScheduleResult(account, true, result.FirstTokenMs)
+			reportScheduleResult(account, result, true, result.FirstTokenMs)
 		} else {
-			reportScheduleResult(account, true, nil)
+			reportScheduleResult(account, result, true, nil)
 		}
 
 		userAgent := c.GetHeader("User-Agent")

@@ -51,11 +51,11 @@ func TestCompositeTargetPlatformAllowedRejectsUnroutedKnownModel(t *testing.T) {
 func TestOpenAICompatibleTextTargetRejectsUnroutedCompositeProviders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// 模型表取自上游 v0.1.178（覆盖 grok + CN 三家）；但断言方向与上游相反：
-	// 上游那版 TestOpenAICompatibleTextTargetAllowsCompositeProviders 断言这些模型
-	// 会被放行并「解析出」平台，靠的正是 aicat 刻意删除的 DetectModelPlatform 猜名兜底。
-	// aicat 口径：复合分组未配置路由 = fail closed，既不放行也不解析出平台。
-	models := []string{"grok-4.3", "kimi-k2-thinking", "glm-5.2", "deepseek-v3.2"}
+	// 模型表取自上游 v0.1.178（覆盖 grok + CN 三家）+ v0.1.182 新增的 Kimi Code k3；
+	// 但断言方向与上游相反：上游那版 TestOpenAICompatibleTextTargetAllowsCompositeProviders
+	// 断言这些模型会被放行并「解析出」平台，靠的正是 aicat 刻意删除的 DetectModelPlatform
+	// 猜名兜底。aicat 口径：复合分组未配置路由 = fail closed，既不放行也不解析出平台。
+	models := []string{"grok-4.3", "kimi-k2-thinking", "k3", "glm-5.2", "deepseek-v3.2"}
 	for _, path := range []string{"/v1/messages", "/v1/chat/completions", "/v1/responses", "/v1/responses/input_tokens", "/v1/messages/count_tokens"} {
 		for _, model := range models {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())

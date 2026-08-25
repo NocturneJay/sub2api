@@ -15,14 +15,8 @@ import (
 //   - payg 账号不经过额度探测（走余额路径，本测试不放 payg 账号避免真实网络）；
 //   - 非激活账号完全跳过。
 
-// ⚠️ runOnce 的 coding 额度探测是**并发**执行的（cn_provider_balance_check_service.go
-// 里 sem := make(chan struct{}, cnQuotaProbeConcurrency) + 每个目标一个 goroutine），
-// 所以这个 fake 必须自带锁。上游原版直接 `f.probed = append(...)`，多个 goroutine
-// 无同步地 append 同一个 slice —— 是数据竞争，表现为**丢失写入 + 顺序不定**：
-// 隔离 -count=1 常常侥幸通过，-count=5 或 CI 容器里（负载更高）就会红，
-// 报 "extra elements in list A: 2"，即某个账号的探测记录被并发覆盖掉了。
-// 这是上游用例自身的缺陷（文件与上游逐字一致），不是本仓库合并引入的；
-// 被测生产代码没有问题，只是 fake 不是线程安全的。
+// fakeCNQuotaProber 需要并发安全：runOnce 以 cnQuotaProbeConcurrency 并发调用 QueryUsage。
+// （aicat 011745255 先于上游修过同一竞态，v0.1.182 起上游自带锁，两边收敛一致。）
 type fakeCNQuotaProber struct {
 	mu     sync.Mutex
 	probed []int64
@@ -30,8 +24,8 @@ type fakeCNQuotaProber struct {
 
 func (f *fakeCNQuotaProber) QueryUsage(ctx context.Context, accountID int64) (*CNProviderQuotaProbeResult, error) {
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.probed = append(f.probed, accountID)
-	f.mu.Unlock()
 	return &CNProviderQuotaProbeResult{Success: true, Persisted: true}, nil
 }
 
