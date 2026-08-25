@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -612,7 +611,7 @@ func TestLogOpsStreamError_RecordsInBandConcurrencyLimit(t *testing.T) {
 		"Concurrency limit exceeded for account, please retry later", http.StatusTooManyRequests)
 
 	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	logOpsStreamError(c, ops, http.StatusOK, time.Now())
+	logOpsStreamError(c, ops, http.StatusOK)
 
 	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
 	require.Equal(t, int64(1), OpsErrorLogQueueLength())
@@ -647,7 +646,7 @@ func TestLogOpsStreamError_UpstreamFailureCountsTowardsSLA(t *testing.T) {
 	)
 
 	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	logOpsStreamError(c, ops, http.StatusOK, time.Now())
+	logOpsStreamError(c, ops, http.StatusOK)
 
 	job := <-opsErrorLogQueue
 	require.NotNil(t, job.entry)
@@ -669,7 +668,7 @@ func TestLogOpsStreamError_NoopWhenNotMarked(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 
 	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	logOpsStreamError(c, ops, http.StatusOK, time.Now())
+	logOpsStreamError(c, ops, http.StatusOK)
 
 	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
 }
@@ -686,7 +685,7 @@ func TestLogOpsStreamError_SkipWhenPassthroughSkipMonitoring(t *testing.T) {
 	c.Set(service.OpsSkipPassthroughKey, true)
 
 	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	logOpsStreamError(c, ops, http.StatusOK, time.Now())
+	logOpsStreamError(c, ops, http.StatusOK)
 
 	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
 }

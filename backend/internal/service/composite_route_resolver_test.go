@@ -162,7 +162,11 @@ func TestCompositeRouteResolverRejectsDisabledOrUnroutedModel(t *testing.T) {
 	require.Nil(t, decision.Route)
 }
 
-func TestCompositeRouteResolverDetectsKimiCodeBareModels(t *testing.T) {
+// 上游 v0.1.182 的同名用例断言 Kimi Code 裸模型名（k3 等）被 DetectModelPlatform
+// 兜底解析（require.True(Matched) + Source==CompositeRouteSourceDetector）。
+// aicat 刻意删除了猜名兜底：复合路由必须委托到具体 target_group_id，
+// 未配置路由的模型一律 fail closed（见规约设计冲突第一条）。按 aicat 口径反写。
+func TestCompositeRouteResolverKimiCodeBareModelsFailClosed(t *testing.T) {
 	resolver := NewCompositeRouteResolver(nil)
 
 	for _, model := range []string{"k3", "k3-256k", "kimi-code/k3"} {
@@ -170,10 +174,8 @@ func TestCompositeRouteResolverDetectsKimiCodeBareModels(t *testing.T) {
 			decision, err := resolver.Resolve(context.Background(), 7, model, CompositeRouteEndpointMessages)
 
 			require.NoError(t, err)
-			require.True(t, decision.Matched)
-			require.Equal(t, CompositeRouteSourceDetector, decision.Source)
-			require.Equal(t, PlatformKimi, decision.TargetPlatform)
-			require.Equal(t, model, decision.UpstreamModel)
+			require.False(t, decision.Matched)
+			require.Empty(t, decision.Source)
 		})
 	}
 }

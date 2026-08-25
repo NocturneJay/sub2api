@@ -344,6 +344,10 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 	}
 }
 
+// 上游 v0.1.182（1e1798d90）在路由层为 composite 分组放行了视频生成端点——这部分采纳
+// （请求不再 404）。但上游用例还断言 body 不含 "not supported"，那依赖 DetectModelPlatform
+// 按模型名猜出 grok；aicat 是 fail-closed：未配置路由的模型到达 composite 解析后
+// 收到「配置目标分组路由」的拒绝。此处按 aicat 口径断言两层各自的行为。
 func TestGatewayRoutesCompositeVideoGenerationAllowed(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformComposite)
 
@@ -352,8 +356,10 @@ func TestGatewayRoutesCompositeVideoGenerationAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
+	// 路由层已注册：不是 404（这是上游修复的实质）。
 	require.NotEqual(t, http.StatusNotFound, w.Code)
-	require.NotContains(t, w.Body.String(), "not supported")
+	// 解析层 fail closed：未配置路由的模型被复合分组拒绝，而不是猜平台放行。
+	require.Contains(t, w.Body.String(), "configure an enabled route with a target group")
 }
 
 // aicat 命名保留（上游同位用例叫 ...RequireOpenAITarget）：断言方向是 fail-closed
