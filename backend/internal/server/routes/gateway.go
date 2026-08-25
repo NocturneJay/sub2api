@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -554,6 +555,15 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 		if model != "" {
 			decision, err := resolver.Resolve(c.Request.Context(), apiKey.Group.ID, model, compositeRouteEndpointForPath(c.Request.URL.Path))
 			if err != nil {
+				// 客户端只会看到一句通用 server_error，底层原因（查库失败/连接池/
+				// ctx 取消）不落这条日志就彻底丢了 —— 2026-07/08 的 19 次 500 就是
+				// 因为这里不记日志，事后无法定性。ctx_err 用于区分客户端断连。
+				slog.Warn("composite route resolve failed",
+					"group_id", apiKey.Group.ID,
+					"model", model,
+					"path", c.Request.URL.Path,
+					"ctx_err", c.Request.Context().Err(),
+					"error", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"type": "server_error", "message": "Failed to resolve composite model route"}})
 				c.Abort()
 				return
@@ -645,6 +655,12 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 			if model != "" {
 				decision, err := resolver.Resolve(c.Request.Context(), apiKey.Group.ID, model, service.CompositeRouteEndpointGemini)
 				if err != nil {
+					slog.Warn("composite route resolve failed",
+						"group_id", apiKey.Group.ID,
+						"model", model,
+						"path", c.Request.URL.Path,
+						"ctx_err", c.Request.Context().Err(),
+						"error", err)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"type": "server_error", "message": "Failed to resolve composite model route"}})
 					c.Abort()
 					return
