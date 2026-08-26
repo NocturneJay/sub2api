@@ -28,6 +28,7 @@ const (
 )
 
 var explicitOpenAIHeaderSessionNames = []string{
+	"session-id",
 	"session_id",
 	"conversation_id",
 	openCodeSessionAffinityHeader,
@@ -145,7 +146,7 @@ func (s *OpenAIGatewayService) GenerateExplicitSessionHash(c *gin.Context, body 
 // GenerateSessionHash generates a sticky-session hash for OpenAI requests.
 //
 // Priority:
-//  1. Header: session_id
+//  1. Header: session-id / session_id
 //  2. Header: conversation_id
 //  3. Header: x-session-affinity / x-session-id / x-opencode-session (OpenCode)
 //  4. Header: x-conversation-id (CodeBuddy)
@@ -1207,6 +1208,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 1: Sticky session ============
+	// A healthy sticky account whose bounded wait queue is full may be used as a
+	// one-request capacity spillover in Layer 2. Keep that spillover temporary:
+	// rewriting the durable binding here would make a short burst migrate the
+	// whole conversation to a cache-cold account.
+	stickySpillover := false
 	if sessionHash != "" {
 		accountID := stickyAccountID
 		if accountID > 0 && !isExcluded(accountID) {
@@ -1248,6 +1254,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 								MaxWaiting:     cfg.StickySessionMaxWaiting,
 							})
 						}
+						stickySpillover = true
 					}
 				}
 			}
@@ -1399,8 +1406,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if selectErr != nil {
 					return nil, true, selectErr
 				}
-				// 同上：保留 aicat 可配置 TTL，采纳上游的利润门延迟绑定守卫。
-				if sessionHash != "" && !gatewayProfitControlGateActive(ctx) {
+				// 保留 aicat 可配置 TTL；叠加上游 v0.1.183 的两个守卫：
+				// 利润门延迟绑定 + 容量溢出（spillover）不改写持久绑定。
+				if sessionHash != "" && !stickySpillover && !gatewayProfitControlGateActive(ctx) {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, s.openAIWSSessionStickyTTL())
 				}
 				return selection, true, nil
@@ -1439,8 +1447,8 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if selectErr != nil {
 					return nil, selectErr
 				}
-				// 同上：保留 aicat 可配置 TTL，采纳上游的利润门延迟绑定守卫。
-				if sessionHash != "" && !gatewayProfitControlGateActive(ctx) {
+				// 同上：保留 aicat 可配置 TTL + 上游利润门与 spillover 两个守卫。
+				if sessionHash != "" && !stickySpillover && !gatewayProfitControlGateActive(ctx) {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, s.openAIWSSessionStickyTTL())
 				}
 				return selection, nil
