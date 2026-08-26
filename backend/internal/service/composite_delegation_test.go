@@ -472,3 +472,70 @@ func TestPrepareCompositeRouteTargetRejectsInvalid(t *testing.T) {
 	})
 	require.Error(t, err)
 }
+
+// SelectAccountForTokenCount 必须先解析复合委托（2026-08-25 回归修复，合并审查抓出）：
+// 上游 v0.1.182 新增该入口时直调 selectAccountForModelWithExclusions、跳过了委托解析，
+// 而 handler 传的是 apiKey.GroupID（复合父分组，无账号）——composite 分组的两个
+// token-count 入口（/v1/responses/input_tokens、/v1/messages/count_tokens）会恒报
+// no available accounts。老路径（selectAccountWithSchedulerOnce）都先解析委托，
+// 此处断言选号查询确实落在委托后的子分组上。
+func TestSelectAccountForTokenCountResolvesCompositeDelegation(t *testing.T) {
+	parentID := int64(7)
+	targetGroupID := int64(42)
+	acquiredIDs := make([]int64, 0)
+	repo := &tokenCountDelegationAccountRepo{account: Account{
+		ID: 9001, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true, Concurrency: 1,
+		Credentials: map[string]any{"openai_capabilities": []any{"chat_completions"}},
+	}}
+	svc := &OpenAIGatewayService{
+		accountRepo: repo,
+		cache:       &schedulerTestGatewayCache{},
+		cfg:         &config.Config{},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+			acquiredIDs: &acquiredIDs,
+		}),
+		groupRepo: &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+			targetGroupID: {ID: targetGroupID, Platform: PlatformOpenAI, Status: StatusActive},
+		}},
+	}
+	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+		Matched: true, TargetPlatform: PlatformOpenAI, TargetGroupID: &targetGroupID,
+	})
+
+	account, err := svc.SelectAccountForTokenCount(
+		ctx, &parentID, "", "gpt-5.1", OpenAIEndpointCapabilityChatCompletions, PlatformOpenAI,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(9001), account.ID)
+	require.NotNil(t, repo.queriedGroupID, "account listing was never queried by group")
+	require.Equal(t, targetGroupID, *repo.queriedGroupID,
+		"token-count scheduling must query the delegated sub-group, not the composite parent")
+
+	// 无委托 ctx 时行为不变：仍按调用方传入的分组查询。
+	repo.queriedGroupID = nil
+	account, err = svc.SelectAccountForTokenCount(
+		context.Background(), &parentID, "", "gpt-5.1", OpenAIEndpointCapabilityChatCompletions, PlatformOpenAI,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.NotNil(t, repo.queriedGroupID)
+	require.Equal(t, parentID, *repo.queriedGroupID)
+}
+
+type tokenCountDelegationAccountRepo struct {
+	AccountRepository
+	account        Account
+	queriedGroupID *int64
+}
+
+func (r *tokenCountDelegationAccountRepo) ListSchedulableByGroupIDAndPlatform(_ context.Context, groupID int64, platform string) ([]Account, error) {
+	g := groupID
+	r.queriedGroupID = &g
+	if r.account.Platform != platform {
+		return nil, nil
+	}
+	return []Account{r.account}, nil
+}

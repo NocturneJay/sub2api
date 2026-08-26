@@ -268,6 +268,12 @@ func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.C
 // SelectAccountForTokenCount selects an account for a non-billable token-count
 // request. It applies the normal platform, model, capability, and runtime
 // eligibility checks without acquiring or waiting for a generation slot.
+//
+// aicat（回归修复，2026-08-25 合并审查抓出）：上游把本入口写成直调
+// selectAccountForModelWithExclusions，跳过了复合委托解析——handler 传的是
+// apiKey.GroupID（复合父分组，无账号），composite 分组的两个 token-count 入口
+// 会恒报 no available accounts。老路径（selectAccountWithSchedulerOnce /
+// SelectAccountForModelWithExclusions）都先解析委托，这里必须一致。
 func (s *OpenAIGatewayService) SelectAccountForTokenCount(
 	ctx context.Context,
 	groupID *int64,
@@ -276,6 +282,13 @@ func (s *OpenAIGatewayService) SelectAccountForTokenCount(
 	requiredCapability OpenAIEndpointCapability,
 	platform string,
 ) (*Account, error) {
+	_, delegatedGroupID, err := s.resolveOpenAIDelegatedSchedulingGroup(ctx, platform)
+	if err != nil {
+		return nil, err
+	}
+	if delegatedGroupID != nil {
+		groupID = delegatedGroupID
+	}
 	ctx = WithOpenAIProfitControlSuppressed(ctx)
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
 	return s.selectAccountForModelWithExclusions(
