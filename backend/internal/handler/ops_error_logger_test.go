@@ -368,6 +368,12 @@ func TestOpsErrorLoggerMiddleware_RecordsRecoveredUpstreamTelemetryOutsideFailur
 	require.Equal(t, "upstream", persisted.ErrorPhase)
 	require.Equal(t, "upstream_error", persisted.ErrorType)
 	require.Equal(t, "Recovered upstream error 429: earlier attempt was rate limited", persisted.ErrorMessage)
+	// aicat：救回条目（客户端拿到成功响应）固定 P3 并落库即 resolved——
+	// 上游 v0.1.182 把该逻辑抽成 logOpsRecoveredUpstream 时这个语义丢过一次
+	// （会让约 1,800 条/天的救回记录误升 P1/P2），此处钉死防复发。
+	require.Equal(t, "P3", persisted.Severity)
+	require.True(t, persisted.Resolved)
+	require.NotNil(t, persisted.ResolvedAt)
 	require.NotNil(t, persisted.UpstreamErrorsJSON)
 	persistedEvents, err := service.ParseOpsUpstreamErrors(*persisted.UpstreamErrorsJSON)
 	require.NoError(t, err)

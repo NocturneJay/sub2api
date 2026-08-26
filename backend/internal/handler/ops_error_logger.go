@@ -1342,9 +1342,6 @@ func logOpsRecoveredUpstream(c *gin.Context, ops *service.OpsService, finalStatu
 	entry.ErrorType = "upstream_error"
 	entry.ErrorSource = "upstream_http"
 	entry.ErrorOwner = "provider"
-	// aicat：classifyOpsSeverity 是四参版（453cfc67d 的业务限流 P3 降档）。
-	// 已救回的上游错误不是用户额度问题，isBusinessLimited 恒 false。
-	entry.Severity = classifyOpsSeverity(entry.ErrorType, lastStatus, false, entry.ErrorMessage)
 	entry.IsCountTokens = isCountTokensRequest(c)
 	entry.CreatedAt = time.Now()
 	entry.DurationMs = opsDurationMsFromContext(c)
@@ -1359,6 +1356,24 @@ func logOpsRecoveredUpstream(c *gin.Context, ops *service.OpsService, finalStatu
 		entry.ErrorMessage += ": " + strings.TrimSpace(*entry.UpstreamErrorMessage)
 	}
 	entry.ErrorMessage = truncateString(entry.ErrorMessage, 2048)
+
+	// aicat（回归修复，2026-08-25 合并审查抓出）：请求最终成功（failover 已消化
+	// 上游错误），本条仅作账号健康观测——**固定 P3 并在落库时即标记 resolved**，
+	// 避免混入待处理错误与 P1 告警。上游 v0.1.182 把这段逻辑抽成本函数时，
+	// 该语义随重构丢过一次（约 1,800 条/天的救回记录会误升 P1/P2）。
+	// phase / owner / source / businessLimited 沿用 aicat 既有做法走通用分类器：
+	// error_owner 是排障主键（判上游/平台故障靠它），硬编码 provider 会把
+	// 账号认证类救回错误也归给上游。
+	recoveredPhase, recoveredBusinessLimited, recoveredOwner, recoveredSource := classifyOpsErrorLog(
+		c, entry.ErrorType, entry.ErrorMessage, "", lastStatus,
+	)
+	entry.ErrorPhase = recoveredPhase
+	entry.IsBusinessLimited = recoveredBusinessLimited
+	entry.ErrorOwner = recoveredOwner
+	entry.ErrorSource = recoveredSource
+	entry.Severity = "P3"
+	entry.Resolved = true
+	entry.ResolvedAt = &entry.CreatedAt
 
 	if c.Request != nil {
 		entry.UserAgent = c.GetHeader("User-Agent")
