@@ -84,10 +84,11 @@ func TestMonthlyResetTime_LegacyMidnightAnchor_UsesStartsAt(t *testing.T) {
 		"legacy 午夜锚点应按 StartsAt+30d 计算重置时间，而不是窗口起点+30d")
 }
 
-// 日窗口不受本修正影响：DailyResetTime 保持 #5380 的日历日对齐语义。
-// 基准取配置时区的 0 点（与 subscription_daily_midnight_reset_test.go 同构），
-// 保证断言在任意本地时区下都成立。
-func TestDailyResetTime_UnaffectedByWindowResetAnchor(t *testing.T) {
+// aicat 口径反写：上游同名用例断言「日窗口保持日历日对齐、不受 windowResetAnchor
+// 修正」——那是被规约设计冲突第三条刻意消除的 0 点语义。aicat 的日窗口是 24h
+// 滚动、与周/月同走 automaticWindowStartAt（经 windowResetAnchor 做遗留 0 点锚点
+// 提升），因此**展示必须与实际滚动同锚**：遗留 0 点锚点场景下两者都是 StartsAt+24h。
+func TestDailyResetTime_FollowsWindowResetAnchor(t *testing.T) {
 	base := timezone.StartOfDay(time.Date(2026, 7, 31, 12, 0, 0, 0, timezone.Location()))
 	startsAt := base.Add(13*time.Hour + 37*time.Minute + 6*time.Second)
 	windowStart := base // legacy 锚点：开通日 0 点
@@ -100,8 +101,16 @@ func TestDailyResetTime_UnaffectedByWindowResetAnchor(t *testing.T) {
 
 	got := sub.DailyResetTime()
 	require.NotNil(t, got)
-	assert.True(t, got.Equal(base.AddDate(0, 0, 1)),
-		"日窗口应保持日历日对齐（窗口起点所在日的次日 0 点）")
-	assert.False(t, got.Equal(startsAt.Add(24*time.Hour)),
-		"日窗口不应被 windowResetAnchor 修正成 StartsAt+24h（那是周/月的语义）")
+	assert.True(t, got.Equal(startsAt.Add(24*time.Hour)),
+		"aicat：日窗口 24h 滚动，遗留 0 点锚点经 windowResetAnchor 提升为 StartsAt，展示=实际=StartsAt+24h")
+
+	// 非遗留锚点（正常购买时刻）不受修正影响：展示仍是锚点+24h。
+	normal := &UserSubscription{
+		StartsAt:         startsAt,
+		ExpiresAt:        startsAt.AddDate(0, 0, 30),
+		DailyWindowStart: ptrTime(startsAt.Add(48 * time.Hour)),
+	}
+	gotNormal := normal.DailyResetTime()
+	require.NotNil(t, gotNormal)
+	assert.True(t, gotNormal.Equal(startsAt.Add(72*time.Hour)))
 }

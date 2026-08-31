@@ -469,6 +469,8 @@ func TestBuildCodexModelsManifestForGroupAdvertisesOfficialOpenAIResponsesImageI
 	t.Parallel()
 
 	const groupID int64 = 702
+	// aicat：复合分组的模型平台只能由绑定 target_group_id 的显式路由确定（无猜名兜底）。
+	solTarget := int64(7021)
 	svc := &GatewayService{
 		accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
 			groupID: {{
@@ -477,6 +479,11 @@ func TestBuildCodexModelsManifestForGroupAdvertisesOfficialOpenAIResponsesImageI
 				Type:     AccountTypeOAuth,
 			}},
 		}},
+		compositeResolver: NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{
+			ID: 1, GroupID: groupID, PublicModel: "gpt-5.6-sol", MatchType: CompositeRouteMatchExact,
+			TargetPlatform: PlatformOpenAI, TargetGroupID: &solTarget,
+			Endpoint: CompositeRouteEndpointResponses, Enabled: true,
+		}}}),
 	}
 
 	body, err := svc.BuildCodexModelsManifestForGroup(
@@ -611,9 +618,18 @@ func TestBuildCodexModelsManifestForGroupUsesConservativeProviderImageCapabiliti
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			groupID := int64(710 + i)
+			// aicat：为每个用例配一条绑定目标分组的显式路由（平台取自账号夹具），
+			// 能力判定链路与上游一致，只是平台来源从猜名换成路由。
+			targetID := groupID + 5000
 			svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
 				groupID: tt.accounts,
-			}}}
+			}},
+				compositeResolver: NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{
+					ID: 1, GroupID: groupID, PublicModel: tt.model, MatchType: CompositeRouteMatchExact,
+					TargetPlatform: tt.accounts[0].Platform, TargetGroupID: &targetID,
+					Endpoint: CompositeRouteEndpointResponses, Enabled: true,
+				}}}),
+			}
 			body, err := svc.BuildCodexModelsManifestForGroup(
 				context.Background(),
 				&Group{ID: groupID, Platform: PlatformComposite},
@@ -632,12 +648,15 @@ func TestBuildCodexModelsManifestForGroupUsesExplicitCompositeResponsesRouteMode
 	t.Parallel()
 
 	const groupID int64 = 730
+	// aicat：路由必须绑定 target_group_id（fail-closed），否则 matchCompositeRoute 会跳过。
+	visionTarget := int64(7301)
 	routeRepo := compositeRouteRepoStub{routes: []CompositeModelRoute{{
 		ID:             1,
 		GroupID:        groupID,
 		PublicModel:    "vision-alias",
 		MatchType:      CompositeRouteMatchExact,
 		TargetPlatform: PlatformGrok,
+		TargetGroupID:  &visionTarget,
 		UpstreamModel:  "grok-4.5",
 		Endpoint:       CompositeRouteEndpointResponses,
 		Enabled:        true,

@@ -101,7 +101,7 @@ func (s *gatewayModelsAccountRepoStub) ListByGroup(ctx context.Context, groupID 
 }
 
 // aicat：构造器保留自研形态——测试 handler 必须挂真实的复合路由 resolver
-//（按显式路由枚举，fail-closed），不用上游按平台猜的版本。
+// （按显式路由枚举，fail-closed），不用上游按平台猜的版本。
 func newGatewayModelsHandlerForTest(repo service.AccountRepository, compositeRoutes ...service.CompositeModelRoute) *GatewayHandler {
 	h := &GatewayHandler{
 		gatewayService: service.NewGatewayService(
@@ -229,33 +229,23 @@ func TestGatewayCodexModels_NonOpenAIGroupsUseMappedModels(t *testing.T) {
 func TestGatewayCodexModels_CompositeUsesCompleteEffectiveModelList(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const groupID int64 = 120
+	// aicat：清单来自显式绑定 target_group_id 的路由（fail-closed），
+	// 不再由账号 model_mapping 声明推导。期望结果与上游一致。
+	openaiTarget, grokTarget := int64(1201), int64(1202)
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{
 		byGroup: map[int64][]service.Account{
-			groupID: {
-				{
-					ID:          3,
-					Platform:    service.PlatformOpenAI,
-					Status:      service.StatusActive,
-					Schedulable: true,
-					Credentials: map[string]any{},
-				},
-				{
-					ID:       1,
-					Platform: service.PlatformOpenAI,
-					Credentials: map[string]any{
-						"model_mapping": map[string]any{"gpt-5.5": "gpt-5.5"},
-					},
-				},
-				{
-					ID:       2,
-					Platform: service.PlatformGrok,
-					Credentials: map[string]any{
-						"model_mapping": map[string]any{"grok-4.6": "grok-4.6"},
-					},
-				},
-			},
+			groupID: {{
+				ID:          3,
+				Platform:    service.PlatformOpenAI,
+				Status:      service.StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{},
+			}},
 		},
-	})
+	},
+		service.CompositeModelRoute{ID: 1, GroupID: groupID, PublicModel: "gpt-5.5", MatchType: service.CompositeRouteMatchExact, TargetPlatform: service.PlatformOpenAI, TargetGroupID: &openaiTarget, Endpoint: service.CompositeRouteEndpointAny, Enabled: true, Priority: 10},
+		service.CompositeModelRoute{ID: 2, GroupID: groupID, PublicModel: "grok-4.6", MatchType: service.CompositeRouteMatchExact, TargetPlatform: service.PlatformGrok, TargetGroupID: &grokTarget, Endpoint: service.CompositeRouteEndpointAny, Enabled: true, Priority: 20},
+	)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -535,11 +525,17 @@ func TestGatewayCodexModels_CompositeAnthropicDoesNotAdvertiseAntigravityDefault
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(64)
+	// aicat：无路由的复合分组返回空清单（fail-closed）。改为绑定 anthropic 目标的
+	// 前缀路由：清单只含 anthropic 侧默认模型，antigravity 默认不得渗入——守住
+	// 上游本用例的原始意图。
+	anthTarget := int64(641)
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{
 		byGroup: map[int64][]service.Account{
 			groupID: {{ID: 1, Platform: service.PlatformAnthropic}},
 		},
-	})
+	},
+		service.CompositeModelRoute{ID: 1, GroupID: groupID, PublicModel: "claude", MatchType: service.CompositeRouteMatchPrefix, TargetPlatform: service.PlatformAnthropic, TargetGroupID: &anthTarget, Endpoint: service.CompositeRouteEndpointAny, Enabled: true, Priority: 10},
+	)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -563,11 +559,16 @@ func TestGatewayModels_CompositeAntigravityAdvertisesAntigravityDefaults(t *test
 	gin.SetMode(gin.TestMode)
 
 	groupID := int64(65)
+	// aicat：同上，antigravity 侧经绑定目标分组的前缀路由供给（claude+gemini 两族）。
+	agTarget := int64(651)
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{
 		byGroup: map[int64][]service.Account{
 			groupID: {{ID: 1, Platform: service.PlatformAntigravity}},
 		},
-	})
+	},
+		service.CompositeModelRoute{ID: 1, GroupID: groupID, PublicModel: "claude", MatchType: service.CompositeRouteMatchPrefix, TargetPlatform: service.PlatformAntigravity, TargetGroupID: &agTarget, Endpoint: service.CompositeRouteEndpointAny, Enabled: true, Priority: 10},
+		service.CompositeModelRoute{ID: 2, GroupID: groupID, PublicModel: "gemini", MatchType: service.CompositeRouteMatchPrefix, TargetPlatform: service.PlatformAntigravity, TargetGroupID: &agTarget, Endpoint: service.CompositeRouteEndpointAny, Enabled: true, Priority: 20},
+	)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

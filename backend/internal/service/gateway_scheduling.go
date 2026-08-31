@@ -2569,11 +2569,9 @@ func summarizeSelectionFailureStats(stats selectionFailureStats) string {
 // isModelSupportedByAccountWithContext 根据账户平台检查模型支持（带 context）
 // 对于 Antigravity 平台，会先获取映射后的最终模型名（包括 thinking 后缀）再检查支持
 func (s *GatewayService) isModelSupportedByAccountWithContext(ctx context.Context, account *Account, requestedModel string) bool {
-	if source, ok := CompositeRouteSourceFromContext(ctx); ok && source == CompositeRouteSourceAccount {
-		if publicModel, modelOK := RequestedPublicModelFromContext(ctx); modelOK && !explicitModelMappingClaims(*account, publicModel) {
-			return false
-		}
-	}
+	// aicat：上游 v0.1.184 在此处有一段「source == account_model 时仅精确声明该模型的
+	// 账号可服务」的守卫。aicat 未采纳 account_model 所有权兜底（无此来源的决策），
+	// 该守卫连同 explicitModelMappingClaims 一起随之不存在。
 	if account.Platform == PlatformAntigravity {
 		if strings.TrimSpace(requestedModel) == "" {
 			return true

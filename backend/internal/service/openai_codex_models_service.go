@@ -664,9 +664,15 @@ func grokCodexContextWindow(modelID string) int64 {
 	return configuredCodexGrokContext
 }
 
+// isClaudeCodexModel 仅用于清单显示名归类（不参与路由/计费）。aicat 无
+// DetectModelPlatform（fail-closed，规约设计冲突第一条），这里用本地前缀
+// 判断代替——展示层归类允许确定性的名字判断，但不允许据此放行请求。
 func isClaudeCodexModel(modelID string) bool {
-	platform, detected := DetectModelPlatform(modelID)
-	return detected && platform == PlatformAnthropic
+	normalized := strings.ToLower(strings.TrimSpace(modelID))
+	normalized = strings.TrimPrefix(normalized, "anthropic/")
+	normalized = strings.TrimPrefix(normalized, "claude/")
+	normalized = strings.TrimPrefix(normalized, "anthropic.")
+	return strings.HasPrefix(normalized, "claude-")
 }
 
 func claudeCodexDisplayName(modelID string) string {
@@ -891,11 +897,9 @@ func resolveCodexCatalogMetadataModel(
 			return uniqueCodexMappedModel(accounts, accountPlatform, modelID)
 		}
 
-		detectedPlatform, detected := DetectModelPlatform(modelID)
-		if !detected {
-			return modelID
-		}
-		platform = detectedPlatform
+		// aicat：无 DetectModelPlatform 猜名兜底。账号未显式声明归属时，
+		// 清单映射名保持原样（fail-closed 的展示层等价物）。
+		return modelID
 	}
 	return uniqueCodexMappedModel(accounts, platform, modelID)
 }
@@ -1000,11 +1004,9 @@ func resolveCodexCompositeModelTarget(
 		return platform, modelID, true
 	}
 
-	platform, detected := DetectModelPlatform(modelID)
-	if !detected {
-		return "", "", false
-	}
-	return platform, modelID, true
+	// aicat：无 DetectModelPlatform 猜名兜底——账号未显式声明归属的模型
+	// 一律判「无法确定平台」，调用方按缺省元数据处理（fail closed）。
+	return "", "", false
 }
 
 func codexCompositeRouteMatchesModel(routes []CompositeModelRoute, modelID string) bool {

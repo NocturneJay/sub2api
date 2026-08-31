@@ -30,7 +30,8 @@ func newChannelMonitorUsageLog(isMonitor bool) *service.UsageLog {
 // TestPrepareUsageLogInsert_ChannelMonitorArgWiring 把 is_channel_monitor 钉在
 // arg 表与 arg 切片的同一个位置上。usageLogInsertArgTypes 的注释要求这几个清单
 // 顺序严格一致，加列时任何一处漏改都会让所有列静默错位——那是最难排查的一类故障。
-// is_channel_monitor 排在 session_id 之前，即倒数第三个（created_at 最后）。
+// is_channel_monitor 排在 session_id 之前，即倒数第四个（其后依次是
+// session_id、native_compaction_v2、created_at——v0.1.184 在尾部前插了 compaction 列）。
 func TestPrepareUsageLogInsert_ChannelMonitorArgWiring(t *testing.T) {
 	// 这里**刻意不写死总列数**。原来断言的是 58，上游 v0.1.172 在第 8/9 位插了
 	// upstream_response_model / upstream_model_mismatch 之后就被顶偏，成了合并时
@@ -42,20 +43,20 @@ func TestPrepareUsageLogInsert_ChannelMonitorArgWiring(t *testing.T) {
 	selectColumnCount := len(strings.Split(usageLogSelectColumns, ","))
 	require.Equal(t, selectColumnCount, len(usageLogInsertArgTypes)+1,
 		"arg-type table and usageLogSelectColumns must stay in lockstep (SELECT has the extra id column)")
-	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-3],
+	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-4],
 		"is_channel_monitor arg type must be boolean")
 
 	prepared := prepareUsageLogInsert(newChannelMonitorUsageLog(true))
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes),
 		"prepared args must match the arg-type table length")
 
-	flag, ok := prepared.args[len(prepared.args)-3].(bool)
+	flag, ok := prepared.args[len(prepared.args)-4].(bool)
 	require.True(t, ok, "is_channel_monitor arg should be a bool, got %T",
-		prepared.args[len(prepared.args)-3])
+		prepared.args[len(prepared.args)-4])
 	require.True(t, flag)
 
 	preparedFalse := prepareUsageLogInsert(newChannelMonitorUsageLog(false))
-	flagFalse, ok := preparedFalse.args[len(preparedFalse.args)-3].(bool)
+	flagFalse, ok := preparedFalse.args[len(preparedFalse.args)-4].(bool)
 	require.True(t, ok)
 	require.False(t, flagFalse, "未标记的请求必须写入 false")
 }
