@@ -143,7 +143,24 @@ func (s *UserSubscription) canAutomaticallyResetMonthlyAt(now time.Time) bool {
 	return ok
 }
 
-// automaticWindowStartAt 计算期限对齐滚动窗口的当前起点。
+// windowResetAnchor 返回窗口实际推进所依据的锚点（上游 v0.1.184 把原先内联在
+// automaticWindowStartAt 里的「遗留 0 点锚点提升为 StartsAt」抽成了此函数）。
+// 早期订阅把首个窗口初始化在开通日零点；只有这个初始值是无歧义的，之后出现的
+// 零点锚点可能来自手动重置，必须保持权威。
+// 自动推进与对外展示的重置时间（Daily/Weekly/MonthlyResetTime）必须共用这一修正，
+// 否则仪表盘显示的重置时间会早于窗口实际滚动的时间。
+// aicat 分歧注记：上游注释称「日窗口按日历日对齐、不走这里」——aicat 的日窗口是
+// 24h 滚动、与周/月同走 automaticWindowStartAt，因此**日窗口也经过本修正**，
+// 这正是防 N+1 泄漏的关键（规约设计冲突第三条），别按上游口径把日窗口摘出去。
+func (s *UserSubscription) windowResetAnchor(previous time.Time) time.Time {
+	legacyAnchor := startOfDay(s.StartsAt)
+	if legacyAnchor.Before(s.StartsAt) && previous.Equal(legacyAnchor) {
+		return s.StartsAt
+	}
+	return previous
+}
+
+// automaticWindowStartAt 计算期限对齐滚动窗口的当前窗口起点。
 // 窗口从锚点按整数个 period 步进，且不越过订阅到期时间，避免最后一个不完整
 // 周期重复发放额度（issue #5051）。
 //
@@ -155,14 +172,7 @@ func (s *UserSubscription) automaticWindowStartAt(previous *time.Time, period ti
 		return time.Time{}, false
 	}
 
-	anchor := *previous
-	// Older subscriptions initialized their first windows at midnight on their
-	// start date. Only that initial value is unambiguous; later midnight anchors
-	// may be manual resets and must remain authoritative.
-	legacyAnchor := startOfDay(s.StartsAt)
-	if legacyAnchor.Before(s.StartsAt) && anchor.Equal(legacyAnchor) {
-		anchor = s.StartsAt
-	}
+	anchor := s.windowResetAnchor(*previous)
 	next := anchor.Add(period)
 	if now.Before(next) || !next.Before(s.ExpiresAt) {
 		return time.Time{}, false
@@ -187,7 +197,8 @@ func (s *UserSubscription) DailyResetTime() *time.Time {
 	// aicat 分歧：日窗口 24 小时滚动，下次刷新 = 窗口起点 + 24h（不是次日 0 点）。
 	// 这里必须与 automaticDailyWindowStartAt 同口径——它是用户在面板看到的
 	// 「下次刷新时间」，两边不一致会表现为「显示的时刻到了却没刷新」。
-	t := s.DailyWindowStart.Add(24 * time.Hour)
+	// v0.1.184 起实际推进经 windowResetAnchor 做遗留 0 点锚点修正，展示同锚。
+	t := s.windowResetAnchor(*s.DailyWindowStart).Add(24 * time.Hour)
 	return &t
 }
 
@@ -195,7 +206,7 @@ func (s *UserSubscription) WeeklyResetTime() *time.Time {
 	if s.WeeklyWindowStart == nil {
 		return nil
 	}
-	t := s.WeeklyWindowStart.Add(7 * 24 * time.Hour)
+	t := s.windowResetAnchor(*s.WeeklyWindowStart).Add(7 * 24 * time.Hour)
 	return &t
 }
 
@@ -203,7 +214,7 @@ func (s *UserSubscription) MonthlyResetTime() *time.Time {
 	if s.MonthlyWindowStart == nil {
 		return nil
 	}
-	t := s.MonthlyWindowStart.Add(30 * 24 * time.Hour)
+	t := s.windowResetAnchor(*s.MonthlyWindowStart).Add(30 * 24 * time.Hour)
 	return &t
 }
 

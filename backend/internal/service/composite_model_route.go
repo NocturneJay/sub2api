@@ -23,10 +23,12 @@ const (
 	CompositeRouteEndpointGemini          = "gemini"
 
 	// 只有 explicit 一种来源：复合分组必须命中显式的目标分组路由才算匹配。
-	// 上游还有一个 CompositeRouteSourceDetector = "detector"，用于「路由缺失或被禁用
-	// 时按模型名猜平台」的兜底；aicat 自 455ac9c58 "require target-group routes for
-	// pricing" 起刻意删除了该兜底——猜出来的平台无法确定按哪个分组调度和计费。
-	// 同步上游时不要把它并回来。
+	// 上游还有 CompositeRouteSourceDetector = "detector"（按模型名猜平台）和
+	// v0.1.184 新增的 CompositeRouteSourceAccount = "account_model"（按账号精确映射
+	// 反查平台的所有权兜底，连同 CompositeModelOwnership 类型与 resolver 注入）；
+	// aicat 自 455ac9c58 "require target-group routes for pricing" 起刻意全部不采纳——
+	// 这两类兜底产出的决策都没有 TargetGroupID，无法确定按哪个分组调度和计费。
+	// 同步上游时不要把它们并回来。
 	CompositeRouteSourceExplicit = "route"
 )
 

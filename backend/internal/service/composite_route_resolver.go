@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// aicat：上游 v0.1.184 在这里挂了 modelOwnershipResolver（account_model 所有权兜底，
+// 按账号精确映射反查平台并放行）。刻意不采纳——它产出的决策没有 TargetGroupID，
+// 与探测器同族：无法确定按哪个子分组调度和计费（规约设计冲突第一条）。
 type CompositeRouteResolver struct {
 	repo CompositeModelRouteRepository
 }

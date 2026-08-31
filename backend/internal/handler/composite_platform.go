@@ -82,12 +82,45 @@ func openAIReasoningEffortPolicyForGroup(
 	return requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings, true
 }
 
+func bindRequestedReasoningEffort(c *gin.Context, body []byte, model string) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	effort := service.CanonicalRequestedReasoningEffort(body, model)
+	if effort == nil {
+		return
+	}
+	c.Request = c.Request.WithContext(service.WithRequestedReasoningEffort(c.Request.Context(), *effort))
+}
+
+func stampOpenAIRequestedReasoningEffort(result *service.OpenAIForwardResult, c *gin.Context) {
+	if result == nil || result.RequestedReasoningEffort != nil {
+		return
+	}
+	if c == nil || c.Request == nil {
+		return
+	}
+	result.RequestedReasoningEffort = service.RequestedReasoningEffortFromContext(c.Request.Context())
+}
+
+func stampForwardRequestedReasoningEffort(result *service.ForwardResult, requested *string) {
+	if result == nil || result.RequestedReasoningEffort != nil {
+		return
+	}
+	result.RequestedReasoningEffort = requested
+}
+
+// aicat：上游 v0.1.184 的同名函数是 *ForRequest(c, apiKey) 签名（读复合父分组），
+// 此处保持 *ForGroup 收委托后子分组（规约设计冲突第二条）；上游新增的
+// requested_reasoning_effort 落库链（bindRequestedReasoningEffort 等三个 helper）
+// 原样采纳并在此接入。
 func applyOpenAIReasoningEffortPolicyForGroup(
 	c *gin.Context,
 	apiKey *service.APIKey,
 	requestGroup *service.Group,
 	body []byte,
 ) ([]byte, bool) {
+	bindRequestedReasoningEffort(c, body, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
 	maxEffort, mappings, ok := openAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup)
 	if !ok {
 		return body, false
@@ -104,6 +137,7 @@ func bindOpenAIReasoningEffortPolicyForMessagesRequest(
 	if c == nil || c.Request == nil {
 		return
 	}
+	bindRequestedReasoningEffort(c, body, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
 	// The Messages bridge synthesizes a default OpenAI effort when
 	// output_config.effort is omitted. Bind the group policy only for an
 	// explicit client value so the ceiling does not alter that default.

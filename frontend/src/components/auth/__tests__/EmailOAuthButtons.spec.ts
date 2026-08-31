@@ -37,6 +37,7 @@ describe('EmailOAuthButtons', () => {
       props: {
         githubEnabled: true,
         googleEnabled: false,
+        promoCode: ' PROMO123 ',
       },
       global: {
         stubs: {
@@ -56,6 +57,7 @@ describe('EmailOAuthButtons', () => {
         params: {
           redirect: '/billing?plan=pro',
           aff_code: 'AFF123',
+          promo_code: 'PROMO123',
           affiliate_device_id: 'fp2-test-device'
         }
       }
@@ -70,6 +72,7 @@ describe('EmailOAuthButtons', () => {
       props: {
         githubEnabled: false,
         googleEnabled: true,
+        promoCode: 'PROMO456',
       },
       global: {
         stubs: {
@@ -86,6 +89,7 @@ describe('EmailOAuthButtons', () => {
       params: {
         redirect: '/billing?plan=pro',
         aff_code: 'AFF123',
+        promo_code: 'PROMO456',
         // 同 GitHub 用例：aicat 自研的邀请返利设备标识两个 provider 都要带。
         affiliate_device_id: 'fp2-test-device'
       }
