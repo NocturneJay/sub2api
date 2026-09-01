@@ -100,6 +100,13 @@ func (s *gatewayModelsAccountRepoStub) ListByGroup(ctx context.Context, groupID 
 	return s.ListSchedulableByGroupID(ctx, groupID)
 }
 
+func (s *gatewayModelsAccountRepoStub) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, _ []string, _ bool) ([]service.Account, error) {
+	if groupID == nil {
+		return nil, nil
+	}
+	return s.ListSchedulableByGroupID(ctx, *groupID)
+}
+
 // aicat：构造器保留自研形态——测试 handler 必须挂真实的复合路由 resolver
 // （按显式路由枚举，fail-closed），不用上游按平台猜的版本。
 func newGatewayModelsHandlerForTest(repo service.AccountRepository, compositeRoutes ...service.CompositeModelRoute) *GatewayHandler {
