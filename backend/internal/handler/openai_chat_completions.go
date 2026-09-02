@@ -86,7 +86,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Composite target group is unavailable")
 		return
 	}
-	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup, body); changed {
+	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup, body); err != nil {
+		respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
+		return
+	} else if changed {
 		body = cappedBody
 	}
 	reqStream, ok := parseOpenAICompatibleStream(body)

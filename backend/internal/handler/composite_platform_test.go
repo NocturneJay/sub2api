@@ -149,7 +149,8 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	openAICtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	openAICtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
 	openAICtx.Request = openAICtx.Request.WithContext(service.WithResolvedTargetPlatform(openAICtx.Request.Context(), service.PlatformOpenAI))
-	got, changed := applyOpenAIReasoningEffortPolicyForGroup(openAICtx, apiKey, targetGroup, body)
+	got, changed, err := applyOpenAIReasoningEffortPolicyForGroup(openAICtx, apiKey, targetGroup, body)
+	require.NoError(t, err)
 	require.True(t, changed)
 	require.JSONEq(t, `{"reasoning":{"effort":"medium"}}`, string(got))
 	requested := service.RequestedReasoningEffortFromContext(openAICtx.Request.Context())
@@ -157,7 +158,8 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	require.Equal(t, "max", *requested)
 
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(openAICtx, apiKey, targetGroup, []byte(`{"output_config":{"effort":"max"}}`))
-	bound, changed := service.ApplyOpenAIReasoningEffortPolicyFromContext(openAICtx.Request.Context(), body)
+	bound, changed, err := service.ApplyOpenAIReasoningEffortPolicyFromContext(openAICtx.Request.Context(), body)
+	require.NoError(t, err)
 	require.True(t, changed)
 	require.JSONEq(t, `{"reasoning":{"effort":"medium"}}`, string(bound))
 
@@ -167,15 +169,39 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	omittedCtx.Request = httptest.NewRequest("POST", "/v1/messages", nil)
 	omittedCtx.Request = omittedCtx.Request.WithContext(service.WithResolvedTargetPlatform(omittedCtx.Request.Context(), service.PlatformOpenAI))
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(omittedCtx, apiKey, targetGroup, []byte(`{"model":"gpt-5"}`))
-	omitted, changed := service.ApplyOpenAIReasoningEffortPolicyFromContext(omittedCtx.Request.Context(), body)
+	omitted, changed, err := service.ApplyOpenAIReasoningEffortPolicyFromContext(omittedCtx.Request.Context(), body)
+	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, body, omitted)
+
+	// v0.2.0 超限动作同样取子分组：子分组配 deny，映射后仍超上限 → 拒绝。
+	denyTarget := *targetGroup
+	denyTarget.MaxReasoningEffortOverLimit = service.ReasoningEffortOverLimitDeny
+	denyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	denyCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	denyCtx.Request = denyCtx.Request.WithContext(service.WithResolvedTargetPlatform(denyCtx.Request.Context(), service.PlatformOpenAI))
+	_, _, err = applyOpenAIReasoningEffortPolicyForGroup(denyCtx, apiKey, &denyTarget, body)
+	require.Error(t, err)
+	var overLimit *service.ReasoningEffortOverLimitError
+	require.ErrorAs(t, err, &overLimit)
+
+	// 只有父分组配了 deny、子分组没配 —— 父分组的 deny 必须**不**生效。
+	denyParent := *parentGroup
+	denyParent.MaxReasoningEffortOverLimit = service.ReasoningEffortOverLimitDeny
+	denyParentCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	denyParentCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	denyParentCtx.Request = denyParentCtx.Request.WithContext(service.WithResolvedTargetPlatform(denyParentCtx.Request.Context(), service.PlatformOpenAI))
+	got, changed, err = applyOpenAIReasoningEffortPolicyForGroup(denyParentCtx, &service.APIKey{Group: &denyParent}, &service.Group{Platform: service.PlatformOpenAI}, body)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, body, got)
 
 	// 委托到非 OpenAI 子分组时不生效。
 	grokCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	grokCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
 	grokCtx.Request = grokCtx.Request.WithContext(service.WithResolvedTargetPlatform(grokCtx.Request.Context(), service.PlatformGrok))
-	got, changed = applyOpenAIReasoningEffortPolicyForGroup(grokCtx, apiKey, &service.Group{Platform: service.PlatformGrok}, body)
+	got, changed, err = applyOpenAIReasoningEffortPolicyForGroup(grokCtx, apiKey, &service.Group{Platform: service.PlatformGrok}, body)
+	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, body, got)
 
@@ -184,7 +210,8 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	parentOnlyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	parentOnlyCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
 	parentOnlyCtx.Request = parentOnlyCtx.Request.WithContext(service.WithResolvedTargetPlatform(parentOnlyCtx.Request.Context(), service.PlatformOpenAI))
-	got, changed = applyOpenAIReasoningEffortPolicyForGroup(parentOnlyCtx, apiKey, &service.Group{Platform: service.PlatformOpenAI}, body)
+	got, changed, err = applyOpenAIReasoningEffortPolicyForGroup(parentOnlyCtx, apiKey, &service.Group{Platform: service.PlatformOpenAI}, body)
+	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, body, got)
 }

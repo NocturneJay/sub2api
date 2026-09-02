@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -50,7 +51,7 @@ func effectiveAPIKeyPlatform(c *gin.Context, apiKey *service.APIKey) string {
 	return apiKey.Group.Platform
 }
 
-// openAIReasoningEffortPolicyForGroup 取本次请求生效的推理强度上限与映射。
+// openAIReasoningEffortPolicyForGroup 取本次请求生效的推理强度上限、映射与超限动作。
 //
 // **与上游的差异是设计冲突，同步时勿改回。** 上游这三个函数读的是
 // `apiKey.Group`，即复合分组的**父分组**；aicat 自 `38a96eaa6`「复合路由委托
@@ -58,6 +59,7 @@ func effectiveAPIKeyPlatform(c *gin.Context, apiKey *service.APIKey) string {
 // 走，推理上限同理：一个可以横跨 OpenAI / Anthropic / Grok 子分组的父分组，
 // 挂一个 OpenAI 专用的推理上限没有意义，而子分组才是真正提供算力的那一层。
 // 这与「利润管控闸门必须装在委托解析之后」是同一条原则。
+// 上游 v0.2.0 新增的超限动作（downgrade/deny）同样取子分组的值。
 //
 // 因此这里改为接收**已解析的** requestGroup（调用方用
 // `resolveCompositeRequestGroup` 得到，并自行处理解析失败）。非复合分组下两者
@@ -66,20 +68,20 @@ func openAIReasoningEffortPolicyForGroup(
 	c *gin.Context,
 	apiKey *service.APIKey,
 	requestGroup *service.Group,
-) (string, []service.ReasoningEffortMapping, bool) {
+) (string, []service.ReasoningEffortMapping, string, bool) {
 	if apiKey == nil || apiKey.Group == nil {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	if effectiveAPIKeyPlatform(c, apiKey) != service.PlatformOpenAI {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	if requestGroup == nil || requestGroup.Platform != service.PlatformOpenAI {
-		return "", nil, false
+		return "", nil, "", false
 	}
-	return requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings, true
+	return requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings, requestGroup.MaxReasoningEffortOverLimit, true
 }
 
 func bindRequestedReasoningEffort(c *gin.Context, body []byte, model string) {
@@ -110,22 +112,29 @@ func stampForwardRequestedReasoningEffort(result *service.ForwardResult, request
 	result.RequestedReasoningEffort = requested
 }
 
-// aicat：上游 v0.1.184 的同名函数是 *ForRequest(c, apiKey) 签名（读复合父分组），
+// aicat：上游的同名函数是 *ForRequest(c, apiKey) 签名（读复合父分组），
 // 此处保持 *ForGroup 收委托后子分组（规约设计冲突第二条）；上游新增的
-// requested_reasoning_effort 落库链（bindRequestedReasoningEffort 等三个 helper）
-// 原样采纳并在此接入。
+// requested_reasoning_effort 落库链与 v0.2.0 的超限动作 / 按模型映射原样采纳。
 func applyOpenAIReasoningEffortPolicyForGroup(
 	c *gin.Context,
 	apiKey *service.APIKey,
 	requestGroup *service.Group,
 	body []byte,
-) ([]byte, bool) {
+) ([]byte, bool, error) {
 	bindRequestedReasoningEffort(c, body, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
-	maxEffort, mappings, ok := openAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup)
+	maxEffort, mappings, overLimit, ok := openAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup)
 	if !ok {
-		return body, false
+		return body, false, nil
 	}
-	return service.ApplyOpenAIReasoningEffortPolicy(body, maxEffort, mappings)
+	return service.ApplyOpenAIReasoningEffortPolicy(body, maxEffort, mappings, overLimit)
+}
+
+func respondOpenAIReasoningEffortPolicyError(c *gin.Context, err error, write func(*gin.Context, int, string, string)) {
+	if c == nil || err == nil || write == nil {
+		return
+	}
+	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
+	write(c, http.StatusForbidden, "permission_error", err.Error())
 }
 
 func bindOpenAIReasoningEffortPolicyForMessagesRequest(
@@ -145,9 +154,9 @@ func bindOpenAIReasoningEffortPolicyForMessagesRequest(
 	if !effort.Exists() || effort.Type != gjson.String || strings.TrimSpace(effort.String()) == "" {
 		return
 	}
-	maxEffort, mappings, ok := openAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup)
+	maxEffort, mappings, overLimit, ok := openAIReasoningEffortPolicyForGroup(c, apiKey, requestGroup)
 	if !ok {
 		return
 	}
-	c.Request = c.Request.WithContext(service.WithOpenAIReasoningEffortPolicy(c.Request.Context(), maxEffort, mappings))
+	c.Request = c.Request.WithContext(service.WithOpenAIReasoningEffortPolicy(c.Request.Context(), maxEffort, mappings, overLimit))
 }

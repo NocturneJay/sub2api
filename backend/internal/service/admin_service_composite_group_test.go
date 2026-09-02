@@ -30,10 +30,11 @@ func TestAdminService_CreateCompositeGroupRejectsAccountCopy(t *testing.T) {
 	svc := &adminServiceImpl{groupRepo: groupRepo}
 
 	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
-		Name:               "Composite",
-		Platform:           PlatformComposite,
-		RateMultiplier:     1,
-		MaxReasoningEffort: "medium",
+		Name:                        "Composite",
+		Platform:                    PlatformComposite,
+		RateMultiplier:              1,
+		MaxReasoningEffort:          "medium",
+		MaxReasoningEffortOverLimit: ReasoningEffortOverLimitDeny,
 		ReasoningEffortMappings: []ReasoningEffortMapping{
 			{From: "max", To: "xhigh"},
 		},
@@ -55,12 +56,14 @@ func TestAdminService_UpdateCompositeGroupRejectsAccountCopyBeforeWrite(t *testi
 	}
 	svc := &adminServiceImpl{groupRepo: groupRepo}
 	maxReasoningEffort := "low"
+	maxReasoningEffortOverLimit := ReasoningEffortOverLimitDeny
 	reasoningEffortMappings := []ReasoningEffortMapping{{From: "max", To: "high"}}
 
 	group, err := svc.UpdateGroup(context.Background(), 99, &UpdateGroupInput{
-		MaxReasoningEffort:       &maxReasoningEffort,
-		ReasoningEffortMappings:  &reasoningEffortMappings,
-		CopyAccountsFromGroupIDs: []int64{10, 20},
+		MaxReasoningEffort:          &maxReasoningEffort,
+		MaxReasoningEffortOverLimit: &maxReasoningEffortOverLimit,
+		ReasoningEffortMappings:     &reasoningEffortMappings,
+		CopyAccountsFromGroupIDs:    []int64{10, 20},
 	})
 
 	require.ErrorContains(t, err, "cannot copy accounts")

@@ -30,13 +30,13 @@ type CompositeModelRoute struct {
 	PublicModel string `json:"public_model,omitempty"`
 	// exact or prefix.
 	MatchType string `json:"match_type,omitempty"`
-	// Concrete provider platform. Ignored when target_group_id is set (derived from the sub-group).
+	// Denormalized concrete provider platform derived from target_group_id.
 	TargetPlatform string `json:"target_platform,omitempty"`
-	// Sub-group to delegate to. When set, the request is scheduled from that group's accounts and priced by that group. Mutually exclusive with target_platform. Plain FK field (no edge) so many routes may point at one group.
+	// Required sub-group target for active routes. Requests use that group's accounts and pricing. Plain FK field (no edge) so many routes may point at one group.
 	TargetGroupID *int64 `json:"target_group_id,omitempty"`
 	// Per-route rate multiplier override for group-target routes; nil inherits the sub-group's multiplier.
 	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
-	// Provider model identifier; empty means public_model.
+	// Provider model identifier; empty preserves the requested model (exact routes normalize to public_model).
 	UpstreamModel string `json:"upstream_model,omitempty"`
 	// Endpoint scope such as any, messages, responses, chat_completions.
 	Endpoint string `json:"endpoint,omitempty"`
