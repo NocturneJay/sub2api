@@ -1638,12 +1638,27 @@ func openAIFastPolicySettingsFromContext(ctx context.Context) *OpenAIFastPolicyS
 	return nil
 }
 
-func openAIGroupForcesFast(ctx context.Context, account *Account) bool {
+// openAIGroupForcesFast 判断本次请求是否被分组强制为 Fast（service_tier=priority）。
+//
+// aicat：复合分组下取**委托后的子分组**（路由中间件写入 ctx 的定价分组 ID，经
+// resolveCompositeDelegatedGroup 二次校验），与免费 Fast 计费、推理强度上限、
+// 利润闸门同一原则——父分组只是路由壳，且这四者必须由同一个分组决定，否则会
+// 出现「父分组强制 Fast、子分组按标准价计费」的错配。上游原文只读 ctx 里的
+// 分组（复合请求下是父分组）；无委托时退回该口径，与上游等价。
+func (s *OpenAIGatewayService) openAIGroupForcesFast(ctx context.Context, account *Account) bool {
 	if ctx == nil || account == nil || account.Platform != PlatformOpenAI {
 		return false
 	}
+	if s != nil && s.groupRepo != nil {
+		if target, _, err := resolveCompositeDelegatedGroup(ctx, s.groupRepo); err == nil && target != nil {
+			return groupSupportsOpenAIFast(target.Platform) && target.ForceOpenAIFast
+		}
+	}
 	group, _ := ctx.Value(ctxkey.Group).(*Group)
-	return IsGroupContextValid(group) && groupSupportsOpenAIFast(group.Platform) && group.ForceOpenAIFast
+	if !IsGroupContextValid(group) || group.Platform == PlatformComposite {
+		return false
+	}
+	return groupSupportsOpenAIFast(group.Platform) && group.ForceOpenAIFast
 }
 
 // applyOpenAIFastPolicyToBody applies the OpenAI fast policy to a raw request
@@ -1665,7 +1680,7 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToBody(ctx context.Context, 
 	if len(body) == 0 {
 		return body, nil
 	}
-	if openAIGroupForcesFast(ctx, account) {
+	if s.openAIGroupForcesFast(ctx, account) {
 		updated, err := sjson.SetBytes(body, "service_tier", OpenAIFastTierPriority)
 		if err != nil {
 			return body, fmt.Errorf("force group service_tier priority on body: %w", err)
@@ -1784,7 +1799,7 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToWSResponseCreate(
 	if frameType != "response.create" {
 		return frame, nil, nil
 	}
-	if openAIGroupForcesFast(ctx, account) {
+	if s.openAIGroupForcesFast(ctx, account) {
 		updated, err := sjson.SetBytes(frame, "service_tier", OpenAIFastTierPriority)
 		if err != nil {
 			return frame, nil, fmt.Errorf("force group service_tier priority in ws frame: %w", err)

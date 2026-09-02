@@ -322,11 +322,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Free Fast changes only the customer charge. Keep priority TotalCost and
 	// service_tier for upstream accounting, but evaluate ActualCost once more at
 	// the Standard tier using the same channel, peak, and long-context policy.
-	if groupBillsOpenAIFastAtStandard(apiKey, billingAccount, serviceTier) {
+	// aicat：免费 Fast 是定价维度的决定，与本函数其余四处定价查表同源，一律用
+	// pricingAPIKey（委托后的子分组）。上游原文传 apiKey（复合父分组）——那样子分组上
+	// 配的免费 Fast 静默失效，父分组上配的又会越过子分组的价卡；非复合分组下二者等价。
+	if groupBillsOpenAIFastAtStandard(pricingAPIKey, billingAccount, serviceTier) {
 		standardCost, standardErr := s.calculateOpenAIRecordUsageCost(
 			ctx,
 			result,
-			apiKey,
+			pricingAPIKey,
 			billingModels,
 			multiplier,
 			imageMultiplier,
