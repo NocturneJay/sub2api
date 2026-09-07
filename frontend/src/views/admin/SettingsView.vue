@@ -7569,6 +7569,100 @@
                 </p>
               </div>
 
+              <!-- 首单双向奖励（首充礼） -->
+              <div class="border-t border-gray-100 pt-6 dark:border-dark-700">
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ t('admin.settings.features.affiliate.firstOrder.title') }}
+                  </h3>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.affiliate.firstOrder.description') }}
+                  </p>
+                </div>
+
+                <div class="mt-4 flex items-center justify-between">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.affiliate.firstOrder.enabled') }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.affiliate.firstOrder.enabledHint') }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.affiliate_first_order_bonus.enabled" />
+                </div>
+
+                <div
+                  v-if="form.affiliate_first_order_bonus.enabled"
+                  class="mt-5 space-y-5"
+                >
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.firstOrder.threshold') }}
+                    </label>
+                    <input
+                      v-model.number="form.affiliate_first_order_bonus.threshold"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.firstOrder.thresholdDesc') }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviteeBonus') }}
+                    </label>
+                    <input
+                      v-model.number="form.affiliate_first_order_bonus.invitee_bonus"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviteeBonusDesc') }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviterBonus') }}
+                    </label>
+                    <input
+                      v-model.number="form.affiliate_first_order_bonus.inviter_bonus"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviterBonusDesc') }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.firstOrder.validDays') }}
+                    </label>
+                    <input
+                      v-model.number="form.affiliate_first_order_bonus.valid_days"
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="3650"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.firstOrder.validDaysDesc') }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <!-- 专属用户管理 -->
               <div class="border-t border-gray-100 pt-6 dark:border-dark-700">
                 <div class="mb-3 flex items-center justify-between">
@@ -9720,6 +9814,13 @@ const form = reactive<SettingsForm>({
   affiliate_rebate_freeze_hours: 0,
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
+  affiliate_first_order_bonus: {
+    enabled: false,
+    threshold: 20,
+    invitee_bonus: 10,
+    inviter_bonus: 10,
+    valid_days: 30,
+  },
   affiliate_admin_recharge_enabled: false,
   default_concurrency: 1,
   default_subscriptions: [],
@@ -11404,6 +11505,18 @@ async function saveSettings() {
       affiliate_rebate_freeze_hours: Math.max(0, Math.min(720, Number(form.affiliate_rebate_freeze_hours) || 0)),
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),
+      // 首单双向奖励：清空数字框时 v-model.number 会给出空串，逗号前先归一为非负数；
+      // valid_days 再取整并封顶 3650（与后端 AffiliateFirstOrderValidDaysMax 一致，0 = 永久有效）。
+      affiliate_first_order_bonus: {
+        enabled: form.affiliate_first_order_bonus.enabled,
+        threshold: Math.max(0, Number(form.affiliate_first_order_bonus.threshold) || 0),
+        invitee_bonus: Math.max(0, Number(form.affiliate_first_order_bonus.invitee_bonus) || 0),
+        inviter_bonus: Math.max(0, Number(form.affiliate_first_order_bonus.inviter_bonus) || 0),
+        valid_days: Math.min(
+          3650,
+          Math.max(0, Math.floor(Number(form.affiliate_first_order_bonus.valid_days) || 0)),
+        ),
+      },
       affiliate_admin_recharge_enabled: form.affiliate_admin_recharge_enabled,
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,

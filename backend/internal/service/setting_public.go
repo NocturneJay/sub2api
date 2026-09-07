@@ -249,6 +249,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
+		SettingKeyAffiliateFirstOrderBonus,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
 	}
@@ -307,6 +308,12 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	if v, err := strconv.ParseFloat(settings[SettingKeyBalanceLowNotifyThreshold], 64); err == nil && v >= 0 {
 		balanceLowNotifyThreshold = v
 	}
+
+	// 首单双向奖励：公开面下发的 enabled 是「affiliate 总开关 && 本功能开关」的与运算结果。
+	// 在这里一次算清，免得每个前端调用点各判一次总开关——漏判就会在没开返利的站点上显示首充礼。
+	affiliateEnabled := settings[SettingKeyAffiliateEnabled] == "true"
+	affiliateFirstOrderBonus := ParseAffiliateFirstOrderBonusConfig(settings[SettingKeyAffiliateFirstOrderBonus])
+	affiliateFirstOrderBonus.Enabled = affiliateEnabled && affiliateFirstOrderBonus.Enabled
 
 	return &PublicSettings{
 		RegistrationEnabled:                 settings[SettingKeyRegistrationEnabled] == "true",
@@ -380,7 +387,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ModelPlazaRequireAuth:   settings[SettingKeyModelPlazaRequireAuth] == "true",
 		PluginManagementEnabled: settings[SettingKeyPluginManagementEnabled] == "true",
 
-		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
+		AffiliateEnabled:         affiliateEnabled,
+		AffiliateFirstOrderBonus: affiliateFirstOrderBonus,
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
 
@@ -665,15 +673,18 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorHideThroughput bool `json:"channel_monitor_hide_throughput"`
 	// ChannelMonitorShowQuota gates the user-facing quota/balance display on
 	// monitors; fail-closed (absent/false = hidden). Admin UI always shows it.
-	ChannelMonitorShowQuota    bool `json:"channel_monitor_show_quota"`
-	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
-	ModelPlazaPublicEnabled    bool `json:"model_plaza_public_enabled"` // aicat 自研：广场免登录可看
-	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
-	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
-	AffiliateEnabled           bool `json:"affiliate_enabled"`
-	RiskControlEnabled         bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+	ChannelMonitorShowQuota  bool `json:"channel_monitor_show_quota"`
+	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	ModelPlazaPublicEnabled  bool `json:"model_plaza_public_enabled"` // aicat 自研：广场免登录可看
+	ModelPlazaEnabled        bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth    bool `json:"model_plaza_require_auth"`
+	PluginManagementEnabled  bool `json:"plugin_management_enabled"`
+	AffiliateEnabled         bool `json:"affiliate_enabled"`
+	// AffiliateFirstOrderBonus 必须与 dto.PublicSettings 同步下发，否则前端刷新首屏
+	// 读到 undefined，首充礼提示要等 /api/v1/settings/public 回来才出现。
+	AffiliateFirstOrderBonus   AffiliateFirstOrderBonusConfig `json:"affiliate_first_order_bonus"`
+	RiskControlEnabled         bool                           `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests bool                           `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -755,6 +766,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
+		AffiliateFirstOrderBonus:             settings.AffiliateFirstOrderBonus,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
 	}, nil

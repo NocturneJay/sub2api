@@ -296,6 +296,9 @@ export default {
     invitationCodeInvalid: '邀请码无效或已被使用',
     invitationCodeValidating: '正在验证邀请码...',
     invitationCodeInvalidCannotRegister: '邀请码无效，请检查后重试',
+    // 首充礼提示：仅在填了邀请码且后台开启该功能时展示（扁平键，与其他 invitationCode* 同层）。
+    affiliateFirstOrderBonusHint: '通过邀请码注册：首单站内充值满 {threshold} 美元，可额外获得 {bonus} 美元余额奖励，注册后 {days} 天内有效。',
+    affiliateFirstOrderBonusHintNoExpiry: '通过邀请码注册：首单站内充值满 {threshold} 美元，可额外获得 {bonus} 美元余额奖励。',
     oauthOrContinue: '或使用其他继续',
     linuxdo: {
       signIn: '使用 Linux.do 登录',

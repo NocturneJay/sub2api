@@ -153,6 +153,13 @@
               :placeholder="t('auth.invitationCodePlaceholder')"
             />
           </div>
+          <p
+            v-if="showAffiliateFirstOrderBonusHint"
+            data-testid="affiliate-first-order-bonus-hint"
+            class="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+          >
+            {{ affiliateFirstOrderBonusHintText }}
+          </p>
         </div>
 
         <!-- Promo Code Input (Optional) -->
@@ -391,6 +398,11 @@ const emailVerifyEnabled = ref<boolean>(false)
 const promoCodeEnabled = ref<boolean>(true)
 const invitationCodeEnabled = ref<boolean>(false)
 const affiliateEnabled = ref<boolean>(false)
+// 首充券（邀请首单双向奖励）：公开设置里是可选对象，旧缓存没有它，读取一律可选链 + 默认。
+const affiliateFirstOrderBonusEnabled = ref<boolean>(false)
+const affiliateFirstOrderBonusThreshold = ref<number>(0)
+const affiliateFirstOrderBonusInviteeBonus = ref<number>(0)
+const affiliateFirstOrderBonusValidDays = ref<number>(0)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const tencentCaptchaEnabled = ref<boolean>(false)
@@ -500,6 +512,28 @@ const registrationActionDisabled = computed(
   () => isLoading.value || !settingsLoaded.value || agreementGateActive.value
 )
 
+// 只有真的填了邀请码才提示首充礼：没填邀请码的注册拿不到券，提前承诺是误导。
+// invitee_bonus=0 也不提：那是管理端合法配置（0 = 不给被邀请人发），
+// 再提示就成了「送 0$」——奖励只给邀请人的场景不该在注册页拉被邀请人。
+const showAffiliateFirstOrderBonusHint = computed(
+  () => affiliateEnabled.value
+    && affiliateFirstOrderBonusEnabled.value
+    && affiliateFirstOrderBonusInviteeBonus.value > 0
+    && formData.aff_code.trim().length > 0
+)
+
+// valid_days=0 表示不过期，此时换一条不带天数的文案，避免出现「0 天内有效」。
+const affiliateFirstOrderBonusHintText = computed(() => {
+  const params = {
+    threshold: affiliateFirstOrderBonusThreshold.value,
+    bonus: affiliateFirstOrderBonusInviteeBonus.value,
+    days: affiliateFirstOrderBonusValidDays.value
+  }
+  return affiliateFirstOrderBonusValidDays.value > 0
+    ? t('auth.affiliateFirstOrderBonusHint', params)
+    : t('auth.affiliateFirstOrderBonusHintNoExpiry', params)
+})
+
 watch(validationToastMessage, (value, previousValue) => {
   if (value && value !== previousValue) {
     appStore.showError(value)
@@ -526,6 +560,11 @@ onMounted(async () => {
     promoCodeEnabled.value = settings.promo_code_enabled
     invitationCodeEnabled.value = settings.invitation_code_enabled
     affiliateEnabled.value = settings.affiliate_enabled
+    const firstOrderBonus = settings.affiliate_first_order_bonus
+    affiliateFirstOrderBonusEnabled.value = firstOrderBonus?.enabled === true
+    affiliateFirstOrderBonusThreshold.value = firstOrderBonus?.threshold ?? 0
+    affiliateFirstOrderBonusInviteeBonus.value = firstOrderBonus?.invitee_bonus ?? 0
+    affiliateFirstOrderBonusValidDays.value = firstOrderBonus?.valid_days ?? 0
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true

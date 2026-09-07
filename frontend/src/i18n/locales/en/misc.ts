@@ -296,6 +296,11 @@ export default {
     fee: 'Fee',
     actualPay: 'Actual Payment',
     createOrder: 'Confirm Payment',
+    // First-order bonus. Amounts are formatted by the page in the selected currency and passed in as params.
+    firstOrderBonus: {
+      qualifies: 'First-order bonus: this order earns an extra {bonus} in balance',
+      belowThreshold: 'First-order bonus: this order must reach {threshold} to earn {bonus}; below that the voucher is voided for good'
+    },
     methods: {
       easypay: 'EasyPay',
       alipay: 'Alipay',

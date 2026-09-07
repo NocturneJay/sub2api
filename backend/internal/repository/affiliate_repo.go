@@ -142,6 +142,13 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 }
 
 func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
+	// 常规返利：kind 写 NULL（历史行也是 NULL），只有首单奖励才带 kind。
+	return r.accrueQuota(ctx, inviterID, inviteeUserID, amount, freezeHours, sourceOrderID, nil)
+}
+
+// accrueQuota 是 AccrueQuota 的内部实现，多一个 kind 参数供首单奖励复用。
+// 公开签名保持不变，调用方与桩都不用跟着改。
+func (r *affiliateRepository) accrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64, kind *string) (bool, error) {
 	if amount <= 0 {
 		return false, nil
 	}
@@ -167,15 +174,16 @@ func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, invite
 
 		if freezeHours > 0 {
 			if _, err = txClient.ExecContext(txCtx, `
-INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, frozen_until, created_at, updated_at)
-VALUES ($1, 'accrue', $2, $3, $4, NOW() + make_interval(hours => $5), NOW(), NOW())`,
-				inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID), freezeHours); err != nil {
+INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, kind, frozen_until, created_at, updated_at)
+VALUES ($1, 'accrue', $2, $3, $4, $5, NOW() + make_interval(hours => $6), NOW(), NOW())`,
+				inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID), nullableStringArg(kind), freezeHours); err != nil {
 				return fmt.Errorf("insert affiliate accrue ledger: %w", err)
 			}
 		} else {
 			if _, err = txClient.ExecContext(txCtx, `
-INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, created_at, updated_at)
-VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID)); err != nil {
+INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, kind, created_at, updated_at)
+VALUES ($1, 'accrue', $2, $3, $4, $5, NOW(), NOW())`,
+				inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID), nullableStringArg(kind)); err != nil {
 				return fmt.Errorf("insert affiliate accrue ledger: %w", err)
 			}
 		}
@@ -191,8 +199,10 @@ VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUser
 
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
 	client := clientFromContext(ctx, r.client)
+	// kind 过滤：首单奖励是赠品，不占「单人返利上限」。历史行 kind 为 NULL，
+	// 必须显式放行 NULL（SQL 里 NULL <> 'x' 结果是 NULL 而不是 true）。
 	rows, err := client.QueryContext(ctx,
-		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = 'accrue'`,
+		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = 'accrue' AND (kind IS NULL OR kind <> 'first_order_bonus')`,
 		inviterID, inviteeUserID)
 	if err != nil {
 		return 0, fmt.Errorf("query accrued rebate from invitee: %w", err)

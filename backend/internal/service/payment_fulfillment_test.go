@@ -53,6 +53,15 @@ type paymentFulfillmentAffiliateRepoStub struct {
 	inviteeSummary *AffiliateSummary
 	inviterSummary *AffiliateSummary
 	accrueCalls    []paymentFulfillmentAffiliateAccrueCall
+
+	// 首单双向奖励：既配置桩的行为，也记录调用以便断言。
+	firstOrderRecord      *AffiliateFirstOrderBonusRecord
+	firstOrderHasOther    bool
+	firstOrderApplyResult bool
+	firstOrderApplyErr    error
+	firstOrderLockCalls   []int64
+	firstOrderVoidCalls   []AffiliateFirstOrderBonusVoidInput
+	firstOrderApplyCalls  []AffiliateFirstOrderBonusApplyInput
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(_ context.Context, userID int64) (*AffiliateSummary, error) {
@@ -150,6 +159,44 @@ func (r *paymentFulfillmentAffiliateRepoStub) ListAffiliateTransferRecords(conte
 
 func (r *paymentFulfillmentAffiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*AffiliateUserOverview, error) {
 	panic("unexpected GetAffiliateUserOverview call")
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) GetUserAffiliateReadOnly(_ context.Context, userID int64) (*AffiliateSummary, error) {
+	if r.inviteeSummary != nil && r.inviteeSummary.UserID == userID {
+		cp := *r.inviteeSummary
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) GetFirstOrderBonusRecord(context.Context, int64) (*AffiliateFirstOrderBonusRecord, error) {
+	if r.firstOrderRecord == nil {
+		return nil, nil
+	}
+	cp := *r.firstOrderRecord
+	return &cp, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) HasEarlierOrFulfilledPaymentOrder(context.Context, int64, int64) (bool, error) {
+	return r.firstOrderHasOther, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) LockUserAffiliateForUpdate(_ context.Context, userID int64) error {
+	r.firstOrderLockCalls = append(r.firstOrderLockCalls, userID)
+	return nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) RecordFirstOrderBonusVoid(_ context.Context, in AffiliateFirstOrderBonusVoidInput) (bool, error) {
+	r.firstOrderVoidCalls = append(r.firstOrderVoidCalls, in)
+	return true, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) ApplyFirstOrderBonus(_ context.Context, in AffiliateFirstOrderBonusApplyInput) (bool, error) {
+	r.firstOrderApplyCalls = append(r.firstOrderApplyCalls, in)
+	if r.firstOrderApplyErr != nil {
+		return false, r.firstOrderApplyErr
+	}
+	return r.firstOrderApplyResult, nil
 }
 
 type paymentFulfillmentSettingRepoStub struct {

@@ -103,6 +103,32 @@ func (r *affiliateRebateRepoStub) GetAffiliateUserOverview(context.Context, int6
 	panic("unexpected GetAffiliateUserOverview call")
 }
 
+// 首单双向奖励：本组用例不涉及，返回零值而不是 panic —— 常规返利路径里
+// 只要有一处顺带调到就会把无关用例炸掉，零值不会。
+func (r *affiliateRebateRepoStub) GetUserAffiliateReadOnly(context.Context, int64) (*AffiliateSummary, error) {
+	return nil, nil
+}
+
+func (r *affiliateRebateRepoStub) GetFirstOrderBonusRecord(context.Context, int64) (*AffiliateFirstOrderBonusRecord, error) {
+	return nil, nil
+}
+
+func (r *affiliateRebateRepoStub) HasEarlierOrFulfilledPaymentOrder(context.Context, int64, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *affiliateRebateRepoStub) LockUserAffiliateForUpdate(context.Context, int64) error {
+	return nil
+}
+
+func (r *affiliateRebateRepoStub) RecordFirstOrderBonusVoid(context.Context, AffiliateFirstOrderBonusVoidInput) (bool, error) {
+	return false, nil
+}
+
+func (r *affiliateRebateRepoStub) ApplyFirstOrderBonus(context.Context, AffiliateFirstOrderBonusApplyInput) (bool, error) {
+	return false, nil
+}
+
 type affiliateRebateSettingRepoStub struct {
 	values map[string]string
 }

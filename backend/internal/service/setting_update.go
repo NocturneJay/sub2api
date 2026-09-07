@@ -391,6 +391,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		settings.AffiliateRebatePerInviteeCap = AffiliateRebatePerInviteeCapDefault
 	}
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
+	// 首单双向奖励：写库前先归正（越界值截断而不是报错），保证 settings 表里永远是一段合法 JSON；
+	// 同时把归正结果写回入参，让调用方拿到的 SystemSettings 与库里一致。
+	settings.AffiliateFirstOrderBonus = settings.AffiliateFirstOrderBonus.Normalized()
+	updates[SettingKeyAffiliateFirstOrderBonus] = settings.AffiliateFirstOrderBonus.MarshalSettingValue()
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
+import { formatCurrency } from '@/utils/format'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import en from '@/i18n/locales/en'
@@ -26,6 +27,12 @@ const showWarning = vi.hoisted(() => vi.fn())
 const getCheckoutInfo = vi.hoisted(() => vi.fn())
 const bridgeInvoke = vi.hoisted(() => vi.fn())
 const translate = vi.hoisted(() => vi.fn((key: string) => key))
+// 首充券：公开设置开关 + 状态接口都做成可改的 hoisted 状态，默认「关 + 无券」，
+// 这样除了专门的币种用例外，其余用例的行为与本功能上线前完全一致。
+const getAffiliateFirstOrderBonus = vi.hoisted(() => vi.fn().mockResolvedValue(null))
+const firstOrderBonusPublicSettings = vi.hoisted(
+  () => ({ value: undefined as { affiliate_first_order_bonus?: { enabled: boolean } } | undefined })
+)
 
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
@@ -78,6 +85,7 @@ vi.mock('@/stores', () => ({
     showError,
     showInfo,
     showWarning,
+    cachedPublicSettings: firstOrderBonusPublicSettings.value,
   }),
 }))
 
@@ -85,6 +93,13 @@ vi.mock('@/api/payment', () => ({
   paymentAPI: {
     getCheckoutInfo,
   },
+}))
+
+// 防御性 mock：PaymentView 现在会按公开设置开关去拉首充券状态。
+// 默认 cachedPublicSettings 是 undefined，请求根本不会发出；
+// 这条 mock 同时避免 '@/api/user' 的真实依赖链（apiClient/auth）被拖进测试环境。
+vi.mock('@/api/user', () => ({
+  default: { getAffiliateFirstOrderBonus },
 }))
 
 vi.mock('@/utils/device', () => ({
@@ -739,5 +754,144 @@ describe('PaymentView WeChat JSAPI flow', () => {
     expect(showWarning).toHaveBeenCalledWith('payment.errors.mobilePaymentFallbackToQr')
     expect(showError).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toContain('weixin://wxpay/bizpayurl?pr=fallback-native')
+  })
+})
+
+describe('PaymentView first-order bonus amounts', () => {
+  // 判定口径全是美元（后端比的是 payment_orders.amount，奖励也进美元余额），
+  // 但展示口径按「阈值跟旁边那个价格同币种、奖励永远是美元」分两处：
+  //   - 余额 tab 旁边是「到账 $x」，阈值与奖励都是 USD；
+  //   - 订阅面板旁边是按汇率换算过的套餐价，阈值必须跟着换算，否则两个数字不同币种没法比。
+  // 这几条用例分别钉死这两种口径，以及奖励额任何时候都不许乘汇率。
+  afterEach(() => {
+    firstOrderBonusPublicSettings.value = undefined
+    getAffiliateFirstOrderBonus.mockReset().mockResolvedValue(null)
+  })
+
+  function enableAvailableVoucher(overrides: Record<string, unknown> = {}) {
+    firstOrderBonusPublicSettings.value = { affiliate_first_order_bonus: { enabled: true } }
+    getAffiliateFirstOrderBonus.mockReset().mockResolvedValue({
+      enabled: true,
+      status: 'available',
+      threshold: 20,
+      invitee_bonus: 10,
+      inviter_bonus: 10,
+      valid_days: 30,
+      ...overrides,
+    })
+  }
+
+  it('keeps the balance-tab threshold and bonus in USD under a CNY payment method', async () => {
+    vi.useRealTimers()
+    enableAvailableVoucher()
+    translate.mockClear()
+    routeState.path = '/purchase'
+    routeState.query = {}
+    fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    window.localStorage.clear()
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      // 1 CNY = 0.14 USD，到账额与输入额差一个汇率，币种搞错就会被抓到
+      balance_recharge_multiplier: 0.14,
+      methods: {
+        wxpay: {
+          ...checkoutInfoFixture().data.methods.wxpay,
+          currency: 'CNY',
+        },
+      },
+    }))
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+    await flushPromises()
+
+    // ¥100 × 0.14 = 到账 $14，不足 $20
+    wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 100)
+    await flushPromises()
+    expect(translate).toHaveBeenCalledWith('payment.firstOrderBonus.belowThreshold', {
+      threshold: formatCurrency(20),
+      bonus: formatCurrency(10),
+    })
+    expect(translate).not.toHaveBeenCalledWith('payment.firstOrderBonus.belowThreshold', {
+      threshold: formatPaymentAmount(20, 'CNY'),
+      bonus: formatPaymentAmount(10, 'CNY'),
+    })
+
+    // ¥200 × 0.14 = 到账 $28，达标
+    wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 200)
+    await flushPromises()
+    expect(translate).toHaveBeenCalledWith('payment.firstOrderBonus.qualifies', {
+      bonus: formatCurrency(10),
+    })
+    expect(translate).not.toHaveBeenCalledWith('payment.firstOrderBonus.qualifies', {
+      bonus: formatPaymentAmount(10, 'CNY'),
+    })
+  })
+
+  it('keeps the subscription-panel bonus in USD instead of converting it with the subscription rate', async () => {
+    enableAvailableVoucher()
+    translate.mockClear()
+
+    await mountSubscriptionConfirm({
+      checkout: { subscription_usd_to_cny_rate: 7.15 },
+      method: { currency: 'CNY' },
+      plan: { price: 128 },
+    })
+
+    expect(translate).toHaveBeenCalledWith('payment.firstOrderBonus.qualifies', {
+      bonus: formatCurrency(10),
+    })
+    // 若沿用 formatSelectedSubscriptionPaymentAmount，这里会变成 ¥71.50
+    expect(translate).not.toHaveBeenCalledWith('payment.firstOrderBonus.qualifies', {
+      bonus: formatPaymentAmount(71.5, 'CNY'),
+    })
+  })
+
+  it('converts the subscription-panel threshold with the same rate as the plan price', async () => {
+    enableAvailableVoucher()
+    translate.mockClear()
+
+    // 套餐 $10 < 阈值 $20，走 belowThreshold 那条（只有它带 threshold 参数）
+    await mountSubscriptionConfirm({
+      checkout: { subscription_usd_to_cny_rate: 7.15 },
+      method: { currency: 'CNY' },
+      plan: { price: 10 },
+    })
+
+    // 面板价格显示的是 ¥71.50，阈值必须同样按 7.15 换算成 ¥143.00 才能跟它比大小；
+    // 奖励额则始终是进站内余额的美元数，不跟着换算。
+    expect(translate).toHaveBeenCalledWith('payment.firstOrderBonus.belowThreshold', {
+      threshold: formatPaymentAmount(Math.round(20 * 7.15 * 100) / 100, 'CNY'),
+      bonus: formatCurrency(10),
+    })
+    expect(translate).not.toHaveBeenCalledWith('payment.firstOrderBonus.belowThreshold', {
+      threshold: formatCurrency(20),
+      bonus: formatCurrency(10),
+    })
+  })
+
+  // invitee_bonus=0 是管理端合法配置（0 = 不给被邀请人发），此时被邀请人侧一句都不该提，
+  // 否则页面上写着「可额外获得 $0.00」。
+  it('says nothing on either tab when the invitee bonus is configured to zero', async () => {
+    enableAvailableVoucher({ invitee_bonus: 0 })
+    translate.mockClear()
+
+    await mountSubscriptionConfirm({
+      checkout: { subscription_usd_to_cny_rate: 7.15 },
+      method: { currency: 'CNY' },
+      plan: { price: 128 },
+    })
+
+    const bonusKeys = translate.mock.calls
+      .map((call) => call[0])
+      .filter((key) => typeof key === 'string' && key.startsWith('payment.firstOrderBonus.'))
+    expect(bonusKeys).toEqual([])
   })
 })

@@ -824,13 +824,17 @@ func (s *adminServiceImpl) listAffiliateBalanceHistory(ctx context.Context, user
 		return nil, 0, nil
 	}
 
+	// 两种台账动作都会真正改余额，都要出现在「余额历史」里：
+	// transfer 是用户主动把返利额度转成余额，first_order_bonus 是首单奖励
+	// 直接打进被邀请人余额（这是页面上解释那笔钱从哪来的唯一依据）。
 	rows, err := s.entClient.QueryContext(ctx, `
 SELECT id,
        amount::double precision,
+       action,
        created_at
 FROM user_affiliate_ledger
 WHERE user_id = $1
-  AND action = 'transfer'
+  AND action IN ('transfer', 'first_order_bonus')
 ORDER BY created_at DESC, id DESC
 OFFSET $2
 LIMIT $3`, userID, params.Offset(), params.Limit())
@@ -843,15 +847,22 @@ LIMIT $3`, userID, params.Offset(), params.Limit())
 	for rows.Next() {
 		var id int64
 		var amount float64
+		var action string
 		var createdAt time.Time
-		if err := rows.Scan(&id, &amount, &createdAt); err != nil {
+		if err := rows.Scan(&id, &amount, &action, &createdAt); err != nil {
 			return nil, 0, err
 		}
 		usedBy := userID
 		usedAt := createdAt
+		// Code 前缀区分来源；Type 沿用 RedeemTypeAffiliateBalance，
+		// 免得前端与筛选器为一个新类别再改一遍。
+		code := fmt.Sprintf("AFF-%d", id)
+		if action == AffiliateLedgerKindFirstOrderBonus {
+			code = fmt.Sprintf("AFF-BONUS-%d", id)
+		}
 		codes = append(codes, RedeemCode{
 			ID:        -id,
-			Code:      fmt.Sprintf("AFF-%d", id),
+			Code:      code,
 			Type:      RedeemTypeAffiliateBalance,
 			Value:     amount,
 			Status:    StatusUsed,
@@ -872,11 +883,12 @@ LIMIT $3`, userID, params.Offset(), params.Limit())
 }
 
 func countAffiliateBalanceHistory(ctx context.Context, client *dbent.Client, userID int64) (int64, error) {
+	// 口径必须与 listAffiliateBalanceHistory 的 WHERE 完全一致，否则分页会错。
 	rows, err := client.QueryContext(ctx, `
 SELECT COUNT(*)
 FROM user_affiliate_ledger
 WHERE user_id = $1
-  AND action = 'transfer'`, userID)
+  AND action IN ('transfer', 'first_order_bonus')`, userID)
 	if err != nil {
 		return 0, err
 	}

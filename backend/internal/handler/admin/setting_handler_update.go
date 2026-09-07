@@ -176,13 +176,19 @@ type UpdateSettingsRequest struct {
 	CustomEndpoints             *[]dto.CustomEndpoint `json:"custom_endpoints"`
 
 	// 默认配置
-	DefaultConcurrency                        int                               `json:"default_concurrency"`
-	DefaultBalance                            float64                           `json:"default_balance"`
-	AffiliateRebateRate                       *float64                          `json:"affiliate_rebate_rate"`
-	AffiliateRebateFreezeHours                *int                              `json:"affiliate_rebate_freeze_hours"`
-	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
-	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
-	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
+	DefaultConcurrency           int      `json:"default_concurrency"`
+	DefaultBalance               float64  `json:"default_balance"`
+	AffiliateRebateRate          *float64 `json:"affiliate_rebate_rate"`
+	AffiliateRebateFreezeHours   *int     `json:"affiliate_rebate_freeze_hours"`
+	AffiliateRebateDurationDays  *int     `json:"affiliate_rebate_duration_days"`
+	AffiliateRebatePerInviteeCap *float64 `json:"affiliate_rebate_per_invitee_cap"`
+	AdminRechargeRebateEnabled   *bool    `json:"affiliate_admin_recharge_enabled"`
+
+	// 首单双向奖励整体是一个指针：旧客户端不传这个字段时保留库里的旧值，
+	// 传了就整体覆盖（五个子字段一起给，前端表单本来就是一个对象）。
+	// 前后留空行是为了让 gofmt 把它当成独立对齐段，别把下面 38 行 AuthSource* 全部重排。
+	AffiliateFirstOrderBonus *service.AffiliateFirstOrderBonusConfig `json:"affiliate_first_order_bonus"`
+
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance             *float64                          `json:"auth_source_default_email_balance"`
@@ -630,6 +636,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.AdminRechargeRebateEnabled != nil {
 		adminRechargeRebateEnabled = *req.AdminRechargeRebateEnabled
 	}
+	// 首单双向奖励：缺省保留旧值；写库前归正（越界不报错，直接截断到上限）。
+	affiliateFirstOrderBonus := previousSettings.AffiliateFirstOrderBonus
+	if req.AffiliateFirstOrderBonus != nil {
+		affiliateFirstOrderBonus = *req.AffiliateFirstOrderBonus
+	}
+	affiliateFirstOrderBonus = affiliateFirstOrderBonus.Normalized()
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
 		req.TableDefaultPageSize = previousSettings.TableDefaultPageSize
@@ -1724,6 +1736,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
+		AffiliateFirstOrderBonus:               affiliateFirstOrderBonus,
 		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    req.EnableModelFallback,
@@ -2369,6 +2382,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
+		AffiliateFirstOrderBonus:                               updatedSettings.AffiliateFirstOrderBonus,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,
 		EnableModelFallback:                                    updatedSettings.EnableModelFallback,

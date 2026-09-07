@@ -16,6 +16,7 @@ import type {
   NotifyEmailEntry,
   UserAuthProvider,
   UserAffiliateDetail,
+  AffiliateFirstOrderBonusStatus,
   AffiliateTransferResponse,
   PlatformQuotasResponse,
 } from '@/types'
@@ -190,6 +191,15 @@ export async function transferAffiliateQuota(): Promise<AffiliateTransferRespons
 }
 
 /**
+ * 获取当前用户的「首充券」状态（邀请首单双向奖励）。
+ * 只读接口，调用方一律 try/catch 后降级为不展示：赠品信息不能影响支付/仪表盘主流程。
+ */
+export async function getAffiliateFirstOrderBonus(): Promise<AffiliateFirstOrderBonusStatus> {
+  const { data } = await apiClient.get<AffiliateFirstOrderBonusStatus>('/user/aff/first-order-bonus')
+  return data
+}
+
+/**
  * 获取当前用户的平台限额 + 用量。
  */
 export async function getMyPlatformQuotas(): Promise<PlatformQuotasResponse> {
@@ -212,6 +222,7 @@ export const userAPI = {
   startOAuthBinding,
   getAffiliateDetail,
   transferAffiliateQuota,
+  getAffiliateFirstOrderBonus,
   getMyPlatformQuotas,
 }
 

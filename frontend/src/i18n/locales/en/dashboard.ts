@@ -56,7 +56,16 @@ export default {
     viewUsage: 'View Usage',
     checkDetailedLogs: 'Check detailed usage logs',
     redeemCode: 'Redeem Code',
-    addBalanceWithCode: 'Add balance with a code'
+    addBalanceWithCode: 'Add balance with a code',
+    // First-order bonus card: rendered only while the voucher is still usable (status=available).
+    firstOrderBonus: {
+      title: 'First-Order Bonus',
+      rule: 'Invited-friend perk: make your first on-site payment of {threshold} or more and get an extra {bonus} in balance.',
+      expiresAt: 'Valid until {date}',
+      neverExpires: 'No expiry',
+      belowThresholdHint: 'A first order below the threshold voids the voucher for good, with no replacement.',
+      action: 'Go to Recharge'
+    }
   },
 
   // Groups (shared)
@@ -743,7 +752,8 @@ export default {
       line1: 'Share your affiliate code or invite link with new users.',
       line2: 'When invitees recharge, you receive {rate} of the recharge as rebate quota.',
       line3: 'Transfer rebate quota to balance at any time.',
-      line4: 'Newly earned rebates may have a waiting period before they can be transferred.'
+      line4: 'Newly earned rebates may have a waiting period before they can be transferred.',
+      line5: 'When an invitee makes a first on-site payment of {threshold} or more, they get {inviteeBonus} and you get {inviterBonus}, on top of the standard {rate} rebate. A smaller first order voids the bonus for good.'
     }
   },
 

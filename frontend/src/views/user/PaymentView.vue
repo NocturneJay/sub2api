@@ -53,6 +53,12 @@
                 :max="globalMaxAmount"
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
+              <p v-if="balanceFirstOrderBonusQualifies" class="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                {{ t('payment.firstOrderBonus.qualifies', { bonus: formatCurrency(firstOrderBonusInviteeBonus) }) }}
+              </p>
+              <p v-else-if="balanceFirstOrderBonusBelowThreshold" class="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                {{ t('payment.firstOrderBonus.belowThreshold', { threshold: formatCurrency(firstOrderBonusThreshold), bonus: formatCurrency(firstOrderBonusInviteeBonus) }) }}
+              </p>
             </div>
             <div v-if="enabledMethods.length >= 1" class="card p-6">
               <PaymentMethodSelector
@@ -113,6 +119,12 @@
                   <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
                   <span class="text-sm text-gray-500 dark:text-gray-400">/ {{ planValiditySuffix }}</span>
                 </div>
+                <p v-if="subscriptionFirstOrderBonusQualifies" class="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                  {{ t('payment.firstOrderBonus.qualifies', { bonus: formatCurrency(firstOrderBonusInviteeBonus) }) }}
+                </p>
+                <p v-else-if="subscriptionFirstOrderBonusBelowThreshold" class="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                  {{ t('payment.firstOrderBonus.belowThreshold', { threshold: formatSelectedSubscriptionPaymentAmount(firstOrderBonusThreshold), bonus: formatCurrency(firstOrderBonusInviteeBonus) }) }}
+                </p>
                 <!-- Description -->
                 <p v-if="selectedPlan.description" class="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
                   {{ selectedPlan.description }}
@@ -289,10 +301,13 @@ import { usePaymentStore } from '@/stores/payment'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
+import userAPI from '@/api/user'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
+import { formatCurrency } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
 import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { AffiliateFirstOrderBonusStatus } from '@/types/affiliateFirstOrderBonus'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -352,6 +367,8 @@ const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
+// 首充券状态：null = 未开启 / 拉取失败 / 无券，一律不渲染任何提示。
+const firstOrderBonus = ref<AffiliateFirstOrderBonusStatus | null>(null)
 const previewImage = ref('')
 
 const paymentPhase = ref<'select' | 'paying'>('select')
@@ -551,6 +568,52 @@ const subscriptionUsdToCnyRate = computed(() => {
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
 const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+
+// —— 首充券（邀请首单双向奖励）——
+// 判定口径全是美元：后端比的是 payment_orders.amount（余额单 = 到账额 creditedAmount，
+// 订阅单 = plan.price），奖励也是按美元进站内余额。
+// 展示口径分两处，规则是「阈值跟它旁边那个价格同币种，奖励永远是美元」：
+//   - 余额 tab：旁边显示的就是「到账 $x」，阈值与奖励都用 formatCurrency（USD）；
+//   - 订阅面板：旁边显示的是按 CNY 汇率换算过的套餐价，阈值必须走
+//     formatSelectedSubscriptionPaymentAmount 走同一条换算路径，否则用户看到
+//     「¥128 的套餐需满 $20」两个币种并排，根本没法比大小。
+// 奖励额（invitee_bonus）无论哪个 tab 都保持 formatCurrency：它是进站内余额的美元数，
+// 乘上支付汇率就变成了假数字。
+const firstOrderBonusThreshold = computed(() => firstOrderBonus.value?.threshold ?? 0)
+const firstOrderBonusInviteeBonus = computed(() => firstOrderBonus.value?.invitee_bonus ?? 0)
+// invitee_bonus=0 是管理端明说的合法配置（0 = 不给被邀请人发）。此时被邀请人侧一句都不该提，
+// 否则页面上写着「可额外获得 $0.00」。并在这一处收口，下面四个 computed 全部继承。
+const firstOrderBonusAvailable = computed(
+  () => firstOrderBonus.value?.status === 'available' && firstOrderBonusInviteeBonus.value > 0
+)
+const balanceFirstOrderBonusQualifies = computed(
+  () => firstOrderBonusAvailable.value && creditedAmount.value > 0 && creditedAmount.value >= firstOrderBonusThreshold.value
+)
+const balanceFirstOrderBonusBelowThreshold = computed(
+  () => firstOrderBonusAvailable.value && creditedAmount.value > 0 && creditedAmount.value < firstOrderBonusThreshold.value
+)
+const selectedPlanPrice = computed(() => selectedPlan.value?.price ?? 0)
+const subscriptionFirstOrderBonusQualifies = computed(
+  () => firstOrderBonusAvailable.value && selectedPlanPrice.value > 0 && selectedPlanPrice.value >= firstOrderBonusThreshold.value
+)
+const subscriptionFirstOrderBonusBelowThreshold = computed(
+  () => firstOrderBonusAvailable.value && selectedPlanPrice.value > 0 && selectedPlanPrice.value < firstOrderBonusThreshold.value
+)
+
+/**
+ * 拉取首充券状态。公开设置里的开关关着就完全不发请求；
+ * 任何失败都吞掉并留在 null（赠品提示不能影响支付主流程）。
+ */
+async function loadFirstOrderBonusStatus(): Promise<void> {
+  if (!appStore.cachedPublicSettings?.affiliate_first_order_bonus?.enabled) {
+    return
+  }
+  try {
+    firstOrderBonus.value = await userAPI.getAffiliateFirstOrderBonus()
+  } catch {
+    firstOrderBonus.value = null
+  }
+}
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -1182,5 +1245,7 @@ onMounted(async () => {
   finally { loading.value = false }
   // Fetch active subscriptions (uses cache, non-blocking)
   subscriptionStore.fetchActiveSubscriptions().catch(() => {})
+  // 首充券状态（非阻塞，失败静默）
+  void loadFirstOrderBonusStatus()
 })
 </script>
