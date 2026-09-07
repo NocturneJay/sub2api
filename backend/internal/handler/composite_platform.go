@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -72,16 +73,59 @@ func openAIReasoningEffortPolicyForGroup(
 	if apiKey == nil || apiKey.Group == nil {
 		return "", nil, "", false
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
+	if apiKey.Group.Platform != service.PlatformAnthropic && apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
 		return "", nil, "", false
 	}
-	if effectiveAPIKeyPlatform(c, apiKey) != service.PlatformOpenAI {
+	effectivePlatform := effectiveAPIKeyPlatform(c, apiKey)
+	if effectivePlatform != service.PlatformAnthropic && effectivePlatform != service.PlatformOpenAI {
 		return "", nil, "", false
 	}
-	if requestGroup == nil || requestGroup.Platform != service.PlatformOpenAI {
+	// aicat：委托后的子分组才是策略来源（规约设计冲突第二条）；上游 v0.2.1 起策略也
+	// 覆盖 Anthropic 目标（minimal→low 归一），这里同样按子分组取值、按生效平台归一。
+	if requestGroup == nil || (requestGroup.Platform != service.PlatformOpenAI && requestGroup.Platform != service.PlatformAnthropic) {
 		return "", nil, "", false
 	}
-	return requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings, requestGroup.MaxReasoningEffortOverLimit, true
+	maxEffort, mappings := requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings
+	if effectivePlatform == service.PlatformAnthropic {
+		maxEffort, mappings = anthropicCompatibleReasoningEffortPolicy(maxEffort, mappings)
+	}
+	return maxEffort, mappings, requestGroup.MaxReasoningEffortOverLimit, true
+}
+
+// anthropicReasoningEffortPolicyForGroup 是上游 anthropicReasoningEffortPolicyForRequest
+// 的 aicat 版：同样收委托后的子分组（父分组只是路由壳）。
+func anthropicReasoningEffortPolicyForGroup(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	requestGroup *service.Group,
+) (string, []service.ReasoningEffortMapping, string, bool) {
+	if apiKey == nil || apiKey.Group == nil {
+		return "", nil, "", false
+	}
+	if apiKey.Group.Platform != service.PlatformAnthropic && apiKey.Group.Platform != service.PlatformComposite {
+		return "", nil, "", false
+	}
+	if effectiveAPIKeyPlatform(c, apiKey) != service.PlatformAnthropic {
+		return "", nil, "", false
+	}
+	if requestGroup == nil || requestGroup.Platform != service.PlatformAnthropic {
+		return "", nil, "", false
+	}
+	maxEffort, mappings := anthropicCompatibleReasoningEffortPolicy(requestGroup.MaxReasoningEffort, requestGroup.ReasoningEffortMappings)
+	return maxEffort, mappings, requestGroup.MaxReasoningEffortOverLimit, true
+}
+
+func anthropicCompatibleReasoningEffortPolicy(maxEffort string, mappings []service.ReasoningEffortMapping) (string, []service.ReasoningEffortMapping) {
+	if service.NormalizeMaxReasoningEffort(maxEffort) == "minimal" {
+		maxEffort = "low"
+	}
+	normalizedMappings := append([]service.ReasoningEffortMapping(nil), mappings...)
+	for i := range normalizedMappings {
+		if service.NormalizeMaxReasoningEffort(normalizedMappings[i].To) == "minimal" {
+			normalizedMappings[i].To = "low"
+		}
+	}
+	return maxEffort, normalizedMappings
 }
 
 func bindRequestedReasoningEffort(c *gin.Context, body []byte, model string) {
@@ -137,6 +181,20 @@ func respondOpenAIReasoningEffortPolicyError(c *gin.Context, err error, write fu
 	write(c, http.StatusForbidden, "permission_error", err.Error())
 }
 
+// aicat：上游 applyAnthropicReasoningEffortPolicyForRequest 的子分组版。
+func applyAnthropicReasoningEffortPolicyForGroup(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	requestGroup *service.Group,
+	body []byte,
+) ([]byte, bool, error) {
+	maxEffort, mappings, overLimit, ok := anthropicReasoningEffortPolicyForGroup(c, apiKey, requestGroup)
+	if !ok {
+		return body, false, nil
+	}
+	return service.ApplyReasoningEffortPolicy(body, maxEffort, mappings, overLimit)
+}
+
 func bindOpenAIReasoningEffortPolicyForMessagesRequest(
 	c *gin.Context,
 	apiKey *service.APIKey,
@@ -159,4 +217,16 @@ func bindOpenAIReasoningEffortPolicyForMessagesRequest(
 		return
 	}
 	c.Request = c.Request.WithContext(service.WithOpenAIReasoningEffortPolicy(c.Request.Context(), maxEffort, mappings, overLimit))
+}
+
+// resolveCompositeRequestGroup（GatewayHandler 版）：与 OpenAIGatewayHandler 同名方法同形，
+// 供 Anthropic /v1/messages 入口取委托后的子分组。
+func (h *GatewayHandler) resolveCompositeRequestGroup(ctx context.Context, apiKey *service.APIKey) (*service.Group, error) {
+	if h == nil || h.openAIGatewayService == nil {
+		if apiKey == nil {
+			return nil, nil
+		}
+		return apiKey.Group, nil
+	}
+	return h.openAIGatewayService.ResolveCompositeRequestGroup(ctx, apiKey)
 }

@@ -43,20 +43,20 @@ func TestPrepareUsageLogInsert_ChannelMonitorArgWiring(t *testing.T) {
 	selectColumnCount := len(strings.Split(usageLogSelectColumns, ","))
 	require.Equal(t, selectColumnCount, len(usageLogInsertArgTypes)+1,
 		"arg-type table and usageLogSelectColumns must stay in lockstep (SELECT has the extra id column)")
-	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-4],
-		"is_channel_monitor arg type must be boolean")
+	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-5],
+		"is_channel_monitor arg type must be boolean (v0.2.1 起后面依次是 upstream_request_id / session_id / native_compaction_v2 / created_at)")
 
 	prepared := prepareUsageLogInsert(newChannelMonitorUsageLog(true))
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes),
 		"prepared args must match the arg-type table length")
 
-	flag, ok := prepared.args[len(prepared.args)-4].(bool)
+	flag, ok := prepared.args[len(prepared.args)-5].(bool)
 	require.True(t, ok, "is_channel_monitor arg should be a bool, got %T",
-		prepared.args[len(prepared.args)-4])
+		prepared.args[len(prepared.args)-5])
 	require.True(t, flag)
 
 	preparedFalse := prepareUsageLogInsert(newChannelMonitorUsageLog(false))
-	flagFalse, ok := preparedFalse.args[len(preparedFalse.args)-4].(bool)
+	flagFalse, ok := preparedFalse.args[len(preparedFalse.args)-5].(bool)
 	require.True(t, ok)
 	require.False(t, flagFalse, "未标记的请求必须写入 false")
 }

@@ -89,6 +89,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	// 错因分类都认它。上游只用映射改写 body，选号仍用原始名，账号白名单写映射后名字时
 	// 会直接 404。详见 service/channel_routing_alias.go。
 	c.Request = c.Request.WithContext(service.WithChannelRoutingAlias(c.Request.Context(), channelMapping, reqModel))
+	forwardModel := openAIChannelForwardModel(channelMapping, reqModel)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
@@ -131,7 +132,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			apiKey.GroupID,
 			"",
 			"",
-			reqModel,
+			forwardModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportHTTPSSE,
 			service.OpenAIEndpointCapabilityEmbeddings,
