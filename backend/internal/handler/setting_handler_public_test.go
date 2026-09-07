@@ -179,3 +179,79 @@ func TestSettingHandler_GetPublicSettings_ExposesWeChatOAuthModeCapabilities(t *
 	require.True(t, resp.Data.WeChatOAuthOpenEnabled)
 	require.True(t, resp.Data.WeChatOAuthMPEnabled)
 }
+
+// 公开设置必须整体下发首单奖励配置：前端要用 threshold / invitee_bonus 渲染
+// 「首单满 X 送 Y」的文案。后端触点有七处，缺一即静默失效（前端读到 undefined 而不是报错），
+// 这条用例守的是 keys 清单 -> service.PublicSettings -> dto.PublicSettings 这条链。
+func TestSettingHandler_GetPublicSettings_ExposesAffiliateFirstOrderBonus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeyAffiliateEnabled:         "true",
+			service.SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":25,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`,
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+
+	h.GetPublicSettings(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			AffiliateEnabled         bool `json:"affiliate_enabled"`
+			AffiliateFirstOrderBonus struct {
+				Enabled      bool    `json:"enabled"`
+				Threshold    float64 `json:"threshold"`
+				InviteeBonus float64 `json:"invitee_bonus"`
+				InviterBonus float64 `json:"inviter_bonus"`
+				ValidDays    int     `json:"valid_days"`
+			} `json:"affiliate_first_order_bonus"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.True(t, resp.Data.AffiliateEnabled)
+	require.True(t, resp.Data.AffiliateFirstOrderBonus.Enabled)
+	require.Equal(t, 25.0, resp.Data.AffiliateFirstOrderBonus.Threshold)
+	require.Equal(t, 10.0, resp.Data.AffiliateFirstOrderBonus.InviteeBonus)
+	require.Equal(t, 10.0, resp.Data.AffiliateFirstOrderBonus.InviterBonus)
+	require.Equal(t, 30, resp.Data.AffiliateFirstOrderBonus.ValidDays)
+}
+
+// 公开面的 enabled 是「affiliate 总开关 && 本功能开关」的与运算结果：
+// 总开关关着时必须下发 false，否则没开返利的站点也会显示首充礼入口。
+// 其余配置字段照常返回（前端只看 enabled 决定渲染与否）。
+func TestSettingHandler_GetPublicSettings_AffiliateFirstOrderBonusRequiresAffiliateSwitch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeyAffiliateEnabled:         "false",
+			service.SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":25,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`,
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+
+	h.GetPublicSettings(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var resp struct {
+		Data struct {
+			AffiliateFirstOrderBonus struct {
+				Enabled   bool    `json:"enabled"`
+				Threshold float64 `json:"threshold"`
+			} `json:"affiliate_first_order_bonus"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.False(t, resp.Data.AffiliateFirstOrderBonus.Enabled)
+	require.Equal(t, 25.0, resp.Data.AffiliateFirstOrderBonus.Threshold)
+}

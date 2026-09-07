@@ -3,6 +3,9 @@
  */
 
 import type { CompositeRoutePricing } from './payment'
+import type { AffiliateFirstOrderBonusSettings } from './affiliateFirstOrderBonus'
+
+export * from './affiliateFirstOrderBonus'
 
 // ==================== Common Types ====================
 
@@ -288,6 +291,8 @@ export interface PublicSettings {
   plugin_management_enabled: boolean
   service_quota_enabled: boolean
   affiliate_enabled: boolean
+  /** 邀请首单双向奖励配置。可选：注入的 __APP_CONFIG__ 旧缓存里没有这个键，读取一律走可选链 + 默认。 */
+  affiliate_first_order_bonus?: AffiliateFirstOrderBonusSettings
   allow_user_view_error_requests?: boolean
 }
 

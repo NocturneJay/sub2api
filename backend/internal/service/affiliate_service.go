@@ -119,6 +119,20 @@ type AffiliateRepository interface {
 	ListAffiliateRebateRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error)
 	ListAffiliateTransferRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error)
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
+
+	// 首单双向奖励（aicat 自研）。实现见 repository/affiliate_first_order_bonus_repo.go。
+	// GetUserAffiliateReadOnly 只读查 user_affiliates 行，不存在返回 nil, nil（不建行）。
+	GetUserAffiliateReadOnly(ctx context.Context, userID int64) (*AffiliateSummary, error)
+	// GetFirstOrderBonusRecord 只读查首单奖励记录，不存在返回 nil, nil。
+	GetFirstOrderBonusRecord(ctx context.Context, userID int64) (*AffiliateFirstOrderBonusRecord, error)
+	// HasEarlierOrFulfilledPaymentOrder 报告该用户是否还有别的「已交付完成 / 更早付款且在履约中」的订单。
+	HasEarlierOrFulfilledPaymentOrder(ctx context.Context, userID, excludeOrderID int64) (bool, error)
+	// LockUserAffiliateForUpdate 在事务内锁住被邀请人的 user_affiliates 行，串行化同一用户的并发首单。
+	LockUserAffiliateForUpdate(ctx context.Context, userID int64) error
+	// RecordFirstOrderBonusVoid 落一条作废记录（幂等），返回是否为本次新写入。
+	RecordFirstOrderBonusVoid(ctx context.Context, in AffiliateFirstOrderBonusVoidInput) (bool, error)
+	// ApplyFirstOrderBonus 事务内发放首单奖励（记录 + 被邀请人余额 + 邀请人额度 + 两条台账），返回是否为本次新发放。
+	ApplyFirstOrderBonus(ctx context.Context, in AffiliateFirstOrderBonusApplyInput) (bool, error)
 }
 
 // AffiliateAdminFilter 列表筛选条件
@@ -507,6 +521,16 @@ func maskSegment(s string) string {
 		return string(r[0]) + "***"
 	}
 	return string(r[0]) + "***"
+}
+
+// InvalidateUserCaches 是 invalidateAffiliateCaches 的导出薄包装。
+// 首单奖励改了被邀请人的余额，必须在事务提交之后失效鉴权/计费缓存，
+// 而调用方（PaymentService）在 service 包外拿不到未导出方法。
+func (s *AffiliateService) InvalidateUserCaches(ctx context.Context, userID int64) {
+	if s == nil {
+		return
+	}
+	s.invalidateAffiliateCaches(ctx, userID)
 }
 
 func (s *AffiliateService) invalidateAffiliateCaches(ctx context.Context, userID int64) {

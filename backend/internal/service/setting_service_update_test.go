@@ -914,3 +914,39 @@ func TestSettingService_StalePasskeyTrueWithoutConfigReportsDisabled(t *testing.
 	require.NoError(t, err)
 	require.False(t, settings.PasskeyEnabled)
 }
+
+// TestSettingService_UpdateSettings_PersistsAffiliateFirstOrderBonusJSON 锁死设置面的写回口径：
+// 首单双向奖励是 settings 表里的**一个 JSON 键**，UpdateSettings 必须写回归正后的 JSON 字符串。
+// 这条用例同时守两件事：(1) 键没被漏写（漏写 = 后台改了保存不了，页面看着成功）；
+// (2) 写回前调用了 Normalized（越界值截断而不是原样落库）。
+func TestSettingService_UpdateSettings_PersistsAffiliateFirstOrderBonusJSON(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		AffiliateFirstOrderBonus: AffiliateFirstOrderBonusConfig{
+			Enabled:      true,
+			Threshold:    25,
+			InviteeBonus: 12,
+			InviterBonus: 8,
+			ValidDays:    99999, // 越界：写回时应被截断到 AffiliateFirstOrderValidDaysMax
+		},
+	})
+	require.NoError(t, err)
+
+	raw, ok := repo.updates[SettingKeyAffiliateFirstOrderBonus]
+	require.True(t, ok, "每次 UpdateSettings 都必须写 affiliate_first_order_bonus 键")
+
+	var got AffiliateFirstOrderBonusConfig
+	require.NoError(t, json.Unmarshal([]byte(raw), &got))
+	require.Equal(t, AffiliateFirstOrderBonusConfig{
+		Enabled:      true,
+		Threshold:    25,
+		InviteeBonus: 12,
+		InviterBonus: 8,
+		ValidDays:    AffiliateFirstOrderValidDaysMax,
+	}, got)
+
+	// 回读一遍：写回口径与解析口径必须是同一个，否则保存后刷新会看到不一样的值。
+	require.Equal(t, got, ParseAffiliateFirstOrderBonusConfig(raw))
+}

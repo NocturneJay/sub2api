@@ -377,6 +377,11 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.AdminRechargeRebateEnabled != after.AdminRechargeRebateEnabled {
 		changed = append(changed, "affiliate_admin_recharge_enabled")
 	}
+	// 首单双向奖励是一个全可比较字段的结构体，整体比较即可；
+	// 审计只记一个变更键名，与 settings 表里的单键一一对应。
+	if before.AffiliateFirstOrderBonus != after.AffiliateFirstOrderBonus {
+		changed = append(changed, "affiliate_first_order_bonus")
+	}
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
 	}

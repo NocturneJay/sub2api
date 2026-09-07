@@ -652,6 +652,33 @@ describe("admin SettingsView email domain quota copy", () => {
   });
 });
 
+describe("admin SettingsView first-order bonus copy", () => {
+  // 设置是全局实时值、不做每人快照：改阈值/奖励/有效期会即时影响所有尚未落表的券。
+  // 这句风险提示必须留在管理端文案里，否则管理员看不到。
+  it("warns that changes hit every user without a first order yet", () => {
+    const zhFirstOrder = zhSettings.settings.features.affiliate.firstOrder;
+    const enFirstOrder = enSettings.settings.features.affiliate.firstOrder;
+
+    for (const key of [
+      "thresholdDesc",
+      "inviteeBonusDesc",
+      "inviterBonusDesc",
+      "validDaysDesc",
+    ] as const) {
+      expect(zhFirstOrder[key]).toContain("修改会立即影响所有尚未下首单的用户");
+      expect(enFirstOrder[key]).toContain(
+        "Changes take effect immediately for every user who has not placed a first order yet",
+      );
+    }
+
+    // 不满阈值就作废、不补发，是最容易引发客诉的规则，必须写在分组说明里。
+    expect(zhFirstOrder.description).toContain("作废");
+    expect(zhFirstOrder.description).toContain("不补");
+    expect(enFirstOrder.description).toContain("voided");
+    expect(enFirstOrder.enabledHint).toContain("Enable Affiliate");
+  });
+});
+
 describe("admin SettingsView payment visible method controls", () => {
   beforeEach(() => {
     getSettings.mockReset();
@@ -1118,6 +1145,82 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         affiliate_admin_recharge_enabled: true,
+      }),
+    );
+  });
+
+  // 首单双向奖励：后端收的是一个嵌套对象，而不是扁平字段；
+  // 这里固定提交映射的归一口径（负数归 0、有效期封顶 3650），否则会被后端静默改写。
+  it("submits normalized first-order bonus settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      affiliate_enabled: true,
+      affiliate_first_order_bonus: {
+        enabled: true,
+        threshold: 25,
+        invitee_bonus: 12,
+        inviter_bonus: -5,
+        valid_days: 9999,
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    const card = wrapper
+      .findAll(".card")
+      .find((node) =>
+        node.text().includes("admin.settings.features.affiliate.title"),
+      );
+    expect(card).toBeDefined();
+    // 分组标题与「修改立即生效」说明必须随开关一起渲染出来
+    expect(card!.text()).toContain(
+      "admin.settings.features.affiliate.firstOrder.title",
+    );
+    expect(card!.text()).toContain(
+      "admin.settings.features.affiliate.firstOrder.validDaysDesc",
+    );
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        affiliate_first_order_bonus: {
+          enabled: true,
+          threshold: 25,
+          invitee_bonus: 12,
+          inviter_bonus: 0,
+          valid_days: 3650,
+        },
+      }),
+    );
+  });
+
+  // 老后端（还没这个键）返回的设置里没有 affiliate_first_order_bonus，
+  // loadSettings 的通用循环会跳过它；此时必须落回默认值而不是提交 undefined。
+  it("falls back to first-order bonus defaults when the backend omits the key", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      affiliate_enabled: true,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        affiliate_first_order_bonus: {
+          enabled: false,
+          threshold: 20,
+          invitee_bonus: 10,
+          inviter_bonus: 10,
+          valid_days: 30,
+        },
       }),
     );
   });

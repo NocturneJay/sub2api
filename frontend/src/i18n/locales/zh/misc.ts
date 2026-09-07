@@ -320,6 +320,11 @@ export default {
     fee: '手续费',
     actualPay: '实付金额',
     createOrder: '确认支付',
+    // 首充券（邀请首单双向奖励）。金额由页面按当前币种格式化后作为插值传入，文案里不写货币符号。
+    firstOrderBonus: {
+      qualifies: '首充礼：本单可额外获得 {bonus} 余额奖励',
+      belowThreshold: '首充礼：本单需满 {threshold} 才能获得 {bonus} 奖励，不足则首充券作废且不补'
+    },
     methods: {
       easypay: '易支付',
       alipay: '支付宝',

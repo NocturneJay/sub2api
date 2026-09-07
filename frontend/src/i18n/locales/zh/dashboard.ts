@@ -56,7 +56,16 @@ export default {
     viewUsage: '查看使用记录',
     checkDetailedLogs: '查看详细的使用日志',
     redeemCode: '兑换码',
-    addBalanceWithCode: '使用兑换码充值'
+    addBalanceWithCode: '使用兑换码充值',
+    // 首充礼卡片：只在首充券仍可用（status=available）时渲染。
+    firstOrderBonus: {
+      title: '首充礼',
+      rule: '好友邀请专属：首单站内充值满 {threshold}，即可额外获得 {bonus} 余额奖励。',
+      expiresAt: '有效期至 {date}',
+      neverExpires: '长期有效',
+      belowThresholdHint: '首单不满门槛则首充券作废，且不再补发。',
+      action: '去充值'
+    }
   },
 
   // Groups (shared)
@@ -751,7 +760,8 @@ export default {
       line1: '将邀请码或邀请链接分享给新用户。',
       line2: '被邀请用户充值后，你可获得 {rate} 的返利额度。',
       line3: '返利额度可随时转入账户余额。',
-      line4: '新产生的返利需要经过冻结期后才能提现。'
+      line4: '新产生的返利需要经过冻结期后才能提现。',
+      line5: '好友首单站内充值满 {threshold}，好友得 {inviteeBonus}、你得 {inviterBonus}，另加常规 {rate} 返利；首单不满则作废、不补。'
     }
   },
 

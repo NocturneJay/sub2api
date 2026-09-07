@@ -203,4 +203,35 @@ describe('RegisterView invitation layout', () => {
     )
     expect(showErrorMock).not.toHaveBeenCalled()
   })
+
+  it('shows the first-order bonus hint only after an affiliate code is typed', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings,
+      affiliate_first_order_bonus: { enabled: true, threshold: 20, invitee_bonus: 10, inviter_bonus: 10, valid_days: 30 }
+    })
+    const wrapper = mountRegister()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="affiliate-first-order-bonus-hint"]').exists()).toBe(false)
+
+    await wrapper.get('#affiliate_code').setValue('ABC')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="affiliate-first-order-bonus-hint"]').exists()).toBe(true)
+  })
+
+  it('hides the first-order bonus hint when the invitee bonus is configured to zero', async () => {
+    // invitee_bonus=0 是管理端明说的合法配置（0 = 不给被邀请人发），此时不能承诺「额外获得 0 美元」。
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings,
+      affiliate_first_order_bonus: { enabled: true, threshold: 20, invitee_bonus: 0, inviter_bonus: 10, valid_days: 30 }
+    })
+    const wrapper = mountRegister()
+    await flushPromises()
+
+    await wrapper.get('#affiliate_code').setValue('ABC')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="affiliate-first-order-bonus-hint"]').exists()).toBe(false)
+  })
 })

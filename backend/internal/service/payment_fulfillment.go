@@ -337,6 +337,9 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
 			return err
 		}
+		if err := s.applyAffiliateFirstOrderBonusForOrder(ctx, o); err != nil {
+			return err
+		}
 		// Code already created and redeemed — just mark completed
 		return s.markCompleted(ctx, o, lease, "RECHARGE_SUCCESS")
 	case redeemActionCreate:
@@ -351,6 +354,9 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 		return fmt.Errorf("redeem balance: %w", err)
 	}
 	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+		return err
+	}
+	if err := s.applyAffiliateFirstOrderBonusForOrder(ctx, o); err != nil {
 		return err
 	}
 	return s.markCompleted(ctx, o, lease, "RECHARGE_SUCCESS")
@@ -508,6 +514,9 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder, lease
 	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
 		return err
 	}
+	if err := s.applyAffiliateFirstOrderBonusForOrder(ctx, o); err != nil {
+		return err
+	}
 	return s.markCompleted(ctx, o, lease, "SUBSCRIPTION_SUCCESS")
 }
 
@@ -636,7 +645,7 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 	defer func() { _ = tx.Rollback() }()
 
 	txCtx := dbent.NewTxContext(ctx, tx)
-	claimed, err := s.tryClaimAffiliateRebateAudit(txCtx, tx.Client(), o.ID, baseAmount)
+	claimed, err := s.tryClaimAffiliateRebateAudit(txCtx, tx.Client(), o.ID, baseAmount, affiliateRebateAuditClaim)
 	if err != nil {
 		s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_FAILED", "system", map[string]any{
 			"error": err.Error(),
@@ -657,10 +666,10 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 	}
 
 	if rebateAmount <= 0 {
-		if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID, "AFFILIATE_REBATE_SKIPPED", map[string]any{
+		if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID, affiliateRebateAuditClaim.skippedAction, map[string]any{
 			"baseAmount": baseAmount,
 			"reason":     "no inviter bound or rebate amount <= 0",
-		}); err != nil {
+		}, affiliateRebateAuditClaim); err != nil {
 			s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_FAILED", "system", map[string]any{
 				"error": err.Error(),
 			})
@@ -675,10 +684,10 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 		return nil
 	}
 
-	if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID, "AFFILIATE_REBATE_APPLIED", map[string]any{
+	if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID, affiliateRebateAuditClaim.appliedAction, map[string]any{
 		"baseAmount":   baseAmount,
 		"rebateAmount": rebateAmount,
-	}); err != nil {
+	}, affiliateRebateAuditClaim); err != nil {
 		s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_FAILED", "system", map[string]any{
 			"error": err.Error(),
 		})
@@ -706,7 +715,15 @@ func affiliateRebateBaseAmount(o *dbent.PaymentOrder) float64 {
 	}
 }
 
-func (s *PaymentService) tryClaimAffiliateRebateAudit(ctx context.Context, client *dbent.Client, orderID int64, baseAmount float64) (bool, error) {
+// affiliateAuditClaim 是一组「抢占用」的审计动作名。常规返利与首单奖励各有
+// 一组，两者共用同一套抢占/改写逻辑，但绝不能互相看见对方的审计行 ——
+// 混用会让首单奖励把常规返利那行改写掉，重试时 20% 返利被重复发放。
+type affiliateAuditClaim struct {
+	appliedAction string
+	skippedAction string
+}
+
+func (s *PaymentService) tryClaimAffiliateRebateAudit(ctx context.Context, client *dbent.Client, orderID int64, baseAmount float64, claim affiliateAuditClaim) (bool, error) {
 	if client == nil {
 		return false, errors.New("nil payment client")
 	}
@@ -715,7 +732,7 @@ func (s *PaymentService) tryClaimAffiliateRebateAudit(ctx context.Context, clien
 		"baseAmount": baseAmount,
 		"status":     "reserved",
 	})
-	query, args := buildAffiliateRebateAuditClaimQuery(client, oid, string(detail))
+	query, args := buildAffiliateAuditClaimQuery(paymentAuditDialect(client), oid, string(detail), claim)
 	rows, err := client.QueryContext(ctx, query, args...)
 	if err != nil {
 		return false, err
@@ -734,36 +751,41 @@ func (s *PaymentService) tryClaimAffiliateRebateAudit(ctx context.Context, clien
 	return true, nil
 }
 
-func buildAffiliateRebateAuditClaimQuery(client *dbent.Client, orderID, detail string) (string, []any) {
-	nowExpr := paymentAuditCurrentTimestampExpr(client)
-	if paymentAuditDialect(client) == dialect.Postgres {
+// buildAffiliateAuditClaimQuery 生成「用一行审计抢占这笔订单」的 SQL。
+// 动作名参数化，两种返利各传自己的一组；本机跑不了 Postgres，双方言的
+// 占位符编号与 args 顺序靠 payment_fulfillment_first_order_bonus_test.go
+// 里的纯字符串断言守住。
+func buildAffiliateAuditClaimQuery(dbDialect string, orderID, detail string, claim affiliateAuditClaim) (string, []any) {
+	nowExpr := paymentAuditCurrentTimestampExpr(dbDialect)
+	if dbDialect == dialect.Postgres {
 		return fmt.Sprintf(`
 INSERT INTO payment_audit_logs (order_id, action, detail, operator, created_at)
-SELECT $1::text, 'AFFILIATE_REBATE_APPLIED', $2::text, 'system', %s
+SELECT $1::text, $3::text, $2::text, 'system', %s
 WHERE NOT EXISTS (
 	SELECT 1
 	FROM payment_audit_logs
 	WHERE order_id = $1::text
-	  AND action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
+	  AND action IN ($3::text, $4::text)
 )
 ON CONFLICT (order_id, action) DO NOTHING
-RETURNING id`, nowExpr), []any{orderID, detail}
+RETURNING id`, nowExpr), []any{orderID, detail, claim.appliedAction, claim.skippedAction}
 	}
+	// sqlite 只认位置参数：args 必须严格按 ? 在 SQL 里出现的先后排列。
 	return fmt.Sprintf(`
 INSERT INTO payment_audit_logs (order_id, action, detail, operator, created_at)
-SELECT ?, 'AFFILIATE_REBATE_APPLIED', ?, 'system', %s
+SELECT ?, ?, ?, 'system', %s
 WHERE NOT EXISTS (
 	SELECT 1
 	FROM payment_audit_logs
 	WHERE order_id = ?
-	  AND action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
+	  AND action IN (?, ?)
 )
 ON CONFLICT (order_id, action) DO NOTHING
-RETURNING id`, nowExpr), []any{orderID, detail, orderID}
+RETURNING id`, nowExpr), []any{orderID, claim.appliedAction, detail, orderID, claim.appliedAction, claim.skippedAction}
 }
 
-func paymentAuditCurrentTimestampExpr(client *dbent.Client) string {
-	if paymentAuditDialect(client) == dialect.Postgres {
+func paymentAuditCurrentTimestampExpr(dbDialect string) string {
+	if dbDialect == dialect.Postgres {
 		return "NOW()"
 	}
 	return "CURRENT_TIMESTAMP"
@@ -776,7 +798,11 @@ func paymentAuditDialect(client *dbent.Client) string {
 	return client.Driver().Dialect()
 }
 
-func (s *PaymentService) updateClaimedAffiliateRebateAudit(ctx context.Context, client *dbent.Client, orderID int64, action string, detail map[string]any) error {
+// updateClaimedAffiliateRebateAudit 把抢占时写下的那一行改成最终动作。
+// WHERE 必须用 claim.appliedAction（抢占时写下的那个动作名），不能写死常规
+// 返利的动作 —— 写死会让首单奖励改写掉常规返利的审计行，重试时 20% 返利
+// 被重复发放。
+func (s *PaymentService) updateClaimedAffiliateRebateAudit(ctx context.Context, client *dbent.Client, orderID int64, action string, detail map[string]any, claim affiliateAuditClaim) error {
 	if client == nil {
 		return errors.New("nil payment client")
 	}
@@ -785,7 +811,7 @@ func (s *PaymentService) updateClaimedAffiliateRebateAudit(ctx context.Context, 
 	updated, err := client.PaymentAuditLog.Update().
 		Where(
 			paymentauditlog.OrderIDEQ(oid),
-			paymentauditlog.ActionEQ("AFFILIATE_REBATE_APPLIED"),
+			paymentauditlog.ActionEQ(claim.appliedAction),
 		).
 		SetAction(action).
 		SetDetail(string(detailJSON)).

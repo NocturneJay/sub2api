@@ -523,6 +523,31 @@ func (r *oauthEmailAffiliateRepoStub) GetAffiliateUserOverview(context.Context, 
 	panic("unexpected GetAffiliateUserOverview call")
 }
 
+// 首单双向奖励：注册/绑定流程不涉及，返回零值而不是 panic。
+func (r *oauthEmailAffiliateRepoStub) GetUserAffiliateReadOnly(context.Context, int64) (*service.AffiliateSummary, error) {
+	return nil, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) GetFirstOrderBonusRecord(context.Context, int64) (*service.AffiliateFirstOrderBonusRecord, error) {
+	return nil, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) HasEarlierOrFulfilledPaymentOrder(context.Context, int64, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) LockUserAffiliateForUpdate(context.Context, int64) error {
+	return nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) RecordFirstOrderBonusVoid(context.Context, service.AffiliateFirstOrderBonusVoidInput) (bool, error) {
+	return false, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) ApplyFirstOrderBonus(context.Context, service.AffiliateFirstOrderBonusApplyInput) (bool, error) {
+	return false, nil
+}
+
 func findSetCookieValue(cookies []*http.Cookie, name string) string {
 	for _, cookie := range cookies {
 		if cookie != nil && strings.EqualFold(cookie.Name, name) && cookie.MaxAge >= 0 {

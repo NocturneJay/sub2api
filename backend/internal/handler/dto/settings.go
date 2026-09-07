@@ -170,15 +170,18 @@ type SystemSettings struct {
 	CustomMenuItems             []CustomMenuItem `json:"custom_menu_items"`
 	CustomEndpoints             []CustomEndpoint `json:"custom_endpoints"`
 
-	DefaultConcurrency           int                          `json:"default_concurrency"`
-	DefaultBalance               float64                      `json:"default_balance"`
-	AffiliateRebateRate          float64                      `json:"affiliate_rebate_rate"`
-	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
-	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
-	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
-	AdminRechargeRebateEnabled   bool                         `json:"affiliate_admin_recharge_enabled"`
-	DefaultUserRPMLimit          int                          `json:"default_user_rpm_limit"`
-	DefaultSubscriptions         []DefaultSubscriptionSetting `json:"default_subscriptions"`
+	DefaultConcurrency           int     `json:"default_concurrency"`
+	DefaultBalance               float64 `json:"default_balance"`
+	AffiliateRebateRate          float64 `json:"affiliate_rebate_rate"`
+	AffiliateRebateFreezeHours   int     `json:"affiliate_rebate_freeze_hours"`
+	AffiliateRebateDurationDays  int     `json:"affiliate_rebate_duration_days"`
+	AffiliateRebatePerInviteeCap float64 `json:"affiliate_rebate_per_invitee_cap"`
+	AdminRechargeRebateEnabled   bool    `json:"affiliate_admin_recharge_enabled"`
+	// 首单双向奖励是一个嵌套对象（settings 表里就是一个 JSON 键），
+	// 管理端 GET 响应与 PUT 请求用同一个字段名 affiliate_first_order_bonus。
+	AffiliateFirstOrderBonus service.AffiliateFirstOrderBonusConfig `json:"affiliate_first_order_bonus"`
+	DefaultUserRPMLimit      int                                    `json:"default_user_rpm_limit"`
+	DefaultSubscriptions     []DefaultSubscriptionSetting           `json:"default_subscriptions"`
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -439,6 +442,9 @@ type PublicSettings struct {
 	PluginManagementEnabled bool `json:"plugin_management_enabled"`
 
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	// 首单双向奖励；enabled 已在服务端与 affiliate 总开关做过与运算。
+	AffiliateFirstOrderBonus service.AffiliateFirstOrderBonusConfig `json:"affiliate_first_order_bonus"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 

@@ -74,12 +74,22 @@
 
           <div class="mt-5 rounded-xl border border-primary-200 bg-primary-50 p-4 dark:border-primary-900/40 dark:bg-primary-900/20">
             <p class="text-sm font-medium text-primary-800 dark:text-primary-200">{{ t('affiliate.tips.title') }}</p>
-            <ul class="mt-2 space-y-1 text-sm text-primary-700 dark:text-primary-300">
-              <li>1. {{ t('affiliate.tips.line1') }}</li>
-              <li>2. {{ t('affiliate.tips.line2', { rate: `${formattedRebateRate}%` }) }}</li>
-              <li>3. {{ t('affiliate.tips.line3') }}</li>
-              <li v-if="detail.aff_frozen_quota > 0">4. {{ t('affiliate.tips.line4') }}</li>
-            </ul>
+            <ol class="mt-2 list-decimal space-y-1 pl-5 text-sm text-primary-700 dark:text-primary-300">
+              <li>{{ t('affiliate.tips.line1') }}</li>
+              <li>{{ t('affiliate.tips.line2', { rate: `${formattedRebateRate}%` }) }}</li>
+              <li>{{ t('affiliate.tips.line3') }}</li>
+              <li v-if="detail.aff_frozen_quota > 0">{{ t('affiliate.tips.line4') }}</li>
+              <li v-if="firstOrderBonusEnabled">
+                {{
+                  t('affiliate.tips.line5', {
+                    threshold: formatCurrency(firstOrderBonusThreshold),
+                    inviteeBonus: formatCurrency(firstOrderBonusInviteeBonus),
+                    inviterBonus: formatCurrency(firstOrderBonusInviterBonus),
+                    rate: `${formattedRebateRate}%`
+                  })
+                }}
+              </li>
+            </ol>
           </div>
         </div>
 
@@ -174,6 +184,14 @@ const formattedRebateRate = computed(() => {
   const rounded = Math.round(v * 100) / 100
   return Number.isInteger(rounded) ? String(rounded) : rounded.toString()
 })
+
+// 首充券配置来自公开设置（可选字段：旧的 __APP_CONFIG__ 注入缓存里没有它，
+// 单测里的 store mock 也没有），一律走可选链 + 默认值。
+const firstOrderBonusSettings = computed(() => appStore.cachedPublicSettings?.affiliate_first_order_bonus)
+const firstOrderBonusEnabled = computed(() => firstOrderBonusSettings.value?.enabled === true)
+const firstOrderBonusThreshold = computed(() => firstOrderBonusSettings.value?.threshold ?? 0)
+const firstOrderBonusInviteeBonus = computed(() => firstOrderBonusSettings.value?.invitee_bonus ?? 0)
+const firstOrderBonusInviterBonus = computed(() => firstOrderBonusSettings.value?.inviter_bonus ?? 0)
 
 function formatCount(value: number): string {
   return value.toLocaleString()

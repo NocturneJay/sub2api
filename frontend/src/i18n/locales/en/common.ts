@@ -297,6 +297,9 @@ export default {
     invitationCodeInvalid: 'Invalid or used invitation code',
     invitationCodeValidating: 'Validating invitation code...',
     invitationCodeInvalidCannotRegister: 'Invalid invitation code. Please check and try again',
+    // First-order bonus hint: shown only when an affiliate code is filled in and the feature is on.
+    affiliateFirstOrderBonusHint: 'Sign up with an invitation code: your first on-site payment of {threshold} USD or more earns an extra {bonus} USD in balance, valid for {days} days after registration.',
+    affiliateFirstOrderBonusHintNoExpiry: 'Sign up with an invitation code: your first on-site payment of {threshold} USD or more earns an extra {bonus} USD in balance.',
     oauthOrContinue: 'or continue with others',
     linuxdo: {
       signIn: 'Continue with Linux.do',

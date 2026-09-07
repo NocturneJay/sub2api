@@ -182,8 +182,11 @@ type SystemSettings struct {
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
 	AdminRechargeRebateEnabled   bool
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	// 首单双向奖励（aicat 自研）：五个参数收在一个 JSON settings 键里，
+	// 所以这里是一个嵌套结构体，而不是五个平铺字段。
+	AffiliateFirstOrderBonus AffiliateFirstOrderBonusConfig
+	DefaultUserRPMLimit      int
+	DefaultSubscriptions     []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -418,6 +421,10 @@ type PublicSettings struct {
 
 	// Affiliate (邀请返利) feature toggle
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	// 首单双向奖励（aicat 自研）。这里的 enabled 已经与 affiliate 总开关做过与运算，
+	// 前端直接用即可；threshold / 两侧 bonus / valid_days 原样下发，前端用来渲染文案。
+	AffiliateFirstOrderBonus AffiliateFirstOrderBonusConfig `json:"affiliate_first_order_bonus"`
 
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`
