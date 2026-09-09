@@ -273,8 +273,10 @@ func TestExecuteBalanceFulfillmentVoidsFirstOrderBonusBelowThreshold(t *testing.
 	affiliateRepo := newFirstOrderBonusAffiliateRepoStub(user.ID, 9002)
 	svc, _ := newFirstOrderBonusFulfillmentService(client, affiliateRepo, firstOrderBonusEnabledSettingValue)
 	// 余额单走「兑换码已使用」这条幂等分支，不必搭真的兑换链路。
+	// 上游 v0.2.2（7a70de401）起 validatePaymentRedeemCode 要求已用码的 UsedBy 必须等于订单用户，夹具随之带上。
+	usedBy := user.ID
 	svc.redeemService = &RedeemService{redeemRepo: &redeemCodeRepoStub{codesByCode: map[string]*RedeemCode{
-		order.RechargeCode: {ID: 501, Code: order.RechargeCode, Type: RedeemTypeBalance, Value: order.Amount, Status: StatusUsed},
+		order.RechargeCode: {ID: 501, Code: order.RechargeCode, Type: RedeemTypeBalance, Value: order.Amount, Status: StatusUsed, UsedBy: &usedBy},
 	}}}
 
 	require.NoError(t, svc.ExecuteBalanceFulfillment(ctx, order.ID))
