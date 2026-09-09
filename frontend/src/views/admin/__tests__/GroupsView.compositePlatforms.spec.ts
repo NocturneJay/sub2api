@@ -43,7 +43,7 @@ describe('GroupsView Composite route options', () => {
   // 它守的是「CN 三家在共享目录里算具体平台」，而具体平台正是可作为委托目标的前提。
   it('keeps Kimi, Zhipu GLM, and DeepSeek in the shared concrete-platform catalog', () => {
     expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(
-      expect.arrayContaining(['kimi', 'zhipu', 'deepseek'])
+      expect.arrayContaining(['kimi', 'zhipu', 'deepseek', 'minimax'])
     )
   })
 })

@@ -28,7 +28,7 @@ func TestAllowOpenAICompatibleMessagesDispatch_CNProvidersExempt(t *testing.T) {
 
 	// CN 三家与 grok 同语义：即便 AllowMessagesDispatch=false（sanitize 强制的结果）也必须放行。
 	for _, platform := range []string{
-		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGrok,
+		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax, service.PlatformGrok,
 	} {
 		group := &service.Group{Platform: platform, AllowMessagesDispatch: false}
 		require.True(t, allowOpenAICompatibleMessagesDispatch(group),

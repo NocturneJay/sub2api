@@ -56,7 +56,7 @@ func TestOpenAICompatibleTextTargetRejectsUnroutedCompositeProviders(t *testing.
 	// 但断言方向与上游相反：上游那版 TestOpenAICompatibleTextTargetAllowsCompositeProviders
 	// 断言这些模型会被放行并「解析出」平台，靠的正是 aicat 刻意删除的 DetectModelPlatform
 	// 猜名兜底。aicat 口径：复合分组未配置路由 = fail closed，既不放行也不解析出平台。
-	models := []string{"grok-4.3", "kimi-k2-thinking", "k3", "glm-5.2", "deepseek-v3.2"}
+	models := []string{"grok-4.3", "kimi-k2-thinking", "k3", "glm-5.2", "deepseek-v3.2", "MiniMax-M3"}
 	for _, path := range []string{"/v1/messages", "/v1/chat/completions", "/v1/responses", "/v1/responses/input_tokens", "/v1/messages/count_tokens"} {
 		for _, model := range models {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -77,7 +77,7 @@ func TestResponsesWebSocketCompositePlatformGuardKeepsOpenAIAndGrokOnly(t *testi
 	require.True(t, isResponsesWebSocketCompositePlatform(service.PlatformOpenAI))
 	require.True(t, isResponsesWebSocketCompositePlatform(service.PlatformGrok))
 	for _, platform := range []string{
-		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek,
+		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax,
 		service.PlatformAnthropic, service.PlatformGemini,
 	} {
 		require.False(t, isResponsesWebSocketCompositePlatform(platform), "platform=%s", platform)
@@ -196,6 +196,23 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, body, got)
+
+	// v0.2.2 起映射目标可为 deny：同样取委托后子分组的映射（父分组的映射不生效）。
+	mappingDenyGroup := *targetGroup
+	mappingDenyGroup.MaxReasoningEffort = ""
+	mappingDenyGroup.ReasoningEffortMappings = []service.ReasoningEffortMapping{
+		{From: "max", To: service.ReasoningEffortMappingDeny},
+	}
+	mappingDenyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	mappingDenyCtx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	mappingDenyCtx.Request = mappingDenyCtx.Request.WithContext(service.WithResolvedTargetPlatform(mappingDenyCtx.Request.Context(), service.PlatformOpenAI))
+	_, changed, err = applyOpenAIReasoningEffortPolicyForGroup(mappingDenyCtx, apiKey, &mappingDenyGroup, body)
+	require.Error(t, err)
+	require.False(t, changed)
+	var mappingDenied *service.ReasoningEffortMappingDeniedError
+	require.ErrorAs(t, err, &mappingDenied)
+	require.Equal(t, "max", mappingDenied.Requested)
+	require.Contains(t, mappingDenied.Error(), "denied by this group's mapping policy")
 
 	// 委托到非 OpenAI 子分组时不生效。
 	grokCtx, _ := gin.CreateTestContext(httptest.NewRecorder())

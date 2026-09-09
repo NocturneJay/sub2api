@@ -27,7 +27,7 @@ func bindGroupPlatformJSON(t *testing.T, target any, body string) error {
 func TestGroupPlatformBinding_AllowedPlatforms(t *testing.T) {
 	allowed := []string{
 		"anthropic", "openai", "gemini", "antigravity", "grok",
-		"kimi", "zhipu", "deepseek", "composite",
+		"kimi", "zhipu", "deepseek", "minimax", "composite",
 	}
 	for _, platform := range allowed {
 		t.Run("create_"+platform, func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestGroupPlatformBinding_RejectsInvalidPlatforms(t *testing.T) {
 }
 
 func TestCompositeRouteTargetPlatform_AllowsCNProviders(t *testing.T) {
-	for _, platform := range []string{"kimi", "zhipu", "deepseek"} {
+	for _, platform := range []string{"kimi", "zhipu", "deepseek", "minimax"} {
 		var req CompositeRouteRequest
 		// aicat 与上游的差别：target_group_id 是必填（复合路由必须委托到具体目标分组），
 		// 上游那版没有这个字段、改把 target_platform 设为必填。用例意图（CN 三家应被

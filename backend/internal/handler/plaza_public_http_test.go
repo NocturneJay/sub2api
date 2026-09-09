@@ -100,7 +100,7 @@ func plazaHTTPFixture(t *testing.T, settings map[string]string) *gin.Engine {
 
 	cfg := &config.Config{}
 	settingService := service.NewSettingService(settingRepo, cfg)
-	channelService := service.NewChannelService(channelRepo, groupRepo, nil, nil)
+	channelService := service.NewChannelService(channelRepo, groupRepo, nil, nil, nil)
 	apiKeyService := service.NewAPIKeyService(nil, nil, groupRepo, nil, nil, nil, cfg)
 
 	h := NewPlazaPublicHandler(channelService, apiKeyService, settingService)

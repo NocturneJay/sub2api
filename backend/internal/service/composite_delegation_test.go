@@ -408,7 +408,7 @@ func TestCompositeDelegationUsesTargetGroupChannelMapping(t *testing.T) {
 			return map[int64]string{7: PlatformComposite, 42: PlatformOpenAI}, nil
 		},
 	}
-	channelService := NewChannelService(repo, nil, nil, nil)
+	channelService := NewChannelService(repo, nil, nil, nil, nil)
 	targetGroupID := int64(42)
 	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
 		Matched: true, TargetPlatform: PlatformOpenAI, TargetGroupID: &targetGroupID,
