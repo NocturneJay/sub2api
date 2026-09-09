@@ -1074,7 +1074,7 @@ func (s *AccountTestService) buildOpenAIOAuthUpstreamModelsRequest(ctx context.C
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	identity := resolveCodexOutboundIdentity(credentialAccount.GetOpenAIUserAgent())
+	identity := resolveCodexOutboundIdentity(codexAccountOutboundUserAgent(credentialAccount))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Originator", identity.originator)
 	req.Header.Set("User-Agent", identity.userAgent)

@@ -343,6 +343,8 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	if account.Type != AccountTypeOAuth {
 		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_ACCOUNT_TYPE", "account is not an OAuth account")
 	}
+	// 凭据面与推理面同一台机器：把账号级出站 UA 候选带给 repository 层的 auth.openai.com 调用。
+	ctx = WithCodexAccountOutboundUserAgent(ctx, account)
 
 	var proxyURL string
 	if account.ProxyID != nil && s.proxyRepo != nil {

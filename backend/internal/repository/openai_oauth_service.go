@@ -46,7 +46,8 @@ func (s *openaiOAuthService) ExchangeCode(ctx context.Context, code, codeVerifie
 
 	var tokenResp openai.TokenResponse
 
-	authUA, authOriginator := service.CodexCanonicalAuthIdentity()
+	// 凭据面身份与推理面同源：ctx 带账号级机器画像时用同一台机器，否则回退规范身份。
+	authUA, authOriginator := service.CodexAuthIdentityFromContext(ctx)
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeader("User-Agent", authUA).
@@ -96,7 +97,8 @@ func (s *openaiOAuthService) refreshTokenWithClientID(ctx context.Context, refre
 
 	var tokenResp openai.TokenResponse
 
-	authUA, authOriginator := service.CodexCanonicalAuthIdentity()
+	// 凭据面身份与推理面同源：ctx 带账号级机器画像时用同一台机器，否则回退规范身份。
+	authUA, authOriginator := service.CodexAuthIdentityFromContext(ctx)
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeader("User-Agent", authUA).

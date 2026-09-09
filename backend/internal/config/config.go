@@ -986,6 +986,12 @@ type GatewayConfig struct {
 	// 取反义命名是为了让零值安全：该开关会发布为进程级快照，未经 viper 加载而手工构造的
 	// Config（测试、工具）其零值必须落在「强制统一开启」这一侧，否则会静默丢掉这层保护。
 	DisableCodexIdentityEnforcement bool `mapstructure:"disable_codex_identity_enforcement"`
+	// DisableCodexAccountUAProfile: 关闭「账号级稳定机器画像」。默认开启：没有显式配置
+	// credentials.user_agent 的 OpenAI OAuth 类账号，按其上游账号命名空间确定性地选一套
+	// OS/架构/终端指纹拼出出站 User-Agent，使每个上游账号呈现为一台固定机器，而不是全部账号
+	// 共用同一串 UA（版本段仍由生效版本重建、originator 仍按首段配对，#3901 不受影响）。
+	// 置 true 后全部回退为规范 UA。取反义命名同样是为了零值安全。
+	DisableCodexAccountUAProfile bool `mapstructure:"disable_codex_account_ua_profile"`
 	// DisableCodexOriginatorNormalization: 已废弃，等价于 DisableCodexIdentityEnforcement。
 	// 保留以兼容既有配置文件；加载时会折叠进新键，不要在新代码里直接读取。
 	DisableCodexOriginatorNormalization bool `mapstructure:"disable_codex_originator_normalization"`
@@ -2370,6 +2376,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
+	viper.SetDefault("gateway.disable_codex_account_ua_profile", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)

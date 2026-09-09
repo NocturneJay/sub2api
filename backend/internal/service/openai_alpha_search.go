@@ -265,7 +265,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 	} else {
 		req.Header.Set("Originator", canonical.originator)
 	}
-	if customUA := account.GetOpenAIUserAgent(); customUA != "" {
+	if customUA := codexAccountOutboundUserAgent(account); customUA != "" {
 		req.Header.Set("User-Agent", customUA)
 	} else if userAgent := openAIAlphaSearchInboundHeader(c, "User-Agent"); userAgent != "" {
 		req.Header.Set("User-Agent", userAgent)
@@ -411,7 +411,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 		} else {
 			req.Header.Set("Originator", canonical.originator)
 		}
-		if customUA := account.GetOpenAIUserAgent(); customUA != "" {
+		if customUA := codexAccountOutboundUserAgent(account); customUA != "" {
 			req.Header.Set("User-Agent", customUA)
 		} else if userAgent := openAIAlphaSearchInboundHeader(c, "User-Agent"); userAgent != "" {
 			req.Header.Set("User-Agent", userAgent)

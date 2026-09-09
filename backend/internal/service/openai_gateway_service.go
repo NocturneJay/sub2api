@@ -33,15 +33,17 @@ const (
 	openaiPlatformAPIURL            = "https://api.openai.com/v1/responses"
 	openaiPlatformAPIInputTokensURL = "https://api.openai.com/v1/responses/input_tokens"
 	openaiStickySessionTTL          = time.Hour // 粘性会话TTL
-	// 与真实 Codex TUI 的 User-Agent 结构对齐：
-	// {originator}/{version} ({OS} {OS_version}; {arch}) {terminal}
-	// 缺少 OS/架构/终端后缀的形态易被上游指纹识别为非官方客户端。
-	// 该后缀是 UA 形态的唯一定义处，buildCodexCLIUserAgent 按运行时版本号复用它。
+	// 与真实 Codex TUI 的 User-Agent 结构对齐（codex-rs 现行形态，2026-09 生产入站实测）：
+	// {originator}/{version} ({OS} {OS_version}; {arch}) {terminal} ({originator}; {version})
+	// 末尾括号组是 codex-rs 写入的 clientInfo 标识，0.135 起所有官方客户端都带；在当前版本号下
+	// 缺少它的形态不会由任何真实客户端产生。本常量是 OS/架构/终端段的唯一定义处，
+	// buildCodexCLIUserAgent 按运行时版本号复用它并补末尾组；账号级机器画像见
+	// openai_codex_account_ua_profile.go。
 	codexCLIUserAgentSuffix = " (Ubuntu 22.4.0; x86_64) xterm-256color"
 	// codexCLIUserAgent 是编译期兜底 UA；运行时优先使用由后台版本号拼出的规范 UA。
-	// 版本段必须来自 codexCLIVersion：UA 与 version 头是同一个版本声明的两个出口，
+	// 版本段必须来自 codexCLIVersion：UA 首段、UA 末尾组与 version 头是同一个版本声明的三个出口，
 	// 各自硬编码会漂移成互相矛盾的身份。
-	codexCLIUserAgent = openai.CodexDefaultOriginator + "/" + codexCLIVersion + codexCLIUserAgentSuffix
+	codexCLIUserAgent = openai.CodexDefaultOriginator + "/" + codexCLIVersion + codexCLIUserAgentSuffix + " (" + openai.CodexDefaultOriginator + "; " + codexCLIVersion + ")"
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
 	codexCLIOnlyHeaderValueMaxBytes = 256
 
@@ -523,6 +525,7 @@ func NewOpenAIGatewayService(
 	// 拿不到配置，故在此发布进程级开关快照。配置取反义，零值即「强制统一出口开启」。
 	if cfg != nil {
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
+		SetCodexAccountUAProfileEnabled(!cfg.Gateway.DisableCodexAccountUAProfile)
 	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,

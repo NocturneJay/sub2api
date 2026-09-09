@@ -227,7 +227,7 @@ func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstruction
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"prompt_cache_key":"anthropic-metadata-session-1","input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"<sub2api-claude-code-todo-guard>"}]},{"type":"message","role":"user","content":"hello"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"prompt_cache_key":"anthropic-metadata-session-1","input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"When using Claude Code todo or task tracking tools, keep the visible task list consistent"}]},{"type":"message","role":"user","content":"hello"}]}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 
@@ -454,8 +454,10 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 
 	// 2) only auth is replaced; inbound auth/cookie are not forwarded
 	require.Equal(t, "Bearer oauth-token", upstream.lastReq.Header.Get("Authorization"))
-	// 强制统一出口：客户端自报的 codex_cli_rs/0.1.0 不会到达上游。
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	// 强制统一出口：客户端自报的 codex_cli_rs/0.1.0 不会到达上游；有上游命名空间的账号
+	// 得到的是账号级机器画像（codex-rs 现行形态），而非全局规范 UA。
+	require.Equal(t, codexAccountOutboundUserAgent(account), upstream.lastReq.Header.Get("User-Agent"))
+	require.Regexp(t, codexModernUAShape, upstream.lastReq.Header.Get("User-Agent"))
 	require.Empty(t, upstream.lastReq.Header.Get("Cookie"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Api-Key"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Goog-Api-Key"))
@@ -1133,9 +1135,10 @@ func TestOpenAIGatewayService_OAuthLegacy_CompositeCodexUAUsesCodexOriginator(t 
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	// 浏览器型复合 UA 被替换为默认 Codex TUI UA，
+	// 浏览器型复合 UA 被替换为该账号的 Codex TUI 机器画像 UA（有上游命名空间时），
 	// originator 随最终 UA 配套（issue #3901）。
-	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, codexAccountOutboundUserAgent(account), upstream.lastReq.Header.Get("User-Agent"))
+	require.Regexp(t, codexModernUAShape, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.NotEqual(t, "opencode", upstream.lastReq.Header.Get("originator"))
 }
@@ -1989,7 +1992,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.NoError(t, err)
 	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "store").Bool())
 	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	// 非 Codex 客户端同样拿到该账号的机器画像 UA（codex-rs 现行形态）。
+	require.Equal(t, codexAccountOutboundUserAgent(account), upstream.lastReq.Header.Get("User-Agent"))
+	require.Regexp(t, codexModernUAShape, upstream.lastReq.Header.Get("User-Agent"))
 }
 
 // 透传模式的 OAuth 与非透传一致：官方客户端身份同样被强制统一为网关规范身份，
@@ -2037,7 +2042,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_OfficialIdentityUnified(t *testin
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	// 统一到该账号的机器画像 UA（版本段=生效版本，末尾组同步），而不是客户端自报身份。
+	require.Equal(t, codexAccountOutboundUserAgent(account), upstream.lastReq.Header.Get("User-Agent"))
+	require.Regexp(t, codexModernUAShape, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
@@ -2081,7 +2088,10 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityUnified(t *testin
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	// 真实 TUI 自报的 Mac/iTerm 指纹不会到达上游，统一为该账号的机器画像。
+	require.Equal(t, codexAccountOutboundUserAgent(account), upstream.lastReq.Header.Get("User-Agent"))
+	require.Regexp(t, codexModernUAShape, upstream.lastReq.Header.Get("User-Agent"))
+	require.NotEqual(t, "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)", upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }

@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	openAICompatClaudeCodeTodoGuardMarker = "<sub2api-claude-code-todo-guard>"
-	openAICompatClaudeCodeTodoGuardText   = openAICompatClaudeCodeTodoGuardMarker + "\nWhen using Claude Code todo or task tracking tools, keep the visible task list consistent. Do not send final or summary text while any item remains in_progress. Before finishing, asking the user to choose, or reporting a blocker, update the todo list so completed work is completed and deferred work is pending/open; leave an item in_progress only when active work will continue in the same turn.\n</sub2api-claude-code-todo-guard>"
+	// 守卫文本不再包裹 <sub2api-…> 标签（标签会把网关名字发给上游）。Marker 取文本首句，
+	// 供幂等判定与 messages 桥请求体识别（isOpenAICompatMessagesBridgeBody）使用。
+	openAICompatClaudeCodeTodoGuardMarker = "When using Claude Code todo or task tracking tools, keep the visible task list consistent"
+	openAICompatClaudeCodeTodoGuardText   = openAICompatClaudeCodeTodoGuardMarker + ". Do not send final or summary text while any item remains in_progress. Before finishing, asking the user to choose, or reporting a blocker, update the todo list so completed work is completed and deferred work is pending/open; leave an item in_progress only when active work will continue in the same turn."
 )
 
 func appendOpenAICompatClaudeCodeTodoGuard(req *apicompat.ResponsesRequest) bool {
