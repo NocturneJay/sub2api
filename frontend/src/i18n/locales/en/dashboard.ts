@@ -763,7 +763,8 @@ export default {
       line2: 'When invitees recharge, you receive {rate} of the recharge as rebate quota.',
       line3: 'Transfer rebate quota to balance at any time.',
       line4: 'Newly earned rebates may have a waiting period before they can be transferred.',
-      line5: 'When an invitee makes a first on-site payment of {threshold} or more, they get {inviteeBonus} and you get {inviterBonus}, on top of the standard {rate} rebate. A smaller first order voids the bonus for good.'
+      line5: 'On an invitee first on-site payment you earn {inviterRate} of it, up to {inviterCap}. Any amount counts, including one below the bonus threshold. That rate already includes the standard {rate} rebate; you always get whichever is higher, never both.',
+      line6: 'When an invitee first on-site payment reaches {threshold}, the invitee also gets {inviteeBonus}. A smaller first order voids the invitee side for good, while your first-order rebate is unaffected.'
     }
   },
 

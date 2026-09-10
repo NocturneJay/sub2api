@@ -31,6 +31,7 @@ type firstOrderBonusRepoStub struct {
 	AffiliateRepository
 
 	ensureSummary *AffiliateSummary
+	ensureByUser  map[int64]*AffiliateSummary
 	ensureErr     error
 	readOnly      *AffiliateSummary
 	readOnlyErr   error
@@ -45,7 +46,6 @@ type firstOrderBonusRepoStub struct {
 	readOnlyCalls  []int64
 	lockCalls      []int64
 	hasOtherCalls  [][2]int64
-	voidCalls      []AffiliateFirstOrderBonusVoidInput
 	applyCalls     []AffiliateFirstOrderBonusApplyInput
 	getRecordCalls []int64
 }
@@ -54,6 +54,14 @@ func (r *firstOrderBonusRepoStub) EnsureUserAffiliate(_ context.Context, userID 
 	r.ensureCalls = append(r.ensureCalls, userID)
 	if r.ensureErr != nil {
 		return nil, r.ensureErr
+	}
+	if summary, ok := r.ensureByUser[userID]; ok && summary != nil {
+		cp := *summary
+		return &cp, nil
+	}
+	if r.ensureSummary != nil && r.ensureSummary.UserID != userID {
+		// 邀请人侧没单独配置时给一个干净的默认 profile（无专属比例）。
+		return &AffiliateSummary{UserID: userID, AffCode: "INVITER", CreatedAt: time.Now().Add(-48 * time.Hour)}, nil
 	}
 	if r.ensureSummary == nil {
 		return &AffiliateSummary{UserID: userID, AffCode: "SELF", CreatedAt: time.Now().Add(-time.Hour)}, nil
@@ -99,11 +107,6 @@ func (r *firstOrderBonusRepoStub) LockUserAffiliateForUpdate(_ context.Context, 
 	return nil
 }
 
-func (r *firstOrderBonusRepoStub) RecordFirstOrderBonusVoid(_ context.Context, in AffiliateFirstOrderBonusVoidInput) (bool, error) {
-	r.voidCalls = append(r.voidCalls, in)
-	return true, nil
-}
-
 func (r *firstOrderBonusRepoStub) ApplyFirstOrderBonus(_ context.Context, in AffiliateFirstOrderBonusApplyInput) (bool, error) {
 	r.applyCalls = append(r.applyCalls, in)
 	if r.applyErr != nil {
@@ -118,8 +121,8 @@ func newFirstOrderBonusService(repo AffiliateRepository, overrides map[string]st
 	values := map[string]string{
 		SettingKeyAffiliateEnabled:             "true",
 		SettingKeyAffiliateRebateFreezeHours:   "0",
-		SettingKeyAffiliateFirstOrderBonus:     `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`,
-		SettingKeyAffiliateRebateRate:          "20",
+		SettingKeyAffiliateFirstOrderBonus:     `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":30}`,
+		SettingKeyAffiliateRebateRate:          "10",
 		SettingKeyAffiliateRebatePerInviteeCap: "0",
 		SettingKeyAffiliateRebateDurationDays:  "0",
 	}
@@ -139,7 +142,7 @@ func firstOrderBonusInt64Ptr(v int64) *int64 { return &v }
 func TestApplyFirstOrderBonusForOrderDisabledWhenFeatureOff(t *testing.T) {
 	repo := &firstOrderBonusRepoStub{}
 	svc := newFirstOrderBonusService(repo, map[string]string{
-		SettingKeyAffiliateFirstOrderBonus: `{"enabled":false,"threshold":20,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`,
+		SettingKeyAffiliateFirstOrderBonus: `{"enabled":false,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":30}`,
 	})
 
 	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 100)
@@ -207,28 +210,47 @@ func TestApplyFirstOrderBonusForOrderNotFirstOrderDoesNotRecord(t *testing.T) {
 	require.Equal(t, "not_first_order", outcome.Reason)
 	require.Equal(t, [][2]int64{{42, 7}}, repo.hasOtherCalls)
 	// 不是首单就什么都不落表：券可能还挂在真正的那笔首单上。
-	require.Empty(t, repo.voidCalls)
 	require.Empty(t, repo.applyCalls)
 }
 
-func TestApplyFirstOrderBonusForOrderExpiredRecordsVoid(t *testing.T) {
+func TestApplyFirstOrderBonusForOrderExpiredVoidsInviteeButStillPaysInviter(t *testing.T) {
+	// v2：券过期只作废被邀请人那份，邀请人那份不看券有效期，照样按比例发。
 	repo := &firstOrderBonusRepoStub{
 		ensureSummary: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-40 * 24 * time.Hour)},
+		applyResult:   true,
 	}
 	svc := newFirstOrderBonusService(repo, nil)
 
 	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 100)
 	require.NoError(t, err)
-	require.False(t, outcome.Applied)
+	require.False(t, outcome.Applied, "100 美元时常规 10% 已经等于封顶，邀请人拿不到额外的")
 	require.Equal(t, "expired", outcome.Reason)
-	require.Len(t, repo.voidCalls, 1)
-	require.Equal(t, FirstOrderBonusStatusVoidExpired, repo.voidCalls[0].Status)
-	require.Equal(t, int64(42), repo.voidCalls[0].UserID)
-	require.Equal(t, int64(7), repo.voidCalls[0].OrderID)
-	require.InDelta(t, 100.0, repo.voidCalls[0].OrderAmount, 1e-9)
-	require.NotNil(t, repo.voidCalls[0].InviterID)
-	require.Equal(t, int64(9), *repo.voidCalls[0].InviterID)
-	require.Empty(t, repo.applyCalls)
+	require.Equal(t, FirstOrderBonusStatusVoidExpired, outcome.InviteeStatus)
+	require.InDelta(t, 0.0, outcome.InviteeBonus, 1e-9)
+	require.InDelta(t, 0.0, outcome.InviterBonus, 1e-9)
+
+	// 无论发没发钱，记录都要落表：券已经烧掉了。
+	require.Len(t, repo.applyCalls, 1)
+	require.Equal(t, FirstOrderBonusStatusVoidExpired, repo.applyCalls[0].Status)
+	require.InDelta(t, 0.0, repo.applyCalls[0].InviteeBonus, 1e-9)
+	require.Equal(t, int64(7), repo.applyCalls[0].OrderID)
+	require.InDelta(t, 100.0, repo.applyCalls[0].OrderAmount, 1e-9)
+}
+
+func TestApplyFirstOrderBonusForOrderExpiredStillPaysInviterExtraOnSmallOrder(t *testing.T) {
+	// 过期 + 小额首单：被邀请人 0，邀请人 5×50%=2.5 减常规 10% 的 0.5 = 2。
+	repo := &firstOrderBonusRepoStub{
+		ensureSummary: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-40 * 24 * time.Hour)},
+		applyResult:   true,
+	}
+	svc := newFirstOrderBonusService(repo, nil)
+
+	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 5)
+	require.NoError(t, err)
+	require.True(t, outcome.Applied)
+	require.Equal(t, FirstOrderBonusStatusVoidExpired, outcome.InviteeStatus)
+	require.InDelta(t, 0.0, outcome.InviteeBonus, 1e-9)
+	require.InDelta(t, 2.0, outcome.InviterBonus, 1e-9)
 }
 
 func TestApplyFirstOrderBonusForOrderNeverExpiresWhenValidDaysZero(t *testing.T) {
@@ -237,29 +259,109 @@ func TestApplyFirstOrderBonusForOrderNeverExpiresWhenValidDaysZero(t *testing.T)
 		applyResult:   true,
 	}
 	svc := newFirstOrderBonusService(repo, map[string]string{
-		SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_bonus":10,"valid_days":0}`,
+		SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":0}`,
 	})
 
 	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 100)
 	require.NoError(t, err)
 	require.True(t, outcome.Applied)
-	require.Empty(t, repo.voidCalls)
+	require.Equal(t, FirstOrderBonusStatusApplied, repo.applyCalls[0].Status)
 }
 
-func TestApplyFirstOrderBonusForOrderBelowThresholdRecordsVoid(t *testing.T) {
+func TestApplyFirstOrderBonusForOrderBelowThresholdVoidsInviteeButStillPaysInviter(t *testing.T) {
+	// v2 的核心口径：好友首单 5$ 不满 20$ 阈值 —— 被邀请人那份作废，
+	// 邀请人照样拿 5×50%=2.5，减掉常规 10% 已发的 0.5，额外累计 2。
 	repo := &firstOrderBonusRepoStub{
 		ensureSummary: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-time.Hour)},
+		applyResult:   true,
 	}
 	svc := newFirstOrderBonusService(repo, nil)
 
-	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 19.99)
+	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 5)
 	require.NoError(t, err)
-	require.False(t, outcome.Applied)
+	require.True(t, outcome.Applied)
 	require.Equal(t, "below_threshold", outcome.Reason)
-	require.Len(t, repo.voidCalls, 1)
-	require.Equal(t, FirstOrderBonusStatusVoidBelowThreshold, repo.voidCalls[0].Status)
-	require.InDelta(t, 19.99, repo.voidCalls[0].OrderAmount, 1e-9)
-	require.Empty(t, repo.applyCalls)
+	require.Equal(t, FirstOrderBonusStatusVoidBelowThreshold, outcome.InviteeStatus)
+	require.InDelta(t, 0.0, outcome.InviteeBonus, 1e-9)
+	require.InDelta(t, 2.0, outcome.InviterBonus, 1e-9)
+
+	require.Len(t, repo.applyCalls, 1)
+	in := repo.applyCalls[0]
+	require.Equal(t, FirstOrderBonusStatusVoidBelowThreshold, in.Status)
+	require.InDelta(t, 0.0, in.InviteeBonus, 1e-9)
+	require.InDelta(t, 2.0, in.InviterBonus, 1e-9)
+	require.InDelta(t, 5.0, in.OrderAmount, 1e-9)
+}
+
+func TestApplyFirstOrderBonusForOrderInviterBonusFollowsRateCapAndRegularRebate(t *testing.T) {
+	// 一张表钉死 v2 的公式：额外累计 = min(金额×50%, 封顶10) − 常规10%，负数取 0。
+	for _, tc := range []struct {
+		name        string
+		orderAmount float64
+		wantInviter float64
+		wantStatus  string
+	}{
+		{"1 美元", 1, 0.4, FirstOrderBonusStatusVoidBelowThreshold},
+		{"5 美元", 5, 2, FirstOrderBonusStatusVoidBelowThreshold},
+		{"20 美元刚好达标", 20, 8, FirstOrderBonusStatusApplied},
+		{"50 美元触顶", 50, 5, FirstOrderBonusStatusApplied},
+		{"100 美元封顶等于常规", 100, 0, FirstOrderBonusStatusApplied},
+		{"200 美元常规反超", 200, 0, FirstOrderBonusStatusApplied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &firstOrderBonusRepoStub{
+				ensureSummary: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-time.Hour)},
+				applyResult:   true,
+			}
+			svc := newFirstOrderBonusService(repo, nil)
+
+			outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, tc.orderAmount)
+			require.NoError(t, err)
+			require.InDelta(t, tc.wantInviter, outcome.InviterBonus, 1e-9)
+			require.Equal(t, tc.wantStatus, outcome.InviteeStatus)
+			require.Len(t, repo.applyCalls, 1)
+			require.InDelta(t, tc.wantInviter, repo.applyCalls[0].InviterBonus, 1e-9)
+		})
+	}
+}
+
+func TestApplyFirstOrderBonusForOrderInviterBonusUsesExclusiveRate(t *testing.T) {
+	// 邀请人有专属返利比例时，扣减的是他自己那一档，而不是全局值。
+	exclusive := 40.0
+	repo := &firstOrderBonusRepoStub{
+		ensureSummary: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-time.Hour)},
+		applyResult:   true,
+		ensureByUser: map[int64]*AffiliateSummary{
+			9: {UserID: 9, AffCode: "INVITER", AffRebateRatePercent: &exclusive, CreatedAt: time.Now().Add(-48 * time.Hour)},
+		},
+	}
+	svc := newFirstOrderBonusService(repo, nil)
+
+	// 20 × 50% = 10（未触顶）；专属 40% 已发 8 → 额外 2。
+	outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 20)
+	require.NoError(t, err)
+	require.InDelta(t, 2.0, outcome.InviterBonus, 1e-9)
+}
+
+func TestApplyFirstOrderBonusForOrderInviterBonusZeroWhenRateOrCapIsZero(t *testing.T) {
+	for name, setting := range map[string]string{
+		"rate=0": `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":0,"inviter_cap":10,"valid_days":30}`,
+		"cap=0":  `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":0,"valid_days":30}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := &firstOrderBonusRepoStub{
+				ensureSummary: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-time.Hour)},
+				applyResult:   true,
+			}
+			svc := newFirstOrderBonusService(repo, map[string]string{SettingKeyAffiliateFirstOrderBonus: setting})
+
+			outcome, err := svc.ApplyFirstOrderBonusForOrder(context.Background(), 42, 7, 50)
+			require.NoError(t, err)
+			require.InDelta(t, 0.0, outcome.InviterBonus, 1e-9)
+			// 被邀请人那份不受影响。
+			require.InDelta(t, 10.0, outcome.InviteeBonus, 1e-9)
+		})
+	}
 }
 
 func TestApplyFirstOrderBonusForOrderExactThresholdApplies(t *testing.T) {
@@ -275,7 +377,8 @@ func TestApplyFirstOrderBonusForOrderExactThresholdApplies(t *testing.T) {
 	require.True(t, outcome.Applied)
 	require.Equal(t, "applied", outcome.Reason)
 	require.InDelta(t, 10.0, outcome.InviteeBonus, 1e-9)
-	require.InDelta(t, 10.0, outcome.InviterBonus, 1e-9)
+	// 20 × 50% = 10（未触顶）；常规 10% 已发 2 → 额外 8。
+	require.InDelta(t, 8.0, outcome.InviterBonus, 1e-9)
 	require.NotNil(t, outcome.InviterID)
 	require.Equal(t, int64(9), *outcome.InviterID)
 
@@ -286,10 +389,10 @@ func TestApplyFirstOrderBonusForOrderExactThresholdApplies(t *testing.T) {
 	require.Equal(t, int64(7), in.OrderID)
 	require.InDelta(t, 20.0, in.OrderAmount, 1e-9)
 	require.InDelta(t, 10.0, in.InviteeBonus, 1e-9)
-	require.InDelta(t, 10.0, in.InviterBonus, 1e-9)
+	require.InDelta(t, 8.0, in.InviterBonus, 1e-9)
+	require.Equal(t, FirstOrderBonusStatusApplied, in.Status)
 	// 冻结期沿用常规返利那一套设置。
 	require.Equal(t, 72, in.FreezeHours)
-	require.Empty(t, repo.voidCalls)
 }
 
 func TestApplyFirstOrderBonusForOrderAlreadyClaimed(t *testing.T) {
@@ -376,7 +479,7 @@ func TestGetFirstOrderBonusStatusVoidRecordCarriesNoAppliedFields(t *testing.T) 
 func TestGetFirstOrderBonusStatusDisabledStillReturnsConfig(t *testing.T) {
 	repo := &firstOrderBonusRepoStub{}
 	svc := newFirstOrderBonusService(repo, map[string]string{
-		SettingKeyAffiliateFirstOrderBonus: `{"enabled":false,"threshold":25,"invitee_bonus":8,"inviter_bonus":6,"valid_days":15}`,
+		SettingKeyAffiliateFirstOrderBonus: `{"enabled":false,"threshold":25,"invitee_bonus":8,"inviter_rate_percent":40,"inviter_cap":6,"valid_days":15}`,
 	})
 
 	status, err := svc.GetFirstOrderBonusStatus(context.Background(), 42)
@@ -386,7 +489,8 @@ func TestGetFirstOrderBonusStatusDisabledStillReturnsConfig(t *testing.T) {
 	// 关闭时配置字段照常返回：前端要用这些数字渲染文案。
 	require.InDelta(t, 25.0, status.Threshold, 1e-9)
 	require.InDelta(t, 8.0, status.InviteeBonus, 1e-9)
-	require.InDelta(t, 6.0, status.InviterBonus, 1e-9)
+	require.InDelta(t, 40.0, status.InviterRatePercent, 1e-9)
+	require.InDelta(t, 6.0, status.InviterCap, 1e-9)
 	require.Equal(t, 15, status.ValidDays)
 	require.Empty(t, repo.readOnlyCalls)
 }
@@ -441,7 +545,7 @@ func TestGetFirstOrderBonusStatusVoidExpiredIsLazyAndDoesNotRecord(t *testing.T)
 	require.Equal(t, FirstOrderBonusStatusVoidExpired, status.Status)
 	require.Nil(t, status.ExpiresAt)
 	// 惰性判定：一次 GET 不该落表。
-	require.Empty(t, repo.voidCalls)
+	require.Empty(t, repo.applyCalls)
 }
 
 func TestGetFirstOrderBonusStatusAvailableCarriesExpiresAt(t *testing.T) {
@@ -464,7 +568,7 @@ func TestGetFirstOrderBonusStatusAvailableOmitsExpiresAtWhenNeverExpires(t *test
 		readOnly: &AffiliateSummary{UserID: 42, InviterID: firstOrderBonusInt64Ptr(9), CreatedAt: time.Now().Add(-5000 * 24 * time.Hour)},
 	}
 	svc := newFirstOrderBonusService(repo, map[string]string{
-		SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_bonus":10,"valid_days":0}`,
+		SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":0}`,
 	})
 
 	status, err := svc.GetFirstOrderBonusStatus(context.Background(), 42)
@@ -505,16 +609,18 @@ func TestParseAffiliateFirstOrderBonusConfigKeepsDefaultsForMissingFields(t *tes
 	require.InDelta(t, 50.0, cfg.Threshold, 1e-9)
 	// 缺的字段保持默认，而不是掉成零值（否则后台显示 0、实际按默认执行）。
 	require.InDelta(t, AffiliateFirstOrderInviteeBonusDefault, cfg.InviteeBonus, 1e-9)
-	require.InDelta(t, AffiliateFirstOrderInviterBonusDefault, cfg.InviterBonus, 1e-9)
+	require.InDelta(t, AffiliateFirstOrderInviterRatePercentDefault, cfg.InviterRatePercent, 1e-9)
+	require.InDelta(t, AffiliateFirstOrderInviterCapDefault, cfg.InviterCap, 1e-9)
 	require.Equal(t, AffiliateFirstOrderValidDaysDefault, cfg.ValidDays)
 }
 
 func TestParseAffiliateFirstOrderBonusConfigNormalizesOutOfRange(t *testing.T) {
-	cfg := ParseAffiliateFirstOrderBonusConfig(`{"enabled":true,"threshold":-5,"invitee_bonus":999999999,"inviter_bonus":0,"valid_days":99999}`)
+	cfg := ParseAffiliateFirstOrderBonusConfig(`{"enabled":true,"threshold":-5,"invitee_bonus":999999999,"inviter_rate_percent":250,"inviter_cap":0,"valid_days":99999}`)
 	require.InDelta(t, AffiliateFirstOrderThresholdDefault, cfg.Threshold, 1e-9)
 	require.InDelta(t, AffiliateFirstOrderAmountMax, cfg.InviteeBonus, 1e-9)
-	// 0 是合法值（只给一边发钱），不该被回落成默认。
-	require.InDelta(t, 0.0, cfg.InviterBonus, 1e-9)
+	// 返利率夹到 100，封顶额 0 是合法值（只给一边发钱），不该被回落成默认。
+	require.InDelta(t, AffiliateFirstOrderInviterRatePercentMax, cfg.InviterRatePercent, 1e-9)
+	require.InDelta(t, 0.0, cfg.InviterCap, 1e-9)
 	require.Equal(t, AffiliateFirstOrderValidDaysMax, cfg.ValidDays)
 
 	negativeDays := ParseAffiliateFirstOrderBonusConfig(`{"valid_days":-1}`)
@@ -522,8 +628,22 @@ func TestParseAffiliateFirstOrderBonusConfigNormalizesOutOfRange(t *testing.T) {
 }
 
 func TestAffiliateFirstOrderBonusConfigMarshalSettingValueRoundTrips(t *testing.T) {
-	cfg := AffiliateFirstOrderBonusConfig{Enabled: true, Threshold: 30, InviteeBonus: 12, InviterBonus: 8, ValidDays: 45}
+	cfg := AffiliateFirstOrderBonusConfig{Enabled: true, Threshold: 30, InviteeBonus: 12, InviterRatePercent: 35, InviterCap: 8, ValidDays: 45}
 	require.Equal(t, cfg, ParseAffiliateFirstOrderBonusConfig(cfg.MarshalSettingValue()))
+}
+
+// TestParseAffiliateFirstOrderBonusConfigReadsLegacyInviterBonusAsCap 守 v1→v2 的升级：
+// 库里已有的 inviter_bonus（v1 的「达标时固定发多少」）在没有 inviter_cap 时当作封顶额读，
+// 这样二进制换上去、后台还没保存过的那段时间里，页面显示的数字与实际执行的口径一致。
+func TestParseAffiliateFirstOrderBonusConfigReadsLegacyInviterBonusAsCap(t *testing.T) {
+	cfg := ParseAffiliateFirstOrderBonusConfig(`{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_bonus":6,"valid_days":30}`)
+	require.InDelta(t, 6.0, cfg.InviterCap, 1e-9)
+	// 比例字段 v1 里没有，保持默认。
+	require.InDelta(t, AffiliateFirstOrderInviterRatePercentDefault, cfg.InviterRatePercent, 1e-9)
+
+	// 两个键同时存在时以新键为准。
+	both := ParseAffiliateFirstOrderBonusConfig(`{"inviter_bonus":6,"inviter_cap":12}`)
+	require.InDelta(t, 12.0, both.InviterCap, 1e-9)
 }
 
 var _ AffiliateRepository = (*firstOrderBonusRepoStub)(nil)

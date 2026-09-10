@@ -9,20 +9,29 @@ import (
 
 // 邀请「首单双向奖励」的领域逻辑（aicat 自研，2026-09）。
 //
-// 业务口径：被邀请人注册即持有一张「首充券」，在券有效期内的第一笔真正交付
-// 完成的站内订单如果达到阈值，被邀请人加余额、邀请人加返利额度；不到阈值则
-// 当场永久作废。常规 20% 返利与本功能完全独立、互不影响。
+// 业务口径（v2，2026-09-10 主人拍板「读法 B」）：
+//
+//   - 被邀请人：注册即持有一张「首充券」，在券有效期内的第一笔真正交付完成的
+//     站内订单如果达到阈值，加余额；不到阈值或已过期则当场永久作废。
+//   - 邀请人：好友首单**不看阈值、不看券有效期**，按首单金额 × 首单返利率
+//     （默认 50%）计算总返利、封顶一个金额（默认 10$），再扣掉常规比例返利
+//     已经发过的那部分；差额为正才额外累计，为负则什么都不额外发（即「不低于
+//     常规返利」）。所以好友首充 5$ 邀请人拿 2.5$，首充 20$ 拿 10$，首充 200$
+//     常规 10% 已经是 20$，不再额外发。
+//
+// 常规比例返利完全独立、互不影响；本功能只在它之上补差额。
 //
 // 为什么单独一个文件：affiliate_service.go 是与上游合并的热点文件，自研逻辑
 // 全部放新文件，既有文件只做接口块的一处连续插入。
 
-// 首单奖励的状态机取值。前四个既是新表 status 列的落库值（applied /
-// void_below_threshold / void_expired），也是用户端查询返回的 status；
+// 首单奖励的状态机取值。前三个既是新表 status 列的落库值，描述的是
+// **被邀请人那份券**的结局（applied / void_below_threshold / void_expired）；
+// 邀请人那份看记录里的 inviter_bonus 列，与 status 无关。
 // 后四个只在查询接口里出现，不落表。
 const (
-	// FirstOrderBonusStatusApplied 已发放（落表）。
+	// FirstOrderBonusStatusApplied 被邀请人奖励已发放（落表）。
 	FirstOrderBonusStatusApplied = "applied"
-	// FirstOrderBonusStatusVoidBelowThreshold 首单未达阈值，券当场作废（落表）。
+	// FirstOrderBonusStatusVoidBelowThreshold 首单未达阈值，被邀请人的券当场作废（落表）。
 	FirstOrderBonusStatusVoidBelowThreshold = "void_below_threshold"
 	// FirstOrderBonusStatusVoidExpired 首单发生时券已过期（落表）；查询接口里也用于惰性判定。
 	FirstOrderBonusStatusVoidExpired = "void_expired"
@@ -42,6 +51,8 @@ const (
 const AffiliateLedgerKindFirstOrderBonus = "first_order_bonus"
 
 // ApplyFirstOrderBonusForOrder 各分支的固定 Reason，会原样写进审计 detail。
+// v2 起 expired / below_threshold 描述的只是被邀请人那份的结局，邀请人那份
+// 在这两种情况下照样按比例发，所以它们可以与 Outcome.Applied=true 同时出现。
 const (
 	firstOrderBonusReasonDisabled        = "disabled"
 	firstOrderBonusReasonNoInviter       = "no_inviter"
@@ -70,16 +81,9 @@ type AffiliateFirstOrderBonusRecord struct {
 	CreatedAt    time.Time
 }
 
-// AffiliateFirstOrderBonusVoidInput 是落一条作废记录所需的入参。
-type AffiliateFirstOrderBonusVoidInput struct {
-	UserID      int64
-	InviterID   *int64
-	OrderID     int64
-	OrderAmount float64
-	Status      string
-}
-
-// AffiliateFirstOrderBonusApplyInput 是发放首单奖励所需的入参。
+// AffiliateFirstOrderBonusApplyInput 是结算一笔首单所需的入参。
+// InviteeBonus / InviterBonus 可以为 0（那一侧不发钱，但记录照样落表）。
+// Status 是被邀请人那份券的结局，落进记录表的 status 列。
 type AffiliateFirstOrderBonusApplyInput struct {
 	UserID       int64
 	InviterID    int64
@@ -87,6 +91,7 @@ type AffiliateFirstOrderBonusApplyInput struct {
 	OrderAmount  float64
 	InviteeBonus float64
 	InviterBonus float64
+	Status       string
 	FreezeHours  int
 }
 
@@ -96,7 +101,8 @@ type AffiliateFirstOrderBonusStatus struct {
 	Status              string     `json:"status"`
 	Threshold           float64    `json:"threshold"`
 	InviteeBonus        float64    `json:"invitee_bonus"`
-	InviterBonus        float64    `json:"inviter_bonus"`
+	InviterRatePercent  float64    `json:"inviter_rate_percent"`
+	InviterCap          float64    `json:"inviter_cap"`
 	ValidDays           int        `json:"valid_days"`
 	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
 	AppliedAt           *time.Time `json:"applied_at,omitempty"`
@@ -104,13 +110,16 @@ type AffiliateFirstOrderBonusStatus struct {
 	AppliedInviteeBonus *float64   `json:"applied_invitee_bonus,omitempty"`
 }
 
-// AffiliateFirstOrderBonusOutcome 是一次发放尝试的结果，供调用方写审计。
+// AffiliateFirstOrderBonusOutcome 是一次结算尝试的结果，供调用方写审计。
+// Applied 表示「有钱动了」（任一侧 > 0）；InviteeStatus 是被邀请人那份的结局，
+// 只在真的落了表时非空。
 type AffiliateFirstOrderBonusOutcome struct {
-	Applied      bool
-	Reason       string
-	InviteeBonus float64
-	InviterBonus float64
-	InviterID    *int64
+	Applied       bool
+	Reason        string
+	InviteeStatus string
+	InviteeBonus  float64
+	InviterBonus  float64
+	InviterID     *int64
 }
 
 // IsFirstOrderBonusActive 是 SettingService 的薄包装：让 PaymentService 在
@@ -131,15 +140,16 @@ func (s *AffiliateService) firstOrderBonusConfig(ctx context.Context) AffiliateF
 	return s.settingService.GetAffiliateFirstOrderBonusConfig(ctx).Normalized()
 }
 
-// ApplyFirstOrderBonusForOrder 尝试为一笔已交付的订单发放首单奖励。
+// ApplyFirstOrderBonusForOrder 尝试为一笔已交付的订单结算首单奖励。
 //
 // 调用方（PaymentService）已经在事务里，并且已经用审计行抢占了这笔订单，
 // 所以这里的每一步都在同一个事务内；返回 error 让调用方回滚。
 //
 // 判定顺序是有意固定的：先看功能开关（省掉后面所有查询），再看有没有邀请人，
 // 然后锁被邀请人的 user_affiliates 行把同一用户的并发首单串行化，之后才是
-// 「已经处理过吗 / 是不是首单 / 过期了吗 / 够阈值吗」。锁必须在读记录之前，
-// 否则两个并发请求会同时读到「没有记录」。
+// 「已经处理过吗 / 是不是首单」。锁必须在读记录之前，否则两个并发请求会同时
+// 读到「没有记录」。确认是首单之后，两侧各算各的：被邀请人看有效期与阈值，
+// 邀请人只看金额；最后一次性落表。
 func (s *AffiliateService) ApplyFirstOrderBonusForOrder(ctx context.Context, inviteeUserID, orderID int64, orderAmount float64) (*AffiliateFirstOrderBonusOutcome, error) {
 	if s == nil || s.repo == nil {
 		return &AffiliateFirstOrderBonusOutcome{Reason: firstOrderBonusReasonDisabled}, nil
@@ -181,33 +191,26 @@ func (s *AffiliateService) ApplyFirstOrderBonusForOrder(ctx context.Context, inv
 		return &AffiliateFirstOrderBonusOutcome{Reason: firstOrderBonusReasonNotFirstOrder, InviterID: &inviterID}, nil
 	}
 
+	// —— 被邀请人那份：看有效期，再看阈值 ——
 	// 有效期从 user_affiliates.created_at 起算（对被邀请人恒等于注册时间，
 	// 因为 inviter_id 只在注册流程内写入且同事务先建行），与现有返利有效期同源。
-	if cfg.ValidDays > 0 && time.Now().After(invitee.CreatedAt.AddDate(0, 0, cfg.ValidDays)) {
-		if _, err := s.repo.RecordFirstOrderBonusVoid(ctx, AffiliateFirstOrderBonusVoidInput{
-			UserID:      inviteeUserID,
-			InviterID:   &inviterID,
-			OrderID:     orderID,
-			OrderAmount: orderAmount,
-			Status:      FirstOrderBonusStatusVoidExpired,
-		}); err != nil {
-			return nil, err
-		}
-		return &AffiliateFirstOrderBonusOutcome{Reason: firstOrderBonusReasonExpired, InviterID: &inviterID}, nil
+	inviteeStatus := FirstOrderBonusStatusApplied
+	inviteeBonus := cfg.InviteeBonus
+	reason := firstOrderBonusReasonApplied
+	switch {
+	case cfg.ValidDays > 0 && time.Now().After(invitee.CreatedAt.AddDate(0, 0, cfg.ValidDays)):
+		inviteeStatus, inviteeBonus, reason = FirstOrderBonusStatusVoidExpired, 0, firstOrderBonusReasonExpired
+	case orderAmount+affiliateFirstOrderAmountEpsilon < cfg.Threshold:
+		inviteeStatus, inviteeBonus, reason = FirstOrderBonusStatusVoidBelowThreshold, 0, firstOrderBonusReasonBelowThreshold
 	}
 
-	if orderAmount+affiliateFirstOrderAmountEpsilon < cfg.Threshold {
-		if _, err := s.repo.RecordFirstOrderBonusVoid(ctx, AffiliateFirstOrderBonusVoidInput{
-			UserID:      inviteeUserID,
-			InviterID:   &inviterID,
-			OrderID:     orderID,
-			OrderAmount: orderAmount,
-			Status:      FirstOrderBonusStatusVoidBelowThreshold,
-		}); err != nil {
-			return nil, err
-		}
-		return &AffiliateFirstOrderBonusOutcome{Reason: firstOrderBonusReasonBelowThreshold, InviterID: &inviterID}, nil
+	// —— 邀请人那份：只看金额，不看阈值、不看券有效期 ——
+	// 需要邀请人的 profile 才能算出「常规返利已经发了多少」（专属比例覆盖全局）。
+	inviter, err := s.repo.EnsureUserAffiliate(ctx, inviterID)
+	if err != nil {
+		return nil, err
 	}
+	inviterBonus := s.firstOrderInviterBonus(ctx, invitee, inviter, orderAmount, cfg)
 
 	freezeHours := 0
 	if s.settingService != nil {
@@ -219,8 +222,9 @@ func (s *AffiliateService) ApplyFirstOrderBonusForOrder(ctx context.Context, inv
 		InviterID:    inviterID,
 		OrderID:      orderID,
 		OrderAmount:  orderAmount,
-		InviteeBonus: cfg.InviteeBonus,
-		InviterBonus: cfg.InviterBonus,
+		InviteeBonus: inviteeBonus,
+		InviterBonus: inviterBonus,
+		Status:       inviteeStatus,
 		FreezeHours:  freezeHours,
 	})
 	if err != nil {
@@ -231,12 +235,54 @@ func (s *AffiliateService) ApplyFirstOrderBonusForOrder(ctx context.Context, inv
 		return &AffiliateFirstOrderBonusOutcome{Reason: firstOrderBonusReasonAlreadyClaimed, InviterID: &inviterID}, nil
 	}
 	return &AffiliateFirstOrderBonusOutcome{
-		Applied:      true,
-		Reason:       firstOrderBonusReasonApplied,
-		InviteeBonus: cfg.InviteeBonus,
-		InviterBonus: cfg.InviterBonus,
-		InviterID:    &inviterID,
+		Applied:       inviteeBonus > 0 || inviterBonus > 0,
+		Reason:        reason,
+		InviteeStatus: inviteeStatus,
+		InviteeBonus:  inviteeBonus,
+		InviterBonus:  inviterBonus,
+		InviterID:     &inviterID,
 	}, nil
+}
+
+// firstOrderInviterBonus 算邀请人在好友首单上应**额外**累计的返利额度：
+//
+//	首单总返利 = min(首单金额 × 首单返利率, 封顶额)
+//	额外累计   = 首单总返利 − 常规比例返利在这笔订单上已发的金额，负数取 0
+//
+// 常规返利那一份用与 AccrueInviteRebateForOrder 完全相同的口径反推（专属比例
+// 优先、返利有效期、单人上限截断、8 位小数），这样两条路径加起来正好等于
+// 「首单返利率、封顶、不低于常规」这句话，而不会多发或少发一分。
+// 返利率或封顶额为 0 都表示「邀请人那份不发」。
+func (s *AffiliateService) firstOrderInviterBonus(ctx context.Context, invitee, inviter *AffiliateSummary, orderAmount float64, cfg AffiliateFirstOrderBonusConfig) float64 {
+	if orderAmount <= 0 || cfg.InviterRatePercent <= 0 || cfg.InviterCap <= 0 {
+		return 0
+	}
+	total := roundTo(orderAmount*(cfg.InviterRatePercent/100), 8)
+	if total > cfg.InviterCap {
+		total = cfg.InviterCap
+	}
+	if total <= 0 {
+		return 0
+	}
+
+	regular := roundTo(orderAmount*(s.resolveRebateRatePercent(ctx, inviter)/100), 8)
+	if s.settingService != nil && invitee != nil {
+		if durationDays := s.settingService.GetAffiliateRebateDurationDays(ctx); durationDays > 0 {
+			if time.Now().After(invitee.CreatedAt.AddDate(0, 0, durationDays)) {
+				regular = 0
+			}
+		}
+		if perInviteeCap := s.settingService.GetAffiliateRebatePerInviteeCap(ctx); perInviteeCap > 0 && regular > perInviteeCap {
+			// 首单之前该好友还没产生过返利，常规路径最多只发到单人上限。
+			regular = roundTo(perInviteeCap, 8)
+		}
+	}
+
+	extra := roundTo(total-regular, 8)
+	if extra <= 0 {
+		return 0
+	}
+	return extra
 }
 
 // GetFirstOrderBonusStatus 返回用户当前的首充券状态（只读，绝不建行、绝不落表）。
@@ -253,11 +299,12 @@ func (s *AffiliateService) GetFirstOrderBonusStatus(ctx context.Context, userID 
 
 	cfg := s.firstOrderBonusConfig(ctx)
 	out := &AffiliateFirstOrderBonusStatus{
-		Enabled:      s.IsFirstOrderBonusActive(ctx),
-		Threshold:    cfg.Threshold,
-		InviteeBonus: cfg.InviteeBonus,
-		InviterBonus: cfg.InviterBonus,
-		ValidDays:    cfg.ValidDays,
+		Enabled:            s.IsFirstOrderBonusActive(ctx),
+		Threshold:          cfg.Threshold,
+		InviteeBonus:       cfg.InviteeBonus,
+		InviterRatePercent: cfg.InviterRatePercent,
+		InviterCap:         cfg.InviterCap,
+		ValidDays:          cfg.ValidDays,
 	}
 
 	// 1) 有记录：直接按记录返回。

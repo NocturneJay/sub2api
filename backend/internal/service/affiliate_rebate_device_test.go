@@ -121,10 +121,6 @@ func (r *affiliateRebateRepoStub) LockUserAffiliateForUpdate(context.Context, in
 	return nil
 }
 
-func (r *affiliateRebateRepoStub) RecordFirstOrderBonusVoid(context.Context, AffiliateFirstOrderBonusVoidInput) (bool, error) {
-	return false, nil
-}
-
 func (r *affiliateRebateRepoStub) ApplyFirstOrderBonus(context.Context, AffiliateFirstOrderBonusApplyInput) (bool, error) {
 	return false, nil
 }

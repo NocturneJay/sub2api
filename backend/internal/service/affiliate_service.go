@@ -129,9 +129,7 @@ type AffiliateRepository interface {
 	HasEarlierOrFulfilledPaymentOrder(ctx context.Context, userID, excludeOrderID int64) (bool, error)
 	// LockUserAffiliateForUpdate 在事务内锁住被邀请人的 user_affiliates 行，串行化同一用户的并发首单。
 	LockUserAffiliateForUpdate(ctx context.Context, userID int64) error
-	// RecordFirstOrderBonusVoid 落一条作废记录（幂等），返回是否为本次新写入。
-	RecordFirstOrderBonusVoid(ctx context.Context, in AffiliateFirstOrderBonusVoidInput) (bool, error)
-	// ApplyFirstOrderBonus 事务内发放首单奖励（记录 + 被邀请人余额 + 邀请人额度 + 两条台账），返回是否为本次新发放。
+	// ApplyFirstOrderBonus 事务内结算一笔首单（记录 + 可选的被邀请人余额 + 可选的邀请人额度 + 对应台账），返回是否为本次新落表。
 	ApplyFirstOrderBonus(ctx context.Context, in AffiliateFirstOrderBonusApplyInput) (bool, error)
 }
 

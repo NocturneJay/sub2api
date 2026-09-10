@@ -98,10 +98,14 @@ func (s *PaymentService) runAffiliateFirstOrderBonusTx(ctx context.Context, o *d
 	}
 
 	if outcome.Applied {
+		// v2 起 APPLIED 表示「有钱动了」：好友首单不满阈值时被邀请人那份作废、
+		// 邀请人那份照样按比例发，也走这条分支，靠 inviteeStatus / reason 区分。
 		detail := map[string]any{
-			"orderAmount":  orderAmount,
-			"inviteeBonus": outcome.InviteeBonus,
-			"inviterBonus": outcome.InviterBonus,
+			"orderAmount":   orderAmount,
+			"reason":        outcome.Reason,
+			"inviteeStatus": outcome.InviteeStatus,
+			"inviteeBonus":  outcome.InviteeBonus,
+			"inviterBonus":  outcome.InviterBonus,
 		}
 		if outcome.InviterID != nil {
 			detail["inviterID"] = *outcome.InviterID
@@ -111,11 +115,16 @@ func (s *PaymentService) runAffiliateFirstOrderBonusTx(ctx context.Context, o *d
 			return false, fmt.Errorf("update affiliate first order bonus applied audit: %w", err)
 		}
 	} else {
+		skippedDetail := map[string]any{
+			"orderAmount": orderAmount,
+			"reason":      outcome.Reason,
+		}
+		if outcome.InviteeStatus != "" {
+			// 落了表但两侧都是 0（例如后台把两份奖励都设成 0）：记录结局，方便对账。
+			skippedDetail["inviteeStatus"] = outcome.InviteeStatus
+		}
 		if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID,
-			affiliateFirstOrderBonusAuditClaim.skippedAction, map[string]any{
-				"orderAmount": orderAmount,
-				"reason":      outcome.Reason,
-			}, affiliateFirstOrderBonusAuditClaim); err != nil {
+			affiliateFirstOrderBonusAuditClaim.skippedAction, skippedDetail, affiliateFirstOrderBonusAuditClaim); err != nil {
 			return false, fmt.Errorf("update affiliate first order bonus skipped audit: %w", err)
 		}
 	}

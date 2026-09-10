@@ -7643,17 +7643,34 @@
 
                   <div>
                     <label class="input-label">
-                      {{ t('admin.settings.features.affiliate.firstOrder.inviterBonus') }}
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviterRate') }}
                     </label>
                     <input
-                      v-model.number="form.affiliate_first_order_bonus.inviter_bonus"
+                      v-model.number="form.affiliate_first_order_bonus.inviter_rate_percent"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviterRateDesc') }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviterCap') }}
+                    </label>
+                    <input
+                      v-model.number="form.affiliate_first_order_bonus.inviter_cap"
                       type="number"
                       step="0.01"
                       min="0"
                       class="input"
                     />
                     <p class="mt-1 text-xs text-gray-400">
-                      {{ t('admin.settings.features.affiliate.firstOrder.inviterBonusDesc') }}
+                      {{ t('admin.settings.features.affiliate.firstOrder.inviterCapDesc') }}
                     </p>
                   </div>
 
@@ -9832,7 +9849,8 @@ const form = reactive<SettingsForm>({
     enabled: false,
     threshold: 20,
     invitee_bonus: 10,
-    inviter_bonus: 10,
+    inviter_rate_percent: 50,
+    inviter_cap: 10,
     valid_days: 30,
   },
   affiliate_admin_recharge_enabled: false,
@@ -11529,7 +11547,11 @@ async function saveSettings() {
         enabled: form.affiliate_first_order_bonus.enabled,
         threshold: Math.max(0, Number(form.affiliate_first_order_bonus.threshold) || 0),
         invitee_bonus: Math.max(0, Number(form.affiliate_first_order_bonus.invitee_bonus) || 0),
-        inviter_bonus: Math.max(0, Number(form.affiliate_first_order_bonus.inviter_bonus) || 0),
+        inviter_rate_percent: Math.min(
+          100,
+          Math.max(0, Number(form.affiliate_first_order_bonus.inviter_rate_percent) || 0),
+        ),
+        inviter_cap: Math.max(0, Number(form.affiliate_first_order_bonus.inviter_cap) || 0),
         valid_days: Math.min(
           3650,
           Math.max(0, Math.floor(Number(form.affiliate_first_order_bonus.valid_days) || 0)),

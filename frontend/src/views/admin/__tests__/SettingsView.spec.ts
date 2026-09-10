@@ -662,7 +662,7 @@ describe("admin SettingsView first-order bonus copy", () => {
     for (const key of [
       "thresholdDesc",
       "inviteeBonusDesc",
-      "inviterBonusDesc",
+      "inviterCapDesc",
       "validDaysDesc",
     ] as const) {
       expect(zhFirstOrder[key]).toContain("修改会立即影响所有尚未下首单的用户");
@@ -676,6 +676,14 @@ describe("admin SettingsView first-order bonus copy", () => {
     expect(zhFirstOrder.description).toContain("不补");
     expect(enFirstOrder.description).toContain("voided");
     expect(enFirstOrder.enabledHint).toContain("Enable Affiliate");
+
+    // v2：邀请人那份不看阈值、按比例发、封顶，且不低于常规返利 —— 这三句是
+    // 「好友首充不满门槛邀请人还有没有钱拿」的唯一答案，必须写在管理端。
+    expect(zhFirstOrder.inviterRateDesc).toContain("不看阈值");
+    expect(zhFirstOrder.inviterRateDesc).toContain("不低于常规返利");
+    expect(zhFirstOrder.inviterCapDesc).toContain("封顶");
+    expect(enFirstOrder.inviterRateDesc).toContain("regardless of the threshold");
+    expect(enFirstOrder.inviterCapDesc).toContain("capped");
   });
 });
 
@@ -1159,7 +1167,8 @@ describe("admin SettingsView payment visible method controls", () => {
         enabled: true,
         threshold: 25,
         invitee_bonus: 12,
-        inviter_bonus: -5,
+        inviter_rate_percent: 250,
+        inviter_cap: -5,
         valid_days: 9999,
       },
     });
@@ -1180,6 +1189,13 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(card!.text()).toContain(
       "admin.settings.features.affiliate.firstOrder.validDaysDesc",
     );
+    // v2 的两个新字段必须都在表单里，否则后台改不了首单返利率/封顶
+    expect(card!.text()).toContain(
+      "admin.settings.features.affiliate.firstOrder.inviterRateDesc",
+    );
+    expect(card!.text()).toContain(
+      "admin.settings.features.affiliate.firstOrder.inviterCapDesc",
+    );
 
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
@@ -1191,7 +1207,8 @@ describe("admin SettingsView payment visible method controls", () => {
           enabled: true,
           threshold: 25,
           invitee_bonus: 12,
-          inviter_bonus: 0,
+          inviter_rate_percent: 100,
+          inviter_cap: 0,
           valid_days: 3650,
         },
       }),
@@ -1218,7 +1235,8 @@ describe("admin SettingsView payment visible method controls", () => {
           enabled: false,
           threshold: 20,
           invitee_bonus: 10,
-          inviter_bonus: 10,
+          inviter_rate_percent: 50,
+          inviter_cap: 10,
           valid_days: 30,
         },
       }),

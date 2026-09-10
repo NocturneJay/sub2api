@@ -177,57 +177,28 @@ func (r *affiliateRepository) LockUserAffiliateForUpdate(ctx context.Context, us
 	return rows.Err()
 }
 
-// RecordFirstOrderBonusVoid 落一条作废记录（void_expired / void_below_threshold）。
-// ON CONFLICT DO NOTHING 保证「一人一次」由主键兜底；返回值告诉调用方本次是否新写入。
-func (r *affiliateRepository) RecordFirstOrderBonusVoid(ctx context.Context, in service.AffiliateFirstOrderBonusVoidInput) (bool, error) {
-	if in.UserID <= 0 || in.OrderID <= 0 {
-		return false, nil
-	}
-	client := clientFromContext(ctx, r.client)
-	rows, err := client.QueryContext(ctx, `
-INSERT INTO user_affiliate_first_order_bonus
-    (user_id, inviter_id, order_id, order_amount, invitee_bonus, inviter_bonus, status, created_at)
-VALUES ($1, $2, $3, $4, 0, 0, $5, NOW())
-ON CONFLICT (user_id) DO NOTHING
-RETURNING user_id`,
-		in.UserID, nullableInt64Arg(in.InviterID), in.OrderID, in.OrderAmount, in.Status)
-	if err != nil {
-		return false, fmt.Errorf("record affiliate first order bonus void: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	if !rows.Next() {
-		if err := rows.Err(); err != nil {
-			return false, err
-		}
-		return false, nil
-	}
-	var recordedUserID int64
-	if err := rows.Scan(&recordedUserID); err != nil {
-		return false, err
-	}
-	if err := rows.Err(); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// ApplyFirstOrderBonus 在一个事务里完成整套发放，顺序固定：
+// ApplyFirstOrderBonus 在一个事务里完成一笔首单的整套结算，顺序固定：
 //
-//  1. 抢记录（ON CONFLICT DO NOTHING）—— 没抢到就一分钱都不动；
+//  1. 抢记录（ON CONFLICT DO NOTHING，status 按入参落）—— 没抢到就一分钱都不动；
 //  2. 确保邀请人有 user_affiliates 行（邀请人可能从没访问过邀请页）；
-//  3. 被邀请人加余额 + 一条 first_order_bonus 台账（余额历史里解释这笔钱从哪来）；
-//  4. 邀请人加返利额度 + 一条带 kind 的 accrue 台账（复用常规返利的两条 SQL）。
+//  3. InviteeBonus > 0 时被邀请人加余额 + 一条 first_order_bonus 台账
+//     （余额历史里解释这笔钱从哪来）；
+//  4. InviterBonus > 0 时邀请人加返利额度 + 一条带 kind 的 accrue 台账
+//     （复用常规返利的两条 SQL）。
 //
-// 任一步失败都整体回滚：绝不允许「记录表说发了、台账没有」。
+// v2 起作废（不满阈值 / 已过期）也走这条路径：被邀请人那侧传 0、status 传作废值，
+// 邀请人那侧照样按比例累计。任一步失败都整体回滚：绝不允许「记录表说发了、台账没有」。
 func (r *affiliateRepository) ApplyFirstOrderBonus(ctx context.Context, in service.AffiliateFirstOrderBonusApplyInput) (bool, error) {
 	if in.UserID <= 0 || in.InviterID <= 0 || in.OrderID <= 0 {
 		return false, nil
 	}
+	if in.Status == "" {
+		in.Status = service.FirstOrderBonusStatusApplied
+	}
 
 	var applied bool
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
-		claimed, err := insertFirstOrderBonusApplied(txCtx, txClient, in)
+		claimed, err := insertFirstOrderBonusRecord(txCtx, txClient, in)
 		if err != nil {
 			return err
 		}
@@ -266,8 +237,8 @@ func (r *affiliateRepository) ApplyFirstOrderBonus(ctx context.Context, in servi
 	return applied, nil
 }
 
-// insertFirstOrderBonusApplied 抢占「这个账号的首充券」。
-func insertFirstOrderBonusApplied(ctx context.Context, client affiliateQueryExecer, in service.AffiliateFirstOrderBonusApplyInput) (bool, error) {
+// insertFirstOrderBonusRecord 抢占「这个账号的首充券」，status 与两侧金额按入参落表。
+func insertFirstOrderBonusRecord(ctx context.Context, client affiliateQueryExecer, in service.AffiliateFirstOrderBonusApplyInput) (bool, error) {
 	rows, err := client.QueryContext(ctx, `
 INSERT INTO user_affiliate_first_order_bonus
     (user_id, inviter_id, order_id, order_amount, invitee_bonus, inviter_bonus, status, created_at)
@@ -275,7 +246,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 ON CONFLICT (user_id) DO NOTHING
 RETURNING user_id`,
 		in.UserID, in.InviterID, in.OrderID, in.OrderAmount, in.InviteeBonus, in.InviterBonus,
-		service.FirstOrderBonusStatusApplied)
+		in.Status)
 	if err != nil {
 		return false, fmt.Errorf("insert affiliate first order bonus record: %w", err)
 	}

@@ -204,6 +204,7 @@ func TestAffiliateRepository_ApplyFirstOrderBonus_CreditsBothSidesOnce(t *testin
 		OrderAmount:  25,
 		InviteeBonus: 10,
 		InviterBonus: 10,
+		Status:       service.FirstOrderBonusStatusApplied,
 		FreezeHours:  72,
 	})
 	require.NoError(t, err)
@@ -278,6 +279,7 @@ func TestAffiliateRepository_ApplyFirstOrderBonus_CreditsBothSidesOnce(t *testin
 		OrderAmount:  25,
 		InviteeBonus: 999,
 		InviterBonus: 999,
+		Status:       service.FirstOrderBonusStatusApplied,
 		FreezeHours:  72,
 	})
 	require.NoError(t, err, "second apply must not error out")
@@ -329,6 +331,7 @@ func TestAffiliateRepository_ApplyFirstOrderBonus_ZeroFreezeGoesToAvailableQuota
 		OrderAmount:  20,
 		InviteeBonus: 10,
 		InviterBonus: 10,
+		Status:       service.FirstOrderBonusStatusApplied,
 		FreezeHours:  0,
 	})
 	require.NoError(t, err)
@@ -347,10 +350,11 @@ func TestAffiliateRepository_ApplyFirstOrderBonus_ZeroFreezeGoesToAvailableQuota
 	require.False(t, inviterLedger[0].FrozenUntil.Valid, "freeze hours == 0 must leave frozen_until NULL")
 }
 
-// TestAffiliateRepository_RecordFirstOrderBonusVoid_Idempotent 覆盖作废落表：
-// 第一次写入返回 true，第二次（哪怕换了状态和订单）必须返回 false 且不改写已有行。
+// TestAffiliateRepository_ApplyFirstOrderBonus_VoidedInviteeStillPaysInviterOnce 覆盖 v2 的作废形态：
+// 好友首单不满阈值时，被邀请人那份传 0 + status=void_below_threshold，邀请人那份照样累计；
+// 第二次调用（哪怕换了状态、订单和金额）必须被主键挡住，一分钱都不能再动。
 // 作废是不可逆的，被改写等于把用户的券状态说反。
-func TestAffiliateRepository_RecordFirstOrderBonusVoid_Idempotent(t *testing.T) {
+func TestAffiliateRepository_ApplyFirstOrderBonus_VoidedInviteeStillPaysInviterOnce(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
 	txCtx := dbent.NewTxContext(ctx, tx)
@@ -368,15 +372,18 @@ func TestAffiliateRepository_RecordFirstOrderBonusVoid_Idempotent(t *testing.T) 
 		Status: "COMPLETED",
 	})
 
-	recorded, err := repo.RecordFirstOrderBonusVoid(txCtx, service.AffiliateFirstOrderBonusVoidInput{
-		UserID:      invitee.ID,
-		InviterID:   &inviter.ID,
-		OrderID:     firstOrderID,
-		OrderAmount: 5,
-		Status:      service.FirstOrderBonusStatusVoidBelowThreshold,
+	applied, err := repo.ApplyFirstOrderBonus(txCtx, service.AffiliateFirstOrderBonusApplyInput{
+		UserID:       invitee.ID,
+		InviterID:    inviter.ID,
+		OrderID:      firstOrderID,
+		OrderAmount:  5,
+		InviteeBonus: 0,
+		InviterBonus: 2,
+		Status:       service.FirstOrderBonusStatusVoidBelowThreshold,
+		FreezeHours:  0,
 	})
 	require.NoError(t, err)
-	require.True(t, recorded, "first void must report a new row")
+	require.True(t, applied, "first settlement must report a new row")
 
 	record, err := repo.GetFirstOrderBonusRecord(txCtx, invitee.ID)
 	require.NoError(t, err)
@@ -385,17 +392,37 @@ func TestAffiliateRepository_RecordFirstOrderBonusVoid_Idempotent(t *testing.T) 
 	require.Equal(t, firstOrderID, record.OrderID)
 	require.InDelta(t, 5.0, record.OrderAmount, 1e-9)
 	require.InDelta(t, 0.0, record.InviteeBonus, 1e-9)
-	require.InDelta(t, 0.0, record.InviterBonus, 1e-9)
+	require.InDelta(t, 2.0, record.InviterBonus, 1e-9)
 
-	recordedAgain, err := repo.RecordFirstOrderBonusVoid(txCtx, service.AffiliateFirstOrderBonusVoidInput{
-		UserID:      invitee.ID,
-		InviterID:   &inviter.ID,
-		OrderID:     secondOrderID,
-		OrderAmount: 50,
-		Status:      service.FirstOrderBonusStatusVoidExpired,
+	// 被邀请人：余额一分未动，也没有台账行（InviteeBonus=0 时整段跳过）。
+	require.InDelta(t, 1.25, querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", invitee.ID), 1e-9)
+	require.InDelta(t, 0.0, querySingleFloat(t, txCtx, client,
+		"SELECT total_recharged::double precision FROM users WHERE id = $1", invitee.ID), 1e-9)
+	require.Empty(t, queryFirstOrderBonusLedger(t, txCtx, client, invitee.ID))
+
+	// 邀请人：额度与台账照常。
+	require.InDelta(t, 2.0, querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+	inviterLedger := queryFirstOrderBonusLedger(t, txCtx, client, inviter.ID)
+	require.Len(t, inviterLedger, 1)
+	require.Equal(t, "accrue", inviterLedger[0].Action)
+	require.True(t, inviterLedger[0].Kind.Valid)
+	require.Equal(t, service.AffiliateLedgerKindFirstOrderBonus, inviterLedger[0].Kind.String)
+	require.InDelta(t, 2.0, inviterLedger[0].Amount, 1e-9)
+
+	// 第二次：主键挡住，记录不被改写、额度不再增加。
+	appliedAgain, err := repo.ApplyFirstOrderBonus(txCtx, service.AffiliateFirstOrderBonusApplyInput{
+		UserID:       invitee.ID,
+		InviterID:    inviter.ID,
+		OrderID:      secondOrderID,
+		OrderAmount:  50,
+		InviteeBonus: 10,
+		InviterBonus: 10,
+		Status:       service.FirstOrderBonusStatusApplied,
 	})
-	require.NoError(t, err, "second void must not error out")
-	require.False(t, recordedAgain, "second void must report false")
+	require.NoError(t, err, "second settlement must not error out")
+	require.False(t, appliedAgain, "second settlement must report false")
 
 	unchanged, err := repo.GetFirstOrderBonusRecord(txCtx, invitee.ID)
 	require.NoError(t, err)
@@ -404,32 +431,64 @@ func TestAffiliateRepository_RecordFirstOrderBonusVoid_Idempotent(t *testing.T) 
 		"existing void record must not be rewritten")
 	require.Equal(t, firstOrderID, unchanged.OrderID)
 	require.InDelta(t, 5.0, unchanged.OrderAmount, 1e-9)
+	require.InDelta(t, 2.0, unchanged.InviterBonus, 1e-9)
 	require.Equal(t, 1, querySingleInt(t, txCtx, client,
 		"SELECT COUNT(*) FROM user_affiliate_first_order_bonus WHERE user_id = $1", invitee.ID))
-
-	// 作废之后 ApplyFirstOrderBonus 也必须被同一个主键挡住（券已经烧掉了）。
-	applied, err := repo.ApplyFirstOrderBonus(txCtx, service.AffiliateFirstOrderBonusApplyInput{
-		UserID:       invitee.ID,
-		InviterID:    inviter.ID,
-		OrderID:      secondOrderID,
-		OrderAmount:  50,
-		InviteeBonus: 10,
-		InviterBonus: 10,
-	})
-	require.NoError(t, err)
-	require.False(t, applied, "apply after void must be blocked by the primary key")
 	require.InDelta(t, 1.25, querySingleFloat(t, txCtx, client,
 		"SELECT balance::double precision FROM users WHERE id = $1", invitee.ID), 1e-9)
+	require.InDelta(t, 2.0, querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
 	require.Empty(t, queryFirstOrderBonusLedger(t, txCtx, client, invitee.ID))
+	require.Len(t, queryFirstOrderBonusLedger(t, txCtx, client, inviter.ID), 1)
 
 	// 非法入参不写库、不报错。
-	skipped, err := repo.RecordFirstOrderBonusVoid(txCtx, service.AffiliateFirstOrderBonusVoidInput{
-		UserID:  0,
-		OrderID: firstOrderID,
-		Status:  service.FirstOrderBonusStatusVoidExpired,
+	skipped, err := repo.ApplyFirstOrderBonus(txCtx, service.AffiliateFirstOrderBonusApplyInput{
+		UserID:    0,
+		InviterID: inviter.ID,
+		OrderID:   firstOrderID,
+		Status:    service.FirstOrderBonusStatusVoidExpired,
 	})
 	require.NoError(t, err)
 	require.False(t, skipped)
+}
+
+// TestAffiliateRepository_ApplyFirstOrderBonus_ZeroInviterBonusSkipsQuota 补一条
+// 「邀请人那份为 0」的路径（例如后台把首单返利率设成 0，或常规返利已经反超封顶）：
+// 记录照落、被邀请人照发，但不能给邀请人写台账、不能动他的额度。
+func TestAffiliateRepository_ApplyFirstOrderBonus_ZeroInviterBonusSkipsQuota(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+	inviter, invitee := mustSetupFirstOrderBonusPair(t, txCtx, repo, client, "nozero", 0)
+
+	paidAt := time.Now()
+	orderID := mustCreateFirstOrderBonusOrder(t, txCtx, client, invitee.ID, firstOrderBonusOrderSeed{
+		Amount: 200, Status: "COMPLETED", PaidAt: &paidAt,
+	})
+
+	applied, err := repo.ApplyFirstOrderBonus(txCtx, service.AffiliateFirstOrderBonusApplyInput{
+		UserID:       invitee.ID,
+		InviterID:    inviter.ID,
+		OrderID:      orderID,
+		OrderAmount:  200,
+		InviteeBonus: 10,
+		InviterBonus: 0,
+		Status:       service.FirstOrderBonusStatusApplied,
+		FreezeHours:  0,
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+
+	require.InDelta(t, 10.0, querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id = $1", invitee.ID), 1e-9)
+	require.Len(t, queryFirstOrderBonusLedger(t, txCtx, client, invitee.ID), 1)
+	require.InDelta(t, 0.0, querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+	require.Empty(t, queryFirstOrderBonusLedger(t, txCtx, client, inviter.ID),
+		"inviter bonus of 0 must not write a ledger row")
 }
 
 // TestAffiliateRepository_HasEarlierOrFulfilledPaymentOrder 覆盖「首单判定」SQL 的两条路径：
@@ -665,6 +724,7 @@ func TestAffiliateRepository_GetAccruedRebateFromInvitee_ExcludesFirstOrderBonus
 		OrderAmount:  20,
 		InviteeBonus: 10,
 		InviterBonus: 10,
+		Status:       service.FirstOrderBonusStatusApplied,
 		FreezeHours:  0,
 	})
 	require.NoError(t, err)

@@ -378,7 +378,7 @@ export const useAppStore = defineStore('app', () => {
         risk_control_enabled: false,
         service_quota_enabled: false,
         affiliate_enabled: false,
-        affiliate_first_order_bonus: { enabled: false, threshold: 20, invitee_bonus: 10, inviter_bonus: 10, valid_days: 30 },
+        affiliate_first_order_bonus: { enabled: false, threshold: 20, invitee_bonus: 10, inviter_rate_percent: 50, inviter_cap: 10, valid_days: 30 },
         allow_user_view_error_requests: false,
       })
     }

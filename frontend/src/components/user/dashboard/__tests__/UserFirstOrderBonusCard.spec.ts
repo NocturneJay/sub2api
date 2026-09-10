@@ -61,7 +61,8 @@ function enableFeature() {
       enabled: true,
       threshold: 20,
       invitee_bonus: 10,
-      inviter_bonus: 10,
+      inviter_rate_percent: 50,
+      inviter_cap: 10,
       valid_days: 30
     }
   }
@@ -80,7 +81,8 @@ describe('UserFirstOrderBonusCard', () => {
       status: 'available',
       threshold: 20,
       invitee_bonus: 10,
-      inviter_bonus: 10,
+      inviter_rate_percent: 50,
+      inviter_cap: 10,
       valid_days: 30,
       expires_at: '2026-10-06T02:42:00Z'
     })
@@ -106,7 +108,8 @@ describe('UserFirstOrderBonusCard', () => {
       status: 'void_below_threshold',
       threshold: 20,
       invitee_bonus: 10,
-      inviter_bonus: 10,
+      inviter_rate_percent: 50,
+      inviter_cap: 10,
       valid_days: 30
     })
 
@@ -125,7 +128,8 @@ describe('UserFirstOrderBonusCard', () => {
       status: 'available',
       threshold: 20,
       invitee_bonus: 0,
-      inviter_bonus: 10,
+      inviter_rate_percent: 50,
+      inviter_cap: 10,
       valid_days: 30,
       expires_at: '2026-10-06T02:42:00Z'
     })

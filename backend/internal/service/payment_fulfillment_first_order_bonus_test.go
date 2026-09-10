@@ -25,8 +25,8 @@ import (
 // 改写掉、导致重试时 20% 返利重复发放）。
 
 const (
-	firstOrderBonusEnabledSettingValue  = `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`
-	firstOrderBonusDisabledSettingValue = `{"enabled":false,"threshold":20,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`
+	firstOrderBonusEnabledSettingValue  = `{"enabled":true,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":30}`
+	firstOrderBonusDisabledSettingValue = `{"enabled":false,"threshold":20,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":30}`
 )
 
 // ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ func newFirstOrderBonusFulfillmentUser(t *testing.T, ctx context.Context, client
 func newFirstOrderBonusFulfillmentService(client *dbent.Client, affiliateRepo AffiliateRepository, bonusSetting string) (*PaymentService, *subscriptionUserSubRepoStub) {
 	values := map[string]string{
 		SettingKeyAffiliateEnabled:           "true",
-		SettingKeyAffiliateRebateRate:        "20",
+		SettingKeyAffiliateRebateRate:        "10",
 		SettingKeyAffiliateRebateFreezeHours: "0",
 	}
 	if bonusSetting != "" {
@@ -220,9 +220,9 @@ func TestExecuteSubscriptionFulfillmentAppliesFirstOrderBonusAlongsideRebate(t *
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 	require.Equal(t, 1, subRepo.createCalls)
 
-	// 常规 20% 返利照常发，一行不受影响。
+	// 常规比例返利照常发，一行不受影响（10% × 50 = 5）。
 	require.Len(t, affiliateRepo.accrueCalls, 1)
-	require.InDelta(t, 10.0, affiliateRepo.accrueCalls[0].amount, 1e-8)
+	require.InDelta(t, 5.0, affiliateRepo.accrueCalls[0].amount, 1e-8)
 
 	// 首单奖励也发了，参数来自实时配置。
 	require.Len(t, affiliateRepo.firstOrderApplyCalls, 1)
@@ -232,9 +232,10 @@ func TestExecuteSubscriptionFulfillmentAppliesFirstOrderBonusAlongsideRebate(t *
 	require.Equal(t, order.ID, applyIn.OrderID)
 	require.InDelta(t, 50.0, applyIn.OrderAmount, 1e-8)
 	require.InDelta(t, 10.0, applyIn.InviteeBonus, 1e-8)
-	require.InDelta(t, 10.0, applyIn.InviterBonus, 1e-8)
+	// 50 × 50% = 25，封顶 10；常规 10% 已发 5 → 额外 5。
+	require.InDelta(t, 5.0, applyIn.InviterBonus, 1e-8)
+	require.Equal(t, FirstOrderBonusStatusApplied, applyIn.Status)
 	require.Equal(t, []int64{user.ID}, affiliateRepo.firstOrderLockCalls)
-	require.Empty(t, affiliateRepo.firstOrderVoidCalls)
 
 	require.Equal(t, 1, countPaymentAuditAction(t, ctx, client, order.ID, "AFFILIATE_REBATE_APPLIED"))
 	require.Equal(t, 1, countPaymentAuditAction(t, ctx, client, order.ID, "AFFILIATE_FIRST_ORDER_BONUS_APPLIED"))
@@ -249,7 +250,8 @@ func TestExecuteSubscriptionFulfillmentAppliesFirstOrderBonusAlongsideRebate(t *
 	require.NoError(t, err)
 	require.Contains(t, applied.Detail, `"orderAmount":50`)
 	require.Contains(t, applied.Detail, `"inviteeBonus":10`)
-	require.Contains(t, applied.Detail, `"inviterBonus":10`)
+	require.Contains(t, applied.Detail, `"inviterBonus":5`)
+	require.Contains(t, applied.Detail, `"inviteeStatus":"applied"`)
 	require.Contains(t, applied.Detail, `"inviterID":9001`)
 
 	// 常规返利那一行必须还是自己的 detail，没有被首单奖励改写。
@@ -259,10 +261,10 @@ func TestExecuteSubscriptionFulfillmentAppliesFirstOrderBonusAlongsideRebate(t *
 			paymentauditlog.ActionEQ("AFFILIATE_REBATE_APPLIED"),
 		).Only(ctx)
 	require.NoError(t, err)
-	require.Contains(t, rebate.Detail, `"rebateAmount":10`)
+	require.Contains(t, rebate.Detail, `"rebateAmount":5`)
 }
 
-func TestExecuteBalanceFulfillmentVoidsFirstOrderBonusBelowThreshold(t *testing.T) {
+func TestExecuteBalanceFulfillmentVoidsInviteeButStillPaysInviterBelowThreshold(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
@@ -271,6 +273,8 @@ func TestExecuteBalanceFulfillmentVoidsFirstOrderBonusBelowThreshold(t *testing.
 	order := newFirstOrderBonusFulfillmentOrder(t, ctx, client, user.ID, user.Email, user.Username, payment.OrderTypeBalance, 5)
 
 	affiliateRepo := newFirstOrderBonusAffiliateRepoStub(user.ID, 9002)
+	// v2：不满阈值也会落表（status=void_below_threshold），所以这里必须让抢占成功。
+	affiliateRepo.firstOrderApplyResult = true
 	svc, _ := newFirstOrderBonusFulfillmentService(client, affiliateRepo, firstOrderBonusEnabledSettingValue)
 	// 余额单走「兑换码已使用」这条幂等分支，不必搭真的兑换链路。
 	// 上游 v0.2.2（7a70de401）起 validatePaymentRedeemCode 要求已用码的 UsedBy 必须等于订单用户，夹具随之带上。
@@ -285,24 +289,30 @@ func TestExecuteBalanceFulfillmentVoidsFirstOrderBonusBelowThreshold(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 
-	// 不到阈值：券当场作废（落表），一分钱都没发。
-	require.Empty(t, affiliateRepo.firstOrderApplyCalls)
-	require.Len(t, affiliateRepo.firstOrderVoidCalls, 1)
-	require.Equal(t, FirstOrderBonusStatusVoidBelowThreshold, affiliateRepo.firstOrderVoidCalls[0].Status)
-	require.Equal(t, order.ID, affiliateRepo.firstOrderVoidCalls[0].OrderID)
-	require.InDelta(t, 5.0, affiliateRepo.firstOrderVoidCalls[0].OrderAmount, 1e-8)
+	// v2：不到阈值只作废被邀请人那份，邀请人照样按比例拿
+	// （5 × 50% = 2.5，减常规 10% 的 0.5 → 额外 2），所以走 APPLIED 分支。
+	require.Len(t, affiliateRepo.firstOrderApplyCalls, 1)
+	applyIn := affiliateRepo.firstOrderApplyCalls[0]
+	require.Equal(t, FirstOrderBonusStatusVoidBelowThreshold, applyIn.Status)
+	require.Equal(t, order.ID, applyIn.OrderID)
+	require.InDelta(t, 5.0, applyIn.OrderAmount, 1e-8)
+	require.InDelta(t, 0.0, applyIn.InviteeBonus, 1e-8)
+	require.InDelta(t, 2.0, applyIn.InviterBonus, 1e-8)
 
-	require.Zero(t, countPaymentAuditAction(t, ctx, client, order.ID, "AFFILIATE_FIRST_ORDER_BONUS_APPLIED"))
-	require.Equal(t, 1, countPaymentAuditAction(t, ctx, client, order.ID, "AFFILIATE_FIRST_ORDER_BONUS_SKIPPED"))
+	require.Equal(t, 1, countPaymentAuditAction(t, ctx, client, order.ID, "AFFILIATE_FIRST_ORDER_BONUS_APPLIED"))
+	require.Zero(t, countPaymentAuditAction(t, ctx, client, order.ID, "AFFILIATE_FIRST_ORDER_BONUS_SKIPPED"))
 
-	skipped, err := client.PaymentAuditLog.Query().
+	applied, err := client.PaymentAuditLog.Query().
 		Where(
 			paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)),
-			paymentauditlog.ActionEQ("AFFILIATE_FIRST_ORDER_BONUS_SKIPPED"),
+			paymentauditlog.ActionEQ("AFFILIATE_FIRST_ORDER_BONUS_APPLIED"),
 		).Only(ctx)
 	require.NoError(t, err)
-	require.Contains(t, skipped.Detail, `"reason":"below_threshold"`)
-	require.Contains(t, skipped.Detail, `"orderAmount":5`)
+	require.Contains(t, applied.Detail, `"reason":"below_threshold"`)
+	require.Contains(t, applied.Detail, `"inviteeStatus":"void_below_threshold"`)
+	require.Contains(t, applied.Detail, `"inviteeBonus":0`)
+	require.Contains(t, applied.Detail, `"inviterBonus":2`)
+	require.Contains(t, applied.Detail, `"orderAmount":5`)
 
 	// 常规返利与它无关，照常发。
 	require.Len(t, affiliateRepo.accrueCalls, 1)
@@ -355,7 +365,6 @@ func TestExecuteSubscriptionFulfillmentWritesNoFirstOrderAuditWhenDisabled(t *te
 	}
 	require.Empty(t, affiliateRepo.firstOrderApplyCalls)
 	require.Empty(t, affiliateRepo.firstOrderLockCalls)
-	require.Empty(t, affiliateRepo.firstOrderVoidCalls)
 
 	// 常规返利不受影响。
 	require.Len(t, affiliateRepo.accrueCalls, 1)

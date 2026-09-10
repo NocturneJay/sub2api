@@ -540,10 +540,6 @@ func (r *oauthEmailAffiliateRepoStub) LockUserAffiliateForUpdate(context.Context
 	return nil
 }
 
-func (r *oauthEmailAffiliateRepoStub) RecordFirstOrderBonusVoid(context.Context, service.AffiliateFirstOrderBonusVoidInput) (bool, error) {
-	return false, nil
-}
-
 func (r *oauthEmailAffiliateRepoStub) ApplyFirstOrderBonus(context.Context, service.AffiliateFirstOrderBonusApplyInput) (bool, error) {
 	return false, nil
 }

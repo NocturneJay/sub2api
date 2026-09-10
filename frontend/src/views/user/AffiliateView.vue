@@ -79,13 +79,20 @@
               <li>{{ t('affiliate.tips.line2', { rate: `${formattedRebateRate}%` }) }}</li>
               <li>{{ t('affiliate.tips.line3') }}</li>
               <li v-if="detail.aff_frozen_quota > 0">{{ t('affiliate.tips.line4') }}</li>
-              <li v-if="firstOrderBonusEnabled">
+              <li v-if="firstOrderBonusEnabled && firstOrderBonusPaysInviter">
                 {{
                   t('affiliate.tips.line5', {
-                    threshold: formatCurrency(firstOrderBonusThreshold),
-                    inviteeBonus: formatCurrency(firstOrderBonusInviteeBonus),
-                    inviterBonus: formatCurrency(firstOrderBonusInviterBonus),
+                    inviterRate: `${firstOrderBonusInviterRate}%`,
+                    inviterCap: formatCurrency(firstOrderBonusInviterCap),
                     rate: `${formattedRebateRate}%`
+                  })
+                }}
+              </li>
+              <li v-if="firstOrderBonusEnabled && firstOrderBonusPaysInvitee">
+                {{
+                  t('affiliate.tips.line6', {
+                    threshold: formatCurrency(firstOrderBonusThreshold),
+                    inviteeBonus: formatCurrency(firstOrderBonusInviteeBonus)
                   })
                 }}
               </li>
@@ -191,7 +198,14 @@ const firstOrderBonusSettings = computed(() => appStore.cachedPublicSettings?.af
 const firstOrderBonusEnabled = computed(() => firstOrderBonusSettings.value?.enabled === true)
 const firstOrderBonusThreshold = computed(() => firstOrderBonusSettings.value?.threshold ?? 0)
 const firstOrderBonusInviteeBonus = computed(() => firstOrderBonusSettings.value?.invitee_bonus ?? 0)
-const firstOrderBonusInviterBonus = computed(() => firstOrderBonusSettings.value?.inviter_bonus ?? 0)
+const firstOrderBonusInviterRate = computed(() => firstOrderBonusSettings.value?.inviter_rate_percent ?? 0)
+const firstOrderBonusInviterCap = computed(() => firstOrderBonusSettings.value?.inviter_cap ?? 0)
+// 邀请人那份靠「比例 × 封顶」两个数一起才成立，任一为 0 都等于不发，此时整条不提。
+const firstOrderBonusPaysInviter = computed(
+  () => firstOrderBonusInviterRate.value > 0 && firstOrderBonusInviterCap.value > 0
+)
+// 被邀请人那份为 0 时（只奖励邀请人的配置）不提好友那半句。
+const firstOrderBonusPaysInvitee = computed(() => firstOrderBonusInviteeBonus.value > 0)
 
 function formatCount(value: number): string {
   return value.toLocaleString()

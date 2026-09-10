@@ -768,7 +768,8 @@ export default {
       line2: '被邀请用户充值后，你可获得 {rate} 的返利额度。',
       line3: '返利额度可随时转入账户余额。',
       line4: '新产生的返利需要经过冻结期后才能提现。',
-      line5: '好友首单站内充值满 {threshold}，好友得 {inviteeBonus}、你得 {inviterBonus}，另加常规 {rate} 返利；首单不满则作废、不补。'
+      line5: '好友首单站内充值，你按 {inviterRate} 拿首单返利，最高 {inviterCap}；好友首单充多少都算，不满门槛你也照拿。该比例已含常规 {rate} 返利，两者取高不叠加。',
+      line6: '好友首单站内充值满 {threshold}，好友本人另得 {inviteeBonus}；首单不满则好友那份当场作废、后续充值不补（你的首单返利不受影响）。'
     }
   },
 

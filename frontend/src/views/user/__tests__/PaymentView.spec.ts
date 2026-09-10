@@ -838,7 +838,8 @@ describe('PaymentView first-order bonus amounts', () => {
       status: 'available',
       threshold: 20,
       invitee_bonus: 10,
-      inviter_bonus: 10,
+      inviter_rate_percent: 50,
+      inviter_cap: 10,
       valid_days: 30,
       ...overrides,
     })

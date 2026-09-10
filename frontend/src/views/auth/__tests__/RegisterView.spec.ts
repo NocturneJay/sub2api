@@ -207,7 +207,7 @@ describe('RegisterView invitation layout', () => {
   it('shows the first-order bonus hint only after an affiliate code is typed', async () => {
     getPublicSettingsMock.mockResolvedValueOnce({
       ...publicSettings,
-      affiliate_first_order_bonus: { enabled: true, threshold: 20, invitee_bonus: 10, inviter_bonus: 10, valid_days: 30 }
+      affiliate_first_order_bonus: { enabled: true, threshold: 20, invitee_bonus: 10, inviter_rate_percent: 50, inviter_cap: 10, valid_days: 30 }
     })
     const wrapper = mountRegister()
     await flushPromises()
@@ -224,7 +224,7 @@ describe('RegisterView invitation layout', () => {
     // invitee_bonus=0 是管理端明说的合法配置（0 = 不给被邀请人发），此时不能承诺「额外获得 0 美元」。
     getPublicSettingsMock.mockResolvedValueOnce({
       ...publicSettings,
-      affiliate_first_order_bonus: { enabled: true, threshold: 20, invitee_bonus: 0, inviter_bonus: 10, valid_days: 30 }
+      affiliate_first_order_bonus: { enabled: true, threshold: 20, invitee_bonus: 0, inviter_rate_percent: 50, inviter_cap: 10, valid_days: 30 }
     })
     const wrapper = mountRegister()
     await flushPromises()

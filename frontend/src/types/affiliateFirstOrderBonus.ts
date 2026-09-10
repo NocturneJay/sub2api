@@ -11,10 +11,12 @@ export interface AffiliateFirstOrderBonusSettings {
   enabled: boolean
   /** 首单金额阈值（美元面额，与 payment_orders.amount 同口径）。 */
   threshold: number
-  /** 被邀请人可得的余额奖励。 */
+  /** 被邀请人可得的余额奖励（首单需达到 threshold）。 */
   invitee_bonus: number
-  /** 邀请人可得的返利额度奖励。 */
-  inviter_bonus: number
+  /** 邀请人在好友首单上的总返利率（%），不看阈值；常规比例返利已发的部分从中扣除。 */
+  inviter_rate_percent: number
+  /** 邀请人首单总返利的封顶额（美元）。0 = 不发。 */
+  inviter_cap: number
   /** 券有效期天数，0 = 不过期。 */
   valid_days: number
 }
@@ -38,7 +40,8 @@ export interface AffiliateFirstOrderBonusStatus {
   status: AffiliateFirstOrderBonusStatusCode | string
   threshold: number
   invitee_bonus: number
-  inviter_bonus: number
+  inviter_rate_percent: number
+  inviter_cap: number
   valid_days: number
   /** valid_days=0（不过期）时后端会省略该字段。 */
   expires_at?: string | null

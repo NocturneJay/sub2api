@@ -925,11 +925,12 @@ func TestSettingService_UpdateSettings_PersistsAffiliateFirstOrderBonusJSON(t *t
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
 		AffiliateFirstOrderBonus: AffiliateFirstOrderBonusConfig{
-			Enabled:      true,
-			Threshold:    25,
-			InviteeBonus: 12,
-			InviterBonus: 8,
-			ValidDays:    99999, // 越界：写回时应被截断到 AffiliateFirstOrderValidDaysMax
+			Enabled:            true,
+			Threshold:          25,
+			InviteeBonus:       12,
+			InviterRatePercent: 250, // 越界：写回时应被夹到 100
+			InviterCap:         8,
+			ValidDays:          99999, // 越界：写回时应被截断到 AffiliateFirstOrderValidDaysMax
 		},
 	})
 	require.NoError(t, err)
@@ -940,11 +941,12 @@ func TestSettingService_UpdateSettings_PersistsAffiliateFirstOrderBonusJSON(t *t
 	var got AffiliateFirstOrderBonusConfig
 	require.NoError(t, json.Unmarshal([]byte(raw), &got))
 	require.Equal(t, AffiliateFirstOrderBonusConfig{
-		Enabled:      true,
-		Threshold:    25,
-		InviteeBonus: 12,
-		InviterBonus: 8,
-		ValidDays:    AffiliateFirstOrderValidDaysMax,
+		Enabled:            true,
+		Threshold:          25,
+		InviteeBonus:       12,
+		InviterRatePercent: AffiliateFirstOrderInviterRatePercentMax,
+		InviterCap:         8,
+		ValidDays:          AffiliateFirstOrderValidDaysMax,
 	}, got)
 
 	// 回读一遍：写回口径与解析口径必须是同一个，否则保存后刷新会看到不一样的值。

@@ -106,7 +106,6 @@ type paymentFulfillmentAffiliateRepoStub struct {
 	firstOrderApplyResult bool
 	firstOrderApplyErr    error
 	firstOrderLockCalls   []int64
-	firstOrderVoidCalls   []AffiliateFirstOrderBonusVoidInput
 	firstOrderApplyCalls  []AffiliateFirstOrderBonusApplyInput
 }
 
@@ -230,11 +229,6 @@ func (r *paymentFulfillmentAffiliateRepoStub) HasEarlierOrFulfilledPaymentOrder(
 func (r *paymentFulfillmentAffiliateRepoStub) LockUserAffiliateForUpdate(_ context.Context, userID int64) error {
 	r.firstOrderLockCalls = append(r.firstOrderLockCalls, userID)
 	return nil
-}
-
-func (r *paymentFulfillmentAffiliateRepoStub) RecordFirstOrderBonusVoid(_ context.Context, in AffiliateFirstOrderBonusVoidInput) (bool, error) {
-	r.firstOrderVoidCalls = append(r.firstOrderVoidCalls, in)
-	return true, nil
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) ApplyFirstOrderBonus(_ context.Context, in AffiliateFirstOrderBonusApplyInput) (bool, error) {

@@ -188,7 +188,7 @@ func TestSettingHandler_GetPublicSettings_ExposesAffiliateFirstOrderBonus(t *tes
 	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
 		values: map[string]string{
 			service.SettingKeyAffiliateEnabled:         "true",
-			service.SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":25,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`,
+			service.SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":25,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":30}`,
 		},
 	}, &config.Config{}), "test-version")
 
@@ -205,11 +205,12 @@ func TestSettingHandler_GetPublicSettings_ExposesAffiliateFirstOrderBonus(t *tes
 		Data struct {
 			AffiliateEnabled         bool `json:"affiliate_enabled"`
 			AffiliateFirstOrderBonus struct {
-				Enabled      bool    `json:"enabled"`
-				Threshold    float64 `json:"threshold"`
-				InviteeBonus float64 `json:"invitee_bonus"`
-				InviterBonus float64 `json:"inviter_bonus"`
-				ValidDays    int     `json:"valid_days"`
+				Enabled            bool    `json:"enabled"`
+				Threshold          float64 `json:"threshold"`
+				InviteeBonus       float64 `json:"invitee_bonus"`
+				InviterRatePercent float64 `json:"inviter_rate_percent"`
+				InviterCap         float64 `json:"inviter_cap"`
+				ValidDays          int     `json:"valid_days"`
 			} `json:"affiliate_first_order_bonus"`
 		} `json:"data"`
 	}
@@ -219,7 +220,8 @@ func TestSettingHandler_GetPublicSettings_ExposesAffiliateFirstOrderBonus(t *tes
 	require.True(t, resp.Data.AffiliateFirstOrderBonus.Enabled)
 	require.Equal(t, 25.0, resp.Data.AffiliateFirstOrderBonus.Threshold)
 	require.Equal(t, 10.0, resp.Data.AffiliateFirstOrderBonus.InviteeBonus)
-	require.Equal(t, 10.0, resp.Data.AffiliateFirstOrderBonus.InviterBonus)
+	require.Equal(t, 50.0, resp.Data.AffiliateFirstOrderBonus.InviterRatePercent)
+	require.Equal(t, 10.0, resp.Data.AffiliateFirstOrderBonus.InviterCap)
 	require.Equal(t, 30, resp.Data.AffiliateFirstOrderBonus.ValidDays)
 }
 
@@ -231,7 +233,7 @@ func TestSettingHandler_GetPublicSettings_AffiliateFirstOrderBonusRequiresAffili
 	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
 		values: map[string]string{
 			service.SettingKeyAffiliateEnabled:         "false",
-			service.SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":25,"invitee_bonus":10,"inviter_bonus":10,"valid_days":30}`,
+			service.SettingKeyAffiliateFirstOrderBonus: `{"enabled":true,"threshold":25,"invitee_bonus":10,"inviter_rate_percent":50,"inviter_cap":10,"valid_days":30}`,
 		},
 	}, &config.Config{}), "test-version")
 
